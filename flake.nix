@@ -7,6 +7,12 @@
       url = "github:oxalica/rust-overlay";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    # Not pinned to nixpkgs.follows: programs.claude-code is new enough that
+    # it only exists on home-manager's unstable branch, which in turn needs a
+    # newer nixpkgs than this repo's own pin. Only the hm-module eval check
+    # uses this input, via home-manager's own pkgs — it never reaches the
+    # package or devShell outputs.
+    home-manager.url = "github:nix-community/home-manager";
   };
 
   outputs =
@@ -14,6 +20,7 @@
       self,
       nixpkgs,
       rust-overlay,
+      home-manager,
     }:
     let
       supportedSystems = [
@@ -132,6 +139,43 @@
             extraNativeBuildInputs = [ pkgs.rustfmt ];
             command = "cargo fmt --all -- --check";
           };
+
+          # Evaluates the home-manager module against a minimal configuration
+          # and asserts every required hook event is registered. Pure
+          # evaluation (no build, no IFD): the assert is forced by nix flake
+          # check when it tries to build this attribute, so an eval failure
+          # here still surfaces as a normal check failure.
+          hm-module =
+            let
+              hmPkgs = import home-manager.inputs.nixpkgs { inherit system; };
+              hmConfig = home-manager.lib.homeManagerConfiguration {
+                pkgs = hmPkgs;
+                modules = [
+                  self.homeManagerModules.default
+                  {
+                    home.username = "claude-monitor-check";
+                    home.homeDirectory = "/home/claude-monitor-check";
+                    home.stateVersion = "24.05";
+                    programs.claude-monitor.enable = true;
+                  }
+                ];
+              };
+              hooks = hmConfig.config.programs.claude-code.settings.hooks;
+              expectedEvents = [
+                "SessionStart"
+                "UserPromptSubmit"
+                "PreToolUse"
+                "PostToolUse"
+                "Notification"
+                "Stop"
+                "SessionEnd"
+              ];
+              missing = builtins.filter (event: !(builtins.hasAttr event hooks)) expectedEvents;
+            in
+            if missing != [ ] then
+              throw "claude-monitor hm-module: missing hook events: ${toString missing}"
+            else
+              hmPkgs.runCommand "claude-monitor-hm-module-check" { } "touch $out";
         }
       );
 
