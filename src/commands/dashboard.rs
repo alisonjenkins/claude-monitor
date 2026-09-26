@@ -41,6 +41,7 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>) -> Result
 
     // Initial load
     let sessions = session::read_all_sessions(&status_dir);
+    app.pane_locations = tmux::list_panes().ok().flatten().unwrap_or_default();
     app.update_sessions(sessions);
 
     let mut last_cleanup = std::time::Instant::now();
@@ -58,6 +59,7 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>) -> Result
         if changed {
             let prev_count = app.sessions.len();
             let sessions = session::read_all_sessions(&status_dir);
+            app.pane_locations = tmux::list_panes().ok().flatten().unwrap_or_default();
             app.update_sessions(sessions);
 
             // Send desktop notification when sessions go from 0 to >0
@@ -92,13 +94,11 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>) -> Result
                     KeyCode::Char('k') | KeyCode::Up => app.previous(),
                     KeyCode::Enter => {
                         if let Some(s) = app.selected_session().cloned() {
-                            session::remove_session(&status_dir, &s.session_id)?;
-                            if let Some(pane) = &s.tmux_pane {
-                                let _ = tmux::switch_to_pane(pane);
+                            if let Some(pane_id) = &s.tmux_pane {
+                                if let Some(loc) = app.pane_locations.get(pane_id).cloned() {
+                                    let _ = tmux::switch_to_pane(&loc);
+                                }
                             }
-                            // Reload after removal
-                            let sessions = session::read_all_sessions(&status_dir);
-                            app.update_sessions(sessions);
                         }
                     }
                     KeyCode::Char('d') => {
@@ -117,17 +117,17 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>) -> Result
     Ok(())
 }
 
-/// Remove status files for tmux panes that no longer exist
+/// Remove status files for tmux panes that no longer exist. A no-op if the
+/// tmux listing itself failed, so a transient tmux hiccup never deletes
+/// live sessions' state.
 fn cleanup_dead_panes(status_dir: &std::path::Path) -> Result<()> {
-    let sessions = session::read_all_sessions(status_dir);
-    if sessions.is_empty() {
+    let Some(live_panes) = tmux::list_panes()? else {
         return Ok(());
-    }
+    };
 
-    let live_panes = tmux::list_all_pane_ids()?;
-    for s in &sessions {
+    for s in session::read_all_sessions(status_dir) {
         if let Some(pane) = &s.tmux_pane {
-            if !live_panes.contains(pane) {
+            if !live_panes.contains_key(pane) {
                 session::remove_session(status_dir, &s.session_id)?;
             }
         }

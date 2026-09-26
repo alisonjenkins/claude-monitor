@@ -7,12 +7,15 @@ use ratatui::{
     Frame,
 };
 
+use std::collections::HashMap;
+
 use crate::session::{SessionState, SessionStatus};
-use crate::tmux;
+use crate::tmux::PaneLocation;
 
 pub struct App {
     pub sessions: Vec<SessionStatus>,
     pub table_state: TableState,
+    pub pane_locations: HashMap<String, PaneLocation>,
 }
 
 impl App {
@@ -20,6 +23,7 @@ impl App {
         Self {
             sessions: Vec::new(),
             table_state: TableState::default(),
+            pane_locations: HashMap::new(),
         }
     }
 
@@ -153,7 +157,8 @@ fn render_table(frame: &mut Frame, app: &mut App, area: Rect) {
             let location = s
                 .tmux_pane
                 .as_deref()
-                .map(tmux::format_pane_location)
+                .and_then(|pane| app.pane_locations.get(pane))
+                .map(PaneLocation::format)
                 .unwrap_or_else(|| "unknown".to_string());
 
             Row::new(vec![
