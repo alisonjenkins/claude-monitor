@@ -62,6 +62,7 @@ pub fn map_event(hook_event_name: &str, notification_type: Option<&str>) -> Acti
     match hook_event_name {
         "SessionStart" => Action::Set(SessionState::Idle),
         "UserPromptSubmit" | "PreToolUse" | "PostToolUse" => Action::Set(SessionState::Working),
+        "PermissionRequest" => Action::Set(SessionState::NeedsPermission),
         "Notification" => match notification_type {
             Some("permission_prompt") => Action::Set(SessionState::NeedsPermission),
             Some("idle_prompt") => Action::Set(SessionState::Idle),
@@ -211,6 +212,11 @@ mod tests {
             ("UserPromptSubmit", None, Action::Set(SessionState::Working)),
             ("PreToolUse", None, Action::Set(SessionState::Working)),
             ("PostToolUse", None, Action::Set(SessionState::Working)),
+            (
+                "PermissionRequest",
+                None,
+                Action::Set(SessionState::NeedsPermission),
+            ),
             (
                 "Notification",
                 Some("permission_prompt"),

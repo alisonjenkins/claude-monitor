@@ -14,7 +14,7 @@ The dashboard watches that directory and redraws live.
 |---|---|
 | SessionStart | Idle (your turn) |
 | UserPromptSubmit, PreToolUse, PostToolUse | Working |
-| Notification (`permission_prompt`) | Needs permission |
+| PermissionRequest, Notification (`permission_prompt`) | Needs permission |
 | Notification (`idle_prompt`), Stop | Idle (your turn) |
 | SessionEnd | Removed |
 

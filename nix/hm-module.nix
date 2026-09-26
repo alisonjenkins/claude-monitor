@@ -14,12 +14,14 @@ let
   toolMatcherEvents = [
     "PreToolUse"
     "PostToolUse"
+    "PermissionRequest"
   ];
   hookEvents = [
     "SessionStart"
     "UserPromptSubmit"
     "PreToolUse"
     "PostToolUse"
+    "PermissionRequest"
     "Notification"
     "Stop"
     "SessionEnd"
