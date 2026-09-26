@@ -230,7 +230,7 @@ fn render_title(frame: &mut Frame, app: &App, area: Rect) {
 fn render_table(frame: &mut Frame, app: &mut App, area: Rect) {
     if app.sessions.is_empty() {
         let empty = Paragraph::new(Line::from(vec![Span::styled(
-            "  No sessions need attention",
+            "  No Claude Code sessions running",
             Style::default().fg(SUBTEXT0),
         )]))
         .block(
