@@ -1,4 +1,4 @@
-use chrono::Local;
+use chrono::Utc;
 use ratatui::{
     layout::{Constraint, Layout, Rect},
     style::{Color, Modifier, Style},
@@ -7,7 +7,7 @@ use ratatui::{
     Frame,
 };
 
-use crate::session::SessionStatus;
+use crate::session::{SessionState, SessionStatus};
 use crate::tmux;
 
 pub struct App {
@@ -79,7 +79,7 @@ impl App {
 pub fn render(frame: &mut Frame, app: &mut App) {
     let chunks = Layout::vertical([
         Constraint::Length(3), // Title
-        Constraint::Min(5),   // Table
+        Constraint::Min(5),    // Table
         Constraint::Length(3), // Help
     ])
     .split(frame.area());
@@ -90,14 +90,12 @@ pub fn render(frame: &mut Frame, app: &mut App) {
 }
 
 fn render_title(frame: &mut Frame, area: Rect) {
-    let title = Paragraph::new(Line::from(vec![
-        Span::styled(
-            " Claude Monitor ",
-            Style::default()
-                .fg(Color::Rgb(203, 166, 247)) // catppuccin mauve
-                .add_modifier(Modifier::BOLD),
-        ),
-    ]))
+    let title = Paragraph::new(Line::from(vec![Span::styled(
+        " Claude Monitor ",
+        Style::default()
+            .fg(Color::Rgb(203, 166, 247)) // catppuccin mauve
+            .add_modifier(Modifier::BOLD),
+    )]))
     .block(Block::default().borders(Borders::ALL).border_style(
         Style::default().fg(Color::Rgb(88, 91, 112)), // catppuccin overlay0
     ));
@@ -132,18 +130,18 @@ fn render_table(frame: &mut Frame, app: &mut App, area: Rect) {
             .add_modifier(Modifier::BOLD),
     );
 
-    let now = Local::now().timestamp();
+    let now = Utc::now();
     let rows: Vec<Row> = app
         .sessions
         .iter()
         .map(|s| {
-            let status_color = match s.status.as_str() {
-                "permission_prompt" => Color::Rgb(250, 179, 135), // catppuccin peach
-                "idle_prompt" => Color::Rgb(249, 226, 175),       // catppuccin yellow
-                _ => Color::Rgb(205, 214, 244),                   // catppuccin text
+            let status_color = match s.state {
+                SessionState::NeedsPermission => Color::Rgb(250, 179, 135), // catppuccin peach
+                SessionState::Idle => Color::Rgb(249, 226, 175),            // catppuccin yellow
+                SessionState::Working => Color::Rgb(205, 214, 244),         // catppuccin text
             };
 
-            let elapsed = now - s.timestamp;
+            let elapsed = now.signed_duration_since(s.since).num_seconds().max(0);
             let waiting = if elapsed < 60 {
                 format!("{}s", elapsed)
             } else if elapsed < 3600 {
@@ -152,11 +150,15 @@ fn render_table(frame: &mut Frame, app: &mut App, area: Rect) {
                 format!("{}h {}m", elapsed / 3600, (elapsed % 3600) / 60)
             };
 
-            let location = tmux::format_pane_location(&s.tmux_pane);
+            let location = s
+                .tmux_pane
+                .as_deref()
+                .map(tmux::format_pane_location)
+                .unwrap_or_else(|| "unknown".to_string());
 
             Row::new(vec![
                 Cell::from(s.project_name().to_string()),
-                Cell::from(s.status_label().to_string()).style(Style::default().fg(status_color)),
+                Cell::from(s.state_label().to_string()).style(Style::default().fg(status_color)),
                 Cell::from(location),
                 Cell::from(waiting),
             ])
@@ -199,8 +201,10 @@ fn render_help(frame: &mut Frame, area: Rect) {
         Span::styled("q", Style::default().fg(Color::Rgb(203, 166, 247))),
         Span::raw(" quit"),
     ]))
-    .block(Block::default().borders(Borders::ALL).border_style(
-        Style::default().fg(Color::Rgb(88, 91, 112)),
-    ));
+    .block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::Rgb(88, 91, 112))),
+    );
     frame.render_widget(help, area);
 }

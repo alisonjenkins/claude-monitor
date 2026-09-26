@@ -19,12 +19,7 @@ pub fn notify_attention(count: usize) -> Result<()> {
 
     #[cfg(target_os = "macos")]
     {
-        let _ = mac_notification_sys::send_notification(
-            "Claude Code",
-            None,
-            &body,
-            None,
-        );
+        let _ = mac_notification_sys::send_notification("Claude Code", None, &body, None);
     }
 
     Ok(())

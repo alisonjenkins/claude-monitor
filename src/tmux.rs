@@ -86,7 +86,10 @@ pub fn switch_to_pane(pane_id: &str) -> Result<()> {
 /// Format a pane location for display
 pub fn format_pane_location(pane_id: &str) -> String {
     match resolve_pane(pane_id) {
-        Ok(Some(loc)) => format!("{}:{}.{}", loc.session_name, loc.window_index, loc.pane_index),
+        Ok(Some(loc)) => format!(
+            "{}:{}.{}",
+            loc.session_name, loc.window_index, loc.pane_index
+        ),
         _ => pane_id.to_string(),
     }
 }

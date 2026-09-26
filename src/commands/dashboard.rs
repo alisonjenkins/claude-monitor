@@ -37,8 +37,10 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>) -> Result
     // Start file watcher
     let (_watcher, watch_rx) = watcher::watch_status_dir()?;
 
+    let status_dir = session::status_dir();
+
     // Initial load
-    let sessions = session::read_all_sessions()?;
+    let sessions = session::read_all_sessions(&status_dir);
     app.update_sessions(sessions);
 
     let mut last_cleanup = std::time::Instant::now();
@@ -55,7 +57,7 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>) -> Result
 
         if changed {
             let prev_count = app.sessions.len();
-            let sessions = session::read_all_sessions()?;
+            let sessions = session::read_all_sessions(&status_dir);
             app.update_sessions(sessions);
 
             // Send desktop notification when sessions go from 0 to >0
@@ -71,8 +73,8 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>) -> Result
 
         // Periodic cleanup: remove sessions whose tmux panes no longer exist
         if last_cleanup.elapsed() > Duration::from_secs(CLEANUP_INTERVAL_SECS) {
-            cleanup_dead_panes()?;
-            let sessions = session::read_all_sessions()?;
+            cleanup_dead_panes(&status_dir)?;
+            let sessions = session::read_all_sessions(&status_dir);
             app.update_sessions(sessions);
             last_cleanup = std::time::Instant::now();
         }
@@ -90,17 +92,19 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>) -> Result
                     KeyCode::Char('k') | KeyCode::Up => app.previous(),
                     KeyCode::Enter => {
                         if let Some(s) = app.selected_session().cloned() {
-                            session::remove_session(&s.session_id)?;
-                            let _ = tmux::switch_to_pane(&s.tmux_pane);
+                            session::remove_session(&status_dir, &s.session_id)?;
+                            if let Some(pane) = &s.tmux_pane {
+                                let _ = tmux::switch_to_pane(pane);
+                            }
                             // Reload after removal
-                            let sessions = session::read_all_sessions()?;
+                            let sessions = session::read_all_sessions(&status_dir);
                             app.update_sessions(sessions);
                         }
                     }
                     KeyCode::Char('d') => {
                         if let Some(s) = app.selected_session().cloned() {
-                            session::remove_session(&s.session_id)?;
-                            let sessions = session::read_all_sessions()?;
+                            session::remove_session(&status_dir, &s.session_id)?;
+                            let sessions = session::read_all_sessions(&status_dir);
                             app.update_sessions(sessions);
                         }
                     }
@@ -114,16 +118,18 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>) -> Result
 }
 
 /// Remove status files for tmux panes that no longer exist
-fn cleanup_dead_panes() -> Result<()> {
-    let sessions = session::read_all_sessions()?;
+fn cleanup_dead_panes(status_dir: &std::path::Path) -> Result<()> {
+    let sessions = session::read_all_sessions(status_dir);
     if sessions.is_empty() {
         return Ok(());
     }
 
     let live_panes = tmux::list_all_pane_ids()?;
     for s in &sessions {
-        if s.tmux_pane != "unknown" && !live_panes.contains(&s.tmux_pane) {
-            session::remove_session(&s.session_id)?;
+        if let Some(pane) = &s.tmux_pane {
+            if !live_panes.contains(pane) {
+                session::remove_session(status_dir, &s.session_id)?;
+            }
         }
     }
 

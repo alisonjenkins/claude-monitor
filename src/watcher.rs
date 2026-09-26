@@ -16,7 +16,7 @@ pub enum WatchEvent {
 /// Returns the watcher (must be kept alive) and a receiver for events.
 pub fn watch_status_dir() -> Result<(RecommendedWatcher, mpsc::Receiver<WatchEvent>)> {
     let dir = session::status_dir();
-    std::fs::create_dir_all(&dir)?;
+    session::ensure_status_dir(&dir)?;
 
     let (tx, rx) = mpsc::channel();
 
