@@ -45,9 +45,7 @@
             nativeBuildInputs = pkgs.lib.optionals pkgs.stdenv.hostPlatform.isLinux [ pkgs.pkg-config ];
             buildInputs =
               pkgs.lib.optionals pkgs.stdenv.hostPlatform.isLinux [ pkgs.dbus ]
-              ++ pkgs.lib.optionals pkgs.stdenv.hostPlatform.isDarwin [
-                pkgs.darwin.apple_sdk.frameworks.Foundation
-              ];
+              ++ pkgs.lib.optionals pkgs.stdenv.hostPlatform.isDarwin [ pkgs.apple-sdk ];
           };
         }
       );
@@ -74,9 +72,7 @@
                 pkgs.pkg-config
                 pkgs.dbus
               ]
-              ++ pkgs.lib.optionals pkgs.stdenv.hostPlatform.isDarwin [
-                pkgs.darwin.apple_sdk.frameworks.Foundation
-              ];
+              ++ pkgs.lib.optionals pkgs.stdenv.hostPlatform.isDarwin [ pkgs.apple-sdk ];
           };
         }
       );
