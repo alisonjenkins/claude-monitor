@@ -114,7 +114,7 @@ impl App {
                     .table_state
                     .selected()
                     .unwrap_or(0)
-                    .min(self.sessions.len() - 1);
+                    .min(self.sessions.len().saturating_sub(1));
                 self.table_state.select(Some(clamped));
             }
         }
@@ -138,7 +138,10 @@ impl App {
             return;
         }
         let i = match self.table_state.selected() {
-            Some(i) => (i + 1) % self.sessions.len(),
+            Some(i) => i
+                .checked_add(1)
+                .and_then(|n| n.checked_rem(self.sessions.len()))
+                .unwrap_or(0),
             None => 0,
         };
         self.table_state.select(Some(i));
@@ -150,8 +153,8 @@ impl App {
             return;
         }
         let i = match self.table_state.selected() {
-            Some(0) | None => self.sessions.len() - 1,
-            Some(i) => i - 1,
+            Some(0) | None => self.sessions.len().saturating_sub(1),
+            Some(i) => i.saturating_sub(1),
         };
         self.table_state.select(Some(i));
         self.selected_id = self.sessions.get(i).map(|s| s.session_id.clone());
@@ -182,9 +185,13 @@ pub fn render(frame: &mut Frame, app: &mut App) {
     ])
     .split(frame.area());
 
-    render_title(frame, app, chunks[0]);
-    render_table(frame, app, chunks[1]);
-    render_help(frame, app, chunks[2]);
+    let [title_area, table_area, help_area] = chunks[..] else {
+        return;
+    };
+
+    render_title(frame, app, title_area);
+    render_table(frame, app, table_area);
+    render_help(frame, app, help_area);
 }
 
 fn render_title(frame: &mut Frame, app: &App, area: Rect) {
@@ -320,7 +327,7 @@ fn render_help(frame: &mut Frame, app: &App, area: Rect) {
 
 #[cfg(test)]
 mod tests {
-    #![allow(clippy::unwrap_used, clippy::expect_used)]
+    #![allow(clippy::unwrap_used, clippy::expect_used, clippy::indexing_slicing)]
     use super::*;
     use chrono::Duration;
 

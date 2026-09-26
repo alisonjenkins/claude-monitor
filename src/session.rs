@@ -198,7 +198,7 @@ pub fn read_all_sessions(dir: &Path) -> Vec<SessionStatus> {
 
 #[cfg(test)]
 mod tests {
-    #![allow(clippy::unwrap_used, clippy::expect_used)]
+    #![allow(clippy::unwrap_used, clippy::expect_used, clippy::indexing_slicing)]
     use super::*;
     use std::thread::sleep;
     use std::time::Duration;

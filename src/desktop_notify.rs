@@ -60,7 +60,7 @@ pub fn state_snapshot(sessions: &[SessionStatus]) -> HashMap<String, SessionStat
 
 #[cfg(test)]
 mod tests {
-    #![allow(clippy::unwrap_used, clippy::expect_used)]
+    #![allow(clippy::unwrap_used, clippy::expect_used, clippy::indexing_slicing)]
     use super::*;
     use chrono::Utc;
 
