@@ -8,7 +8,10 @@ mod watcher;
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
-#[command(name = "claude-monitor", about = "Monitor multiple Claude Code sessions in tmux")]
+#[command(
+    name = "claude-monitor",
+    about = "Monitor multiple Claude Code sessions in tmux"
+)]
 struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,
@@ -16,15 +19,8 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Write a status file for a Claude session (called by hooks)
-    Notify {
-        /// The notification type: idle_prompt or permission_prompt
-        status: String,
-    },
-    /// Install Claude Code notification hooks into ~/.claude/settings.json
-    Setup,
-    /// Remove Claude Code notification hooks from ~/.claude/settings.json
-    Teardown,
+    /// Update session state from a Claude Code hook event (reads hook JSON from stdin)
+    Hook,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -32,8 +28,9 @@ fn main() -> anyhow::Result<()> {
 
     match cli.command {
         None => commands::dashboard::run(),
-        Some(Commands::Notify { status }) => commands::notify_cmd::run(&status),
-        Some(Commands::Setup) => commands::setup::run(),
-        Some(Commands::Teardown) => commands::teardown::run(),
+        Some(Commands::Hook) => {
+            commands::hook_cmd::run();
+            Ok(())
+        }
     }
 }
