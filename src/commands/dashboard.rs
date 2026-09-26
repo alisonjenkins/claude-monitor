@@ -95,7 +95,7 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>) -> Result
                     KeyCode::Enter => {
                         if let Some(s) = app.selected_session().cloned() {
                             if let Some(pane_id) = &s.tmux_pane {
-                                if let Some(loc) = app.pane_locations.get(pane_id).cloned() {
+                                if let Some(loc) = app.pane_location(pane_id).cloned() {
                                     let _ = tmux::switch_to_pane(&loc);
                                 }
                             }
