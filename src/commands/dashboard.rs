@@ -5,6 +5,7 @@ use crossterm::{
     ExecutableCommand,
 };
 use ratatui::prelude::*;
+use std::collections::HashMap;
 use std::io::stdout;
 use std::time::Duration;
 
@@ -51,11 +52,11 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>) -> Result
     let status_dir = session::status_dir();
 
     let sessions = session::read_all_sessions(&status_dir);
-    app.pane_locations = tmux::list_panes().ok().flatten().unwrap_or_default();
+    app.pane_locations = tmux::list_panes().unwrap_or_default().unwrap_or_default();
+    let mut prev_states = desktop_notify::state_snapshot(&sessions);
     app.update_sessions(sessions);
 
     let mut last_cleanup = std::time::Instant::now();
-    let mut last_notified_count: usize = 0;
 
     loop {
         terminal.draw(|frame| ui::render(frame, &mut app))?;
@@ -66,27 +67,12 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>) -> Result
         }
 
         if changed {
-            let prev_count = app.sessions.len();
-            let sessions = session::read_all_sessions(&status_dir);
-            refresh_pane_locations(&mut app);
-            app.update_sessions(sessions);
-
-            let new_count = app.sessions.len();
-            if prev_count == 0 && new_count > 0 && new_count != last_notified_count {
-                if let Err(e) = desktop_notify::notify_attention(new_count) {
-                    app.last_error = Some(format!("notification failed: {e:#}"));
-                }
-                last_notified_count = new_count;
-            }
-            if new_count == 0 {
-                last_notified_count = 0;
-            }
+            refresh(&mut app, &status_dir, &mut prev_states);
         }
 
         if last_cleanup.elapsed() > Duration::from_secs(CLEANUP_INTERVAL_SECS) {
-            cleanup_dead_panes(&mut app, &status_dir);
-            let sessions = session::read_all_sessions(&status_dir);
-            app.update_sessions(sessions);
+            prune_stale_panes(&mut app, &status_dir);
+            refresh(&mut app, &status_dir, &mut prev_states);
             last_cleanup = std::time::Instant::now();
         }
 
@@ -108,12 +94,31 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>) -> Result
     Ok(())
 }
 
-fn refresh_pane_locations(app: &mut App) {
+/// Reload sessions, resolve pane locations, fire notifications for new
+/// transitions into an attention state, and update `app`. Returns via
+/// `app.last_error` on failure rather than propagating, so the loop keeps
+/// running.
+fn refresh(
+    app: &mut App,
+    status_dir: &std::path::Path,
+    prev_states: &mut HashMap<String, crate::session::SessionState>,
+) {
+    let sessions = session::read_all_sessions(status_dir);
+
     match tmux::list_panes() {
         Ok(Some(map)) => app.pane_locations = map,
         Ok(None) => {}
         Err(e) => app.last_error = Some(format!("tmux error: {e:#}")),
     }
+
+    for s in desktop_notify::transitions_into_attention(prev_states, &sessions) {
+        if let Err(e) = desktop_notify::notify_transition(s.project_name(), s.state) {
+            app.last_error = Some(format!("notification failed: {e:#}"));
+        }
+    }
+    *prev_states = desktop_notify::state_snapshot(&sessions);
+
+    app.update_sessions(sessions);
 }
 
 /// Handle one key press. Returns `true` if the app should quit.
@@ -136,22 +141,25 @@ fn handle_key(code: KeyCode, modifiers: KeyModifiers, app: &mut App) -> bool {
                                 app.last_error = None;
                             }
                         }
-                        None => app.last_error = Some("pane no longer exists".to_string()),
+                        None => {
+                            app.last_error = Some("pane no longer exists".to_string());
+                        }
                     }
                 }
             }
         }
-        KeyCode::Char('d') => app.hide_selected(),
+        KeyCode::Char('d') => {
+            app.hide_selected();
+        }
         _ => {}
     }
     false
 }
 
 /// Remove status files whose recorded tmux pane no longer exists. A no-op
-/// if the tmux listing itself failed, so a transient tmux hiccup never
-/// deletes live sessions' state. Failures removing a file are recorded in
-/// the footer rather than propagated, so the dashboard keeps running.
-fn cleanup_dead_panes(app: &mut App, status_dir: &std::path::Path) {
+/// if the tmux listing itself failed (tmux not running), so a transient
+/// tmux hiccup never deletes live sessions' state.
+fn prune_stale_panes(app: &mut App, status_dir: &std::path::Path) {
     let live_panes = match tmux::list_panes() {
         Ok(Some(map)) => map,
         Ok(None) => return,
