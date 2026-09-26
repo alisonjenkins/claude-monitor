@@ -134,8 +134,8 @@ fn handle_key(code: KeyCode, modifiers: KeyModifiers, app: &mut App) -> bool {
             if let Some(s) = app.selected_session().cloned() {
                 if let Some(pane_id) = &s.tmux_pane {
                     match app.pane_location(pane_id).cloned() {
-                        Some(loc) => {
-                            if let Err(e) = tmux::switch_to_pane(&loc) {
+                        Some(_) => {
+                            if let Err(e) = tmux::switch_to_pane(pane_id) {
                                 app.last_error = Some(format!("switch failed: {e:#}"));
                             } else {
                                 app.last_error = None;

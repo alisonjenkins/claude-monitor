@@ -19,13 +19,14 @@ impl PaneLocation {
     }
 }
 
-/// Parse the output of `tmux list-panes -a -F "#{pane_id} #{session_name}
-/// #{window_index} #{pane_index}"` into a pane id -> location map. Lines that
-/// don't have exactly four space-separated fields are skipped.
+/// Parse the output of `tmux list-panes -a -F "#{pane_id}\t#{session_name}\t
+/// #{window_index}\t#{pane_index}"` into a pane id -> location map. Lines that
+/// don't have exactly four tab-separated fields are skipped. Tabs are used
+/// because tmux session names may contain spaces.
 pub fn parse_list_panes(output: &str) -> HashMap<String, PaneLocation> {
     let mut map = HashMap::new();
     for line in output.lines() {
-        let parts: Vec<&str> = line.splitn(4, ' ').collect();
+        let parts: Vec<&str> = line.splitn(4, '\t').collect();
         let [pane_id, session_name, window_index, pane_index] = parts[..] else {
             continue;
         };
@@ -51,7 +52,7 @@ pub fn list_panes() -> Result<Option<HashMap<String, PaneLocation>>> {
             "list-panes",
             "-a",
             "-F",
-            "#{pane_id} #{session_name} #{window_index} #{pane_index}",
+            "#{pane_id}\t#{session_name}\t#{window_index}\t#{pane_index}",
         ])
         .output()
         .context("failed to run tmux list-panes")?;
@@ -64,27 +65,30 @@ pub fn list_panes() -> Result<Option<HashMap<String, PaneLocation>>> {
     Ok(Some(parse_list_panes(&stdout)))
 }
 
-/// Switch to the tmux pane identified by `pane_id`, using an already
-/// resolved location so this never spawns an extra `list-panes` call.
-pub fn switch_to_pane(loc: &PaneLocation) -> Result<()> {
-    Command::new("tmux")
-        .args(["switch-client", "-t", &loc.session_name])
+/// Run one tmux command, failing if tmux exits non-zero so a failed switch
+/// is reported instead of silently ignored.
+fn run_tmux(args: &[&str]) -> Result<()> {
+    let output = Command::new("tmux")
+        .args(args)
         .output()
-        .context("failed to switch tmux client")?;
-
-    let window_target = format!("{}:{}", loc.session_name, loc.window_index);
-    Command::new("tmux")
-        .args(["select-window", "-t", &window_target])
-        .output()
-        .context("failed to select tmux window")?;
-
-    let pane_target = format!("{}.{}", window_target, loc.pane_index);
-    Command::new("tmux")
-        .args(["select-pane", "-t", &pane_target])
-        .output()
-        .context("failed to select tmux pane")?;
-
+        .with_context(|| format!("failed to run tmux {}", args.join(" ")))?;
+    if !output.status.success() {
+        anyhow::bail!(
+            "tmux {} failed: {}",
+            args.join(" "),
+            String::from_utf8_lossy(&output.stderr).trim()
+        );
+    }
     Ok(())
+}
+
+/// Switch the current tmux client to the pane with id `pane_id` (e.g. "%5").
+/// Pane ids are valid targets for every command, so this is immune to
+/// session names containing spaces or dots.
+pub fn switch_to_pane(pane_id: &str) -> Result<()> {
+    run_tmux(&["switch-client", "-t", pane_id])?;
+    run_tmux(&["select-window", "-t", pane_id])?;
+    run_tmux(&["select-pane", "-t", pane_id])
 }
 
 #[cfg(test)]
@@ -94,7 +98,7 @@ mod tests {
 
     #[test]
     fn parses_well_formed_lines() {
-        let out = "%0 main 0 0\n%1 main 0 1\n%2 other 1 0\n";
+        let out = "%0\tmain\t0\t0\n%1\tmain\t0\t1\n%2\tother\t1\t0\n";
         let map = parse_list_panes(out);
         assert_eq!(map.len(), 3);
         assert_eq!(
@@ -109,11 +113,20 @@ mod tests {
 
     #[test]
     fn skips_malformed_lines() {
-        let out = "%0 main 0 0\ngarbage\n\n%2 other 1 0\n";
+        let out = "%0\tmain\t0\t0\ngarbage\n\n%2\tother\t1\t0\n";
         let map = parse_list_panes(out);
         assert_eq!(map.len(), 2);
         assert!(map.contains_key("%0"));
         assert!(map.contains_key("%2"));
+    }
+
+    #[test]
+    fn session_names_may_contain_spaces() {
+        let map = parse_list_panes("%7\tmy project\t2\t1\n");
+        assert_eq!(
+            map.get("%7").map(|l| l.session_name.as_str()),
+            Some("my project")
+        );
     }
 
     #[test]
