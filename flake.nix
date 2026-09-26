@@ -136,5 +136,8 @@
       );
 
       formatter = forAllSystems (system: (pkgsFor system).nixfmt);
+
+      homeManagerModules.default = import ./nix/hm-module.nix { inherit self; };
+      homeManagerModules.claude-monitor = self.homeManagerModules.default;
     };
 }
