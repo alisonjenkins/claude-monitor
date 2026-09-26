@@ -125,7 +125,6 @@ impl App {
             .map(|s| s.session_id.clone());
     }
 
-    #[allow(dead_code)] // wired up by the next commit's key handling
     pub fn hide_selected(&mut self) {
         if let Some(s) = self.selected_session() {
             self.hidden.insert((s.session_id.clone(), s.state, s.since));

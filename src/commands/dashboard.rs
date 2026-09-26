@@ -101,13 +101,7 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>) -> Result
                             }
                         }
                     }
-                    KeyCode::Char('d') => {
-                        if let Some(s) = app.selected_session().cloned() {
-                            session::remove_session(&status_dir, &s.session_id)?;
-                            let sessions = session::read_all_sessions(&status_dir);
-                            app.update_sessions(sessions);
-                        }
-                    }
+                    KeyCode::Char('d') => app.hide_selected(),
                     _ => {}
                 }
             }
