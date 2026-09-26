@@ -126,6 +126,10 @@ fn handle_key(code: KeyCode, modifiers: KeyModifiers, app: &mut App) -> bool {
     if code == KeyCode::Char('c') && modifiers.contains(KeyModifiers::CONTROL) {
         return true;
     }
+    // Ctrl-D reaching the pane (e.g. an EOF on attach) must not act as `d`.
+    if modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) {
+        return false;
+    }
     match code {
         KeyCode::Char('q') | KeyCode::Esc => return true,
         KeyCode::Char('j') | KeyCode::Down => app.next(),
@@ -177,5 +181,51 @@ fn prune_stale_panes(app: &mut App, status_dir: &std::path::Path) {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::session::{SessionState, SessionStatus};
+
+    fn app_with_one_session() -> App {
+        let mut app = App::new();
+        app.update_sessions(vec![SessionStatus {
+            session_id: "s1".to_string(),
+            state: SessionState::Idle,
+            cwd: "/tmp/s1".to_string(),
+            tmux_pane: None,
+            since: chrono::Utc::now(),
+        }]);
+        app
+    }
+
+    #[test]
+    fn ctrl_letter_does_not_trigger_plain_binding() {
+        let mut app = app_with_one_session();
+        assert!(!handle_key(
+            KeyCode::Char('d'),
+            KeyModifiers::CONTROL,
+            &mut app
+        ));
+        assert!(!handle_key(KeyCode::Char('q'), KeyModifiers::ALT, &mut app));
+        assert!(app.hidden.is_empty());
+    }
+
+    #[test]
+    fn plain_d_hides_and_ctrl_c_quits() {
+        let mut app = app_with_one_session();
+        assert!(!handle_key(
+            KeyCode::Char('d'),
+            KeyModifiers::NONE,
+            &mut app
+        ));
+        assert_eq!(app.hidden.len(), 1);
+        assert!(handle_key(
+            KeyCode::Char('c'),
+            KeyModifiers::CONTROL,
+            &mut app
+        ));
     }
 }
