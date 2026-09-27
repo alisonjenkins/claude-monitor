@@ -3,6 +3,7 @@ name = "claude-monitor"
 version = "0.1.0"
 edition = "2021"
 description = "TUI dashboard for monitoring multiple Claude Code sessions in tmux"
+license = "MIT OR Apache-2.0"
 
 [[bin]]
 name = "claude-monitor"

@@ -59,7 +59,16 @@
           pkgs = pkgsFor system;
         in
         {
-          default = pkgs.rustPlatform.buildRustPackage (cargoBaseArgs // rustEnvFor pkgs);
+          default = pkgs.rustPlatform.buildRustPackage (
+            cargoBaseArgs
+            // rustEnvFor pkgs
+            // {
+              meta.license = with pkgs.lib.licenses; [
+                mit
+                asl20
+              ];
+            }
+          );
         }
       );
 
