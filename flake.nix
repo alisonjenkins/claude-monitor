@@ -89,6 +89,7 @@
             buildInputs = [
               rust
               pkgs.cargo-watch
+              pkgs.cargo-deny
             ]
             ++ pkgs.lib.optionals pkgs.stdenv.hostPlatform.isLinux [
               pkgs.pkg-config
