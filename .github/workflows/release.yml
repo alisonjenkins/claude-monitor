@@ -1,0 +1,94 @@
+name: Release
+
+# Dispatched by release-please once it has created the tag and release
+# (events from GITHUB_TOKEN don't trigger workflows, workflow_dispatch does).
+on:
+  push:
+    tags:
+      - 'v*'
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Tag to build and attach artifacts to (e.g. v0.2.0)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # Native runners: mac-notification-sys compiles Objective-C against the
+        # macOS SDK, so darwin can't be cross-built from Linux.
+        include:
+          - target: x86_64-unknown-linux-gnu
+            runner: ubuntu-24.04
+            name: linux-amd64
+          - target: aarch64-unknown-linux-gnu
+            runner: ubuntu-24.04-arm
+            name: linux-arm64
+          - target: x86_64-apple-darwin
+            runner: macos-latest
+            name: darwin-amd64
+          - target: aarch64-apple-darwin
+            runner: macos-latest
+            name: darwin-arm64
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Build
+        run: cargo build --locked --release --target ${{ matrix.target }}
+
+      - name: Rename binary
+        run: cp target/${{ matrix.target }}/release/claude-monitor claude-monitor-${{ matrix.name }}
+
+      - name: Generate checksum
+        run: shasum -a 256 claude-monitor-${{ matrix.name }} > claude-monitor-${{ matrix.name }}.sha256
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: claude-monitor-${{ matrix.name }}
+          path: |
+            claude-monitor-${{ matrix.name }}
+            claude-monitor-${{ matrix.name }}.sha256
+
+  release:
+    name: Attach to Release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Generate combined checksums
+        run: |
+          cd artifacts
+          cat ./*.sha256 > checksums.txt
+
+      # No generate_release_notes: release-please already wrote the notes.
+      - name: Upload to GitHub Release
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3
+        with:
+          tag_name: ${{ inputs.tag || github.ref_name }}
+          files: |
+            artifacts/claude-monitor-*
+            artifacts/checksums.txt
