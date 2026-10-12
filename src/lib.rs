@@ -1,5 +1,6 @@
 pub mod agents;
 pub mod cli;
+pub mod config;
 pub mod env;
 pub mod error;
 pub mod feed;
