@@ -22,11 +22,11 @@ const NOTIFIED_FILE: &str = "boot-check-notified";
 const NOTIFICATION_SUMMARY: &str = "AI sessions interrupted";
 
 pub fn run(env: &Env, state_dir: Option<&Path>, banner: bool) -> Result<Output, Error> {
-    if banner {
-        return Err(Error::NotImplemented("boot-check --banner".to_owned()));
-    }
     let dir =
         resolve_state_dir(state_dir, &StateDirEnv::from_process()).map_err(|e| store_error(&e))?;
+    if banner {
+        return show_banner(env, &dir);
+    }
     let store = open_viewer_store(env, Some(&dir))?;
     let report = crate::refresh::refresh(&store, env, &env.clock.now());
     for warning in &report.warnings {
@@ -74,6 +74,42 @@ pub fn run(env: &Env, state_dir: Option<&Path>, banner: bool) -> Result<Output, 
         },
         json: json!({ "ok": true, "interrupted": interrupted }),
     })
+}
+
+/// Shows the pending line through tmux and clears it, so only the first
+/// attaching client sees it. A failed display keeps the marker for the next one.
+fn show_banner(env: &Env, dir: &Path) -> Result<Output, Error> {
+    let marker = marker_path(dir);
+    let message = match std::fs::read_to_string(&marker) {
+        Ok(message) => message,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(banner_output(false)),
+        Err(source) => {
+            return Err(Error::Io {
+                operation: "read boot-check marker".to_owned(),
+                path: Some(marker),
+                source,
+            })
+        }
+    };
+    let message = message.trim();
+    if message.is_empty() {
+        remove_marker(&marker)?;
+        return Ok(banner_output(false));
+    }
+    env.tmux.display_message(message).map_err(|e| Error::Io {
+        operation: "show boot-check banner".to_owned(),
+        path: None,
+        source: std::io::Error::other(e.to_string()),
+    })?;
+    remove_marker(&marker)?;
+    Ok(banner_output(true))
+}
+
+fn banner_output(shown: bool) -> Output {
+    Output::Dual {
+        text: String::new(),
+        json: json!({ "ok": true, "shown": shown }),
+    }
 }
 
 fn banner_message(count: usize) -> String {

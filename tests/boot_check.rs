@@ -183,7 +183,6 @@ fn a_stale_marker_is_cleared_when_nothing_is_interrupted() {
 }
 
 #[test]
-#[ignore = "implemented by T076"]
 fn banner_prints_the_message_once_via_tmux_and_clears_the_marker() {
     let fx = fixture(&[
         ("a", State::Interrupted, false),
@@ -211,7 +210,6 @@ fn banner_prints_the_message_once_via_tmux_and_clears_the_marker() {
 }
 
 #[test]
-#[ignore = "implemented by T076"]
 fn a_second_banner_prints_nothing() {
     let fx = fixture(&[("a", State::Interrupted, false)]);
     boot_check(&fx, false);
@@ -224,7 +222,6 @@ fn a_second_banner_prints_nothing() {
 }
 
 #[test]
-#[ignore = "implemented by T076"]
 fn banner_without_a_marker_prints_nothing_and_spawns_nothing() {
     let fx = fixture(&[("a", State::Interrupted, false)]);
 
