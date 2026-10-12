@@ -144,7 +144,6 @@ mod grouping {
     use super::*;
 
     #[test]
-    #[ignore = "T111: implemented in the next commit"]
     fn p_groups_rows_under_their_project_and_p_again_restores_the_sections() {
         let app = loaded(&projects_rows());
         assert!(!app.grouped());
@@ -166,7 +165,6 @@ mod grouping {
     }
 
     #[test]
-    #[ignore = "T111: implemented in the next commit"]
     fn navigation_follows_the_grouped_display_order() {
         let app = keys(loaded(&projects_rows()), "p");
 
@@ -181,12 +179,12 @@ mod grouping {
                 "none-done"
             ]
         );
+        assert_eq!(app.selected_id(), Some("b-active"));
         let app = keys(app, "j");
-        assert_eq!(app.selected_id(), Some("a-finished"));
+        assert_eq!(app.selected_id(), Some("b-done"));
     }
 
     #[test]
-    #[ignore = "T111: implemented in the next commit"]
     fn the_selection_stays_on_the_same_session_across_the_toggle() {
         let app = keys(loaded(&projects_rows()), "jjj");
         let before = app.selected_id().map(str::to_owned);
@@ -197,7 +195,6 @@ mod grouping {
     }
 
     #[test]
-    #[ignore = "T111: implemented in the next commit"]
     fn unseen_and_dismissed_stay_global_in_the_grouped_view() {
         let mut rows = projects_rows();
         rows.push(row("seen-not", Some("Alpha"), SectionName::Unseen));
@@ -210,7 +207,6 @@ mod grouping {
     }
 
     #[test]
-    #[ignore = "T111: implemented in the next commit"]
     fn the_title_says_when_the_view_is_grouped() {
         let text = render(&keys(loaded(&projects_rows()), "p"));
 
@@ -235,7 +231,6 @@ mod filters {
     }
 
     #[test]
-    #[ignore = "T111: implemented in the next commit"]
     fn slash_opens_a_prompt_and_typing_narrows_the_list_as_it_goes() {
         let app = keys(loaded(&mixed()), "/");
         assert_eq!(app.prompt(), Some(&Prompt::Filter));
@@ -248,7 +243,6 @@ mod filters {
     }
 
     #[test]
-    #[ignore = "T111: implemented in the next commit"]
     fn the_prompt_takes_every_letter_including_command_keys() {
         let (app, effects) = press(loaded(&mixed()), KeyCode::Char('/'));
 
@@ -262,7 +256,6 @@ mod filters {
     }
 
     #[test]
-    #[ignore = "T111: implemented in the next commit"]
     fn backspace_widens_and_enter_keeps_the_filter_and_closes_the_prompt() {
         let app = keys(loaded(&mixed()), "/docs");
         assert_eq!(ids(&app), ["write-docs"]);
@@ -278,7 +271,6 @@ mod filters {
     }
 
     #[test]
-    #[ignore = "T111: implemented in the next commit"]
     fn esc_in_the_prompt_clears_the_text_and_closes_it_without_quitting() {
         let app = keys(loaded(&mixed()), "/docs");
 
@@ -291,7 +283,6 @@ mod filters {
     }
 
     #[test]
-    #[ignore = "T111: implemented in the next commit"]
     fn f_cycles_the_state_filter_and_the_title_names_it() {
         let app = keys(loaded(&mixed()), "f");
         assert_eq!(app.filter().state(), Some(State::NeedsPermission));
@@ -308,7 +299,6 @@ mod filters {
     }
 
     #[test]
-    #[ignore = "T111: implemented in the next commit"]
     fn a_cycles_the_agent_filter_over_the_kinds_present() {
         let app = keys(loaded(&mixed()), "a");
         assert_eq!(app.filter().agent(), Some("claude"));
@@ -324,7 +314,6 @@ mod filters {
     }
 
     #[test]
-    #[ignore = "T111: implemented in the next commit"]
     fn filters_combine() {
         let app = keys(loaded(&mixed()), "/the");
         let (app, _) = press(app, KeyCode::Enter);
@@ -334,7 +323,6 @@ mod filters {
     }
 
     #[test]
-    #[ignore = "T111: implemented in the next commit"]
     fn a_filter_that_hides_the_selection_moves_it_to_a_visible_row() {
         let app = keys(loaded(&mixed()), "j");
         assert_eq!(app.selected_id(), Some("write-docs"));
@@ -345,7 +333,6 @@ mod filters {
     }
 
     #[test]
-    #[ignore = "T111: implemented in the next commit"]
     fn nothing_matching_says_so_and_the_counts_follow_the_filter() {
         let app = keys(loaded(&mixed()), "/zzz");
 
@@ -356,7 +343,6 @@ mod filters {
     }
 
     #[test]
-    #[ignore = "T111: implemented in the next commit"]
     fn a_filter_never_sends_a_notification_for_rows_it_reveals() {
         let app = keys(loaded(&mixed()), "/zzz");
         let (app, _) = press(app, KeyCode::Esc);
@@ -378,7 +364,6 @@ mod dismissed {
     }
 
     #[test]
-    #[ignore = "T111: implemented in the next commit"]
     fn dismissed_sessions_are_hidden_until_s_shows_them() {
         let app = loaded(&with_dismissed());
         assert_eq!(ids(&app), ["live"]);
@@ -395,7 +380,6 @@ mod dismissed {
     }
 
     #[test]
-    #[ignore = "T111: implemented in the next commit"]
     fn a_dismissed_session_changing_state_does_not_notify() {
         let app = loaded(&with_dismissed());
         let mut rows = with_dismissed();
@@ -407,7 +391,6 @@ mod dismissed {
     }
 
     #[test]
-    #[ignore = "T111: implemented in the next commit"]
     fn hiding_the_selected_session_with_s_moves_the_selection() {
         let app = keys(loaded(&with_dismissed()), "Sj");
         assert_eq!(app.selected_id(), Some("gone"));
@@ -422,7 +405,6 @@ mod help {
     use super::*;
 
     #[test]
-    #[ignore = "T111: implemented in the next commit"]
     fn the_help_line_lists_the_new_keys() {
         let text = render(&loaded(&projects_rows()));
 

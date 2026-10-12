@@ -1,14 +1,14 @@
 //! The dashboard's state machine: `update` is pure and returns the effects
 //! (jump to a pane, notify, quit) for the runner to carry out.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::Path;
 
 use crossterm::event::{KeyCode, KeyModifiers};
 
 use super::detail::DetailView;
 use super::filter::Filter;
-use super::projects::{flat, Part};
+use super::projects::{flat, grouped, Part};
 use super::restore::{PreviewRow, RestoreResult, RestoreView, Step};
 use crate::cli::detail::SessionDetail;
 use crate::export::links::Check;
@@ -160,12 +160,6 @@ impl App {
         self.prompt.as_ref()
     }
 
-    /// The titled runs of rows in display order: the sections, or the
-    /// project groups when grouped.
-    pub fn parts(&self) -> Vec<Part<'_>> {
-        flat(self.sections())
-    }
-
     pub fn detail(&self) -> Option<&DetailView> {
         self.detail.as_ref()
     }
@@ -191,8 +185,9 @@ impl App {
         self.status.as_deref()
     }
 
-    /// Each section with the entries that are not hidden, in display order. A
-    /// collapsed unseen section shows none.
+    /// Each section with the entries that are neither hidden nor filtered
+    /// out, in display order. A collapsed unseen section shows none, and the
+    /// dismissed section is left out unless the filter shows it.
     pub fn sections(&self) -> Vec<(&Section, Vec<&OverviewEntry>)> {
         let Some(snapshot) = &self.snapshot else {
             return Vec::new();
@@ -201,23 +196,63 @@ impl App {
             .overview
             .sections
             .iter()
+            .filter(|section| {
+                section.name != SectionName::Dismissed || self.filter.show_dismissed()
+            })
             .map(|section| {
                 let collapsed = section.name == SectionName::Unseen && !self.unseen_expanded;
                 let shown = section
                     .sessions
                     .iter()
-                    .filter(|entry| !collapsed && !self.is_hidden(entry))
+                    .filter(|entry| !collapsed && self.is_listed(entry))
                     .collect();
                 (section, shown)
             })
             .collect()
     }
 
-    /// Entries in display order, hidden ones left out.
+    /// Not hidden with `d` and passing the filter.
+    fn is_listed(&self, entry: &OverviewEntry) -> bool {
+        !self.is_hidden(entry) && self.filter.matches(entry)
+    }
+
+    /// The titled runs of rows in display order: the sections, or the
+    /// project groups when grouped. A collapsed unseen part counts the rows
+    /// it would list.
+    pub fn parts(&self) -> Vec<Part<'_>> {
+        let sections = self.sections();
+        let mut parts = if self.grouped {
+            grouped(sections)
+        } else {
+            flat(sections)
+        };
+        if !self.unseen_expanded {
+            let unseen = self.unseen_listed();
+            for part in parts.iter_mut().filter(|p| p.name == SectionName::Unseen) {
+                part.total = unseen;
+            }
+        }
+        parts
+    }
+
+    fn unseen_listed(&self) -> usize {
+        self.snapshot.as_ref().map_or(0, |snapshot| {
+            snapshot
+                .overview
+                .sections
+                .iter()
+                .filter(|section| section.name == SectionName::Unseen)
+                .flat_map(|section| section.sessions.iter())
+                .filter(|entry| self.is_listed(entry))
+                .count()
+        })
+    }
+
+    /// Entries in display order, hidden and filtered-out ones left out.
     pub fn visible(&self) -> Vec<&OverviewEntry> {
-        self.sections()
+        self.parts()
             .into_iter()
-            .flat_map(|(_, entries)| entries)
+            .flat_map(|part| part.entries)
             .collect()
     }
 
@@ -291,6 +326,50 @@ impl App {
         }
     }
 
+    fn toggle_grouped(&mut self) {
+        let current = self.selected_index();
+        self.grouped = !self.grouped;
+        self.keep_selection(current.unwrap_or(0));
+    }
+
+    /// Applies `change` to the filter and keeps the selection on a row that
+    /// is still listed.
+    fn change_filter(&mut self, change: impl FnOnce(&mut Filter)) {
+        let current = self.selected_index();
+        change(&mut self.filter);
+        self.keep_selection(current.unwrap_or(0));
+    }
+
+    /// The agent kinds in the snapshot, sorted, once each.
+    fn agent_kinds(&self) -> Vec<String> {
+        let kinds: BTreeSet<&str> = self.snapshot.iter().flat_map(snapshot_agents).collect();
+        kinds.into_iter().map(str::to_owned).collect()
+    }
+
+    fn on_prompt_key(&mut self, code: KeyCode) -> Vec<Effect> {
+        let Some(prompt) = self.prompt.clone() else {
+            return Vec::new();
+        };
+        match (prompt, code) {
+            (Prompt::Filter, KeyCode::Char(c)) => {
+                let text = format!("{}{c}", self.filter.text());
+                self.change_filter(|filter| filter.set_text(text));
+            }
+            (Prompt::Filter, KeyCode::Backspace) => {
+                let mut text = self.filter.text().to_owned();
+                text.pop();
+                self.change_filter(|filter| filter.set_text(text));
+            }
+            (Prompt::Filter, KeyCode::Enter) => self.prompt = None,
+            (Prompt::Filter, KeyCode::Esc) => {
+                self.prompt = None;
+                self.change_filter(|filter| filter.set_text(String::new()));
+            }
+            _ => {}
+        }
+        Vec::new()
+    }
+
     fn toggle_unseen(&mut self) {
         let current = self.selected_index();
         self.unseen_expanded = !self.unseen_expanded;
@@ -333,7 +412,18 @@ impl App {
         if self.detail.is_some() {
             return self.on_detail_key(code);
         }
+        if self.prompt.is_some() {
+            return self.on_prompt_key(code);
+        }
         match code {
+            KeyCode::Char('p') => self.toggle_grouped(),
+            KeyCode::Char('/') => self.prompt = Some(Prompt::Filter),
+            KeyCode::Char('f') => self.change_filter(Filter::cycle_state),
+            KeyCode::Char('a') => {
+                let kinds = self.agent_kinds();
+                self.change_filter(|filter| filter.cycle_agent(&kinds));
+            }
+            KeyCode::Char('S') => self.change_filter(Filter::toggle_dismissed),
             KeyCode::Char('i') => return self.open_detail(),
             KeyCode::Char('L') => return self.open_detail_and_check_links(),
             KeyCode::Char('R') => self.open_restore(),
@@ -353,6 +443,7 @@ impl App {
             .overview
             .sections
             .iter()
+            .filter(|section| section.name != SectionName::Dismissed)
             .flat_map(|section| section.sessions.iter())
             .collect();
 
@@ -454,6 +545,15 @@ impl Default for App {
     fn default() -> Self {
         Self::new()
     }
+}
+
+fn snapshot_agents(snapshot: &Snapshot) -> impl Iterator<Item = &str> {
+    snapshot
+        .overview
+        .sections
+        .iter()
+        .flat_map(|section| section.sessions.iter())
+        .map(|entry| entry.agent_kind.as_str())
 }
 
 fn is_notifiable(state: State) -> bool {

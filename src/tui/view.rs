@@ -6,7 +6,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph, Wrap};
 use ratatui::Frame;
 
-use super::app::App;
+use super::app::{App, Prompt};
 use super::detail::detail_lines;
 use super::restore::{Group, PreviewRow, RestoreResult, RestoreRow, RestoreView, Stage};
 use crate::cli::age;
@@ -23,7 +23,7 @@ pub(super) const GREEN: Color = Color::Rgb(166, 227, 161);
 pub(super) const RED: Color = Color::Rgb(243, 139, 168);
 
 const TITLE_HEIGHT: u16 = 3;
-const HELP_HEIGHT: u16 = 3;
+const HELP_HEIGHT: u16 = 4;
 const BORDER_ROWS: u16 = 2;
 const LABEL_WIDTH: usize = 11;
 const AGENT_WIDTH: usize = 8;
@@ -196,21 +196,21 @@ fn body_lines(app: &App, width: usize) -> (Vec<Line<'static>>, usize) {
     };
     let mut lines = Vec::new();
     let mut selected_line = 0;
-    for (section, entries) in app.sections() {
-        let collapsed = section.name == SectionName::Unseen && !app.unseen_expanded();
-        if entries.is_empty() && (!collapsed || section.sessions.is_empty()) {
+    for part in app.parts() {
+        let collapsed = part.name == SectionName::Unseen && !app.unseen_expanded();
+        if part.entries.is_empty() && (!collapsed || part.total == 0) {
             continue;
         }
         let (count, hint) = if collapsed {
-            (section.sessions.len(), " — u to show")
+            (part.total, " — u to show")
         } else {
-            (entries.len(), "")
+            (part.entries.len(), "")
         };
         lines.push(Line::from(Span::styled(
-            format!("{} ({count}){hint}", section_title(section.name)),
+            format!("{} ({count}){hint}", part.title()),
             Style::default().fg(MAUVE).add_modifier(Modifier::BOLD),
         )));
-        for entry in entries {
+        for entry in part.entries {
             let selected = app.selected_id() == Some(entry.id.as_str());
             if selected {
                 selected_line = lines.len();
@@ -220,7 +220,9 @@ fn body_lines(app: &App, width: usize) -> (Vec<Line<'static>>, usize) {
         }
     }
     if lines.is_empty() {
-        let text = if app.hidden_count() > 0 {
+        let text = if app.filter().narrows() {
+            "No sessions match the filter."
+        } else if app.hidden_count() > 0 {
             "Every session is hidden with d; each returns when its state changes."
         } else {
             "No sessions yet. They appear here once an agent reports in."
@@ -241,7 +243,7 @@ fn title_line(app: &App) -> String {
     )
 }
 
-fn help_line(app: &App) -> Line<'static> {
+fn help_lines(app: &App) -> Vec<Line<'static>> {
     let mut spans = Vec::new();
     let notice = app
         .status()
@@ -253,7 +255,7 @@ fn help_line(app: &App) -> Line<'static> {
     let key = Style::default().fg(MAUVE);
     if let Some(restore) = app.restore() {
         spans.extend(restore_help(restore.stage(), key));
-        return Line::from(spans);
+        return vec![Line::from(spans)];
     }
     if app.detail().is_some() {
         spans.extend([
@@ -262,27 +264,74 @@ fn help_line(app: &App) -> Line<'static> {
             Span::styled("Esc", key),
             Span::raw(" close"),
         ]);
-        return Line::from(spans);
+        return vec![Line::from(spans)];
     }
-    spans.extend([
-        Span::styled(" j/k", key),
-        Span::raw(" navigate  "),
+    if let Some(prompt) = app.prompt() {
+        spans.extend(prompt_help(prompt, app.filter().text(), key));
+        return vec![Line::from(spans)];
+    }
+    spans.extend(keys_help(
+        key,
+        &[
+            ("j/k", "navigate"),
+            ("Enter", "jump"),
+            ("i", "detail"),
+            ("L", "links"),
+            ("p", "projects"),
+            ("/", "filter"),
+            ("f", "state"),
+            ("a", "agent"),
+            ("S", "dismissed"),
+        ],
+    ));
+    let second = keys_help(
+        key,
+        &[
+            ("d", "hide"),
+            ("u", "unseen"),
+            ("R", "restore"),
+            ("q", "quit"),
+        ],
+    );
+    vec![Line::from(spans), Line::from(second)]
+}
+
+/// ` j/k navigate  Enter jump`: each key styled, each label plain.
+fn keys_help(key: Style, bindings: &[(&'static str, &'static str)]) -> Vec<Span<'static>> {
+    bindings
+        .iter()
+        .enumerate()
+        .flat_map(|(at, (name, label))| {
+            let lead = if at == 0 { " " } else { "  " };
+            [
+                Span::raw(lead),
+                Span::styled(*name, key),
+                Span::raw(format!(" {label}")),
+            ]
+        })
+        .collect()
+}
+
+fn prompt_help(prompt: &Prompt, filter_text: &str, key: Style) -> Vec<Span<'static>> {
+    let (shown, enter) = match prompt {
+        Prompt::Filter => (format!(" /{filter_text}"), "keep"),
+        Prompt::Note { text, .. } => (format!(" note: {text}"), "save"),
+    };
+    let leave = match prompt {
+        Prompt::Filter => "clear",
+        Prompt::Note { .. } => "cancel",
+    };
+    vec![
+        Span::styled(
+            format!("{shown}▏"),
+            Style::default().add_modifier(Modifier::BOLD),
+        ),
+        Span::raw("   "),
         Span::styled("Enter", key),
-        Span::raw(" jump  "),
-        Span::styled("i", key),
-        Span::raw(" detail  "),
-        Span::styled("L", key),
-        Span::raw(" links  "),
-        Span::styled("d", key),
-        Span::raw(" hide  "),
-        Span::styled("u", key),
-        Span::raw(" unseen  "),
-        Span::styled("R", key),
-        Span::raw(" restore  "),
-        Span::styled("q", key),
-        Span::raw(" quit"),
-    ]);
-    Line::from(spans)
+        Span::raw(format!(" {enter}  ")),
+        Span::styled("Esc", key),
+        Span::raw(format!(" {leave}")),
+    ]
 }
 
 fn scroll_offset(selected_line: usize, visible_rows: u16) -> u16 {
@@ -313,7 +362,7 @@ pub fn view(app: &App, frame: &mut Frame) {
     );
     render_body(app, frame, body_area);
     frame.render_widget(
-        Paragraph::new(help_line(app)).block(
+        Paragraph::new(help_lines(app)).block(
             Block::default()
                 .borders(Borders::ALL)
                 .border_style(Style::default().fg(OVERLAY0)),
@@ -322,28 +371,47 @@ pub fn view(app: &App, frame: &mut Frame) {
     );
 }
 
+/// `Sessions`, then the view and filters in force: ` · by project · state idle`.
+fn sessions_title(app: &App) -> String {
+    let notes: Vec<String> = [
+        app.grouped().then(|| "by project".to_owned()),
+        app.filter().summary(),
+        app.filter()
+            .show_dismissed()
+            .then(|| "with dismissed".to_owned()),
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
+    if notes.is_empty() {
+        " Sessions ".to_owned()
+    } else {
+        format!(" Sessions · {} ", notes.join(" · "))
+    }
+}
+
 fn render_body(app: &App, frame: &mut Frame, area: Rect) {
     let inner_width = usize::from(area.width.saturating_sub(BORDER_ROWS));
     let (lines, selected_line, title, wrap) = match (app.detail(), app.restore(), app.snapshot()) {
         (Some(open), _, _) => {
             let entry = app.visible().into_iter().find(|e| e.id == open.id());
-            (detail_lines(open, entry), 0, " Detail ", true)
+            (detail_lines(open, entry), 0, " Detail ".to_owned(), true)
         }
         (None, Some(restore), Some(snapshot)) => {
             let (lines, selected) = restore_lines(restore, &snapshot.now, inner_width);
             // Refusal messages are long; the sessions list truncates instead.
             let wrap = !matches!(restore.stage(), Stage::Select);
-            (lines, selected, " Restore ", wrap)
+            (lines, selected, " Restore ".to_owned(), wrap)
         }
         _ => {
             let (lines, selected) = body_lines(app, inner_width);
-            (lines, selected, " Sessions ", false)
+            (lines, selected, sessions_title(app), false)
         }
     };
     let offset = scroll_offset(selected_line, area.height.saturating_sub(BORDER_ROWS));
     let paragraph = Paragraph::new(lines)
         .scroll((offset, 0))
-        .block(block(title));
+        .block(block(&title));
     frame.render_widget(
         if wrap {
             paragraph.wrap(Wrap { trim: false })
