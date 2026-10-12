@@ -172,6 +172,8 @@ impl Fx {
             tmux_pane: None,
             clock: &clock,
             git: &NoGit,
+            agent_pid: None,
+            env: None,
         };
         ingest(&ctx, &raw.to_string());
     }

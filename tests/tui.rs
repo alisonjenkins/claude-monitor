@@ -618,6 +618,8 @@ impl Rig {
                 tmux_pane: pane,
                 clock: &self.clock,
                 git: &FixedGit,
+                agent_pid: None,
+                env: None,
             },
             raw,
         );

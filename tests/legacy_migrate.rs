@@ -344,6 +344,8 @@ fn the_hook_path_never_triggers_migration() {
         tmux_pane: None,
         clock: &h.clock,
         git: &NoGit,
+        agent_pid: None,
+        env: None,
     };
 
     ingest(

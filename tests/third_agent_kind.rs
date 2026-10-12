@@ -126,6 +126,8 @@ impl Fixture {
             tmux_pane: None,
             clock: &clock,
             git: &NoGit,
+            agent_pid: None,
+            env: None,
         };
         let claude = claude_monitor::agents::claude::ClaudeKind;
         let kinds: [&dyn AgentKind; 2] = [&claude, &FakeAgent];

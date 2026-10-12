@@ -60,6 +60,8 @@ impl Harness {
             tmux_pane: pane,
             clock: &self.clock,
             git: &self.git,
+            agent_pid: None,
+            env: None,
         };
         ingest(&ctx, raw);
     }

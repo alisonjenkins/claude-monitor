@@ -89,6 +89,11 @@ pub struct HookContext<'a> {
     pub tmux_pane: Option<&'a str>,
     pub clock: &'a dyn Clock,
     pub git: &'a dyn GitProbe,
+    /// The agent process: the hook's parent. `None` records no pid.
+    pub agent_pid: Option<u32>,
+    /// Providers used to probe the agent process and the boot id. `None`
+    /// records neither.
+    pub env: Option<&'a Env>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -428,6 +433,8 @@ pub fn run(agent: Option<&str>, state_dir: Option<&Path>, env: &Env) {
         tmux_pane: tmux_pane.as_deref(),
         clock: env.clock.as_ref(),
         git: &FsGit,
+        agent_pid: None,
+        env: None,
     };
 
     let mut input = String::new();
