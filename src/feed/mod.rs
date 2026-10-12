@@ -135,11 +135,31 @@ impl<S: EventSource, C: Monotonic> ChangeFeed<S, C> {
         self.throttle.deadline()
     }
 
-    /// Blocks on the source for up to `timeout`, then polls. A stub until the
-    /// implementing commit.
+    /// Blocks on the source for up to `timeout` and returns the first non-empty
+    /// batch, or an empty one at the timeout. For a consumer on its own thread:
+    /// it sleeps in the source instead of looping on [`Self::poll`]. Needs a
+    /// clock that advances by itself, so not [`ManualClock`].
     pub fn wait_poll(&mut self, timeout: Duration) -> Result<Vec<EventRow>, EventsError> {
-        let _ = timeout;
-        Ok(Vec::new())
+        let start = self.clock.now();
+        let deadline = start.checked_add(timeout).unwrap_or(start);
+        loop {
+            if !self.pending {
+                let now = self.clock.now();
+                let remaining = deadline.saturating_duration_since(now);
+                let slice = self
+                    .throttle
+                    .deadline()
+                    .map_or(remaining, |window| window.saturating_duration_since(now))
+                    .min(remaining);
+                if self.source.wait(slice) {
+                    self.throttle.wake(self.clock.now());
+                }
+            }
+            let rows = self.poll()?;
+            if !rows.is_empty() || self.clock.now() >= deadline {
+                return Ok(rows);
+            }
+        }
     }
 
     /// Non-blocking. Rows after the cursor once a window has fired (or a replay

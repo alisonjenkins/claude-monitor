@@ -316,7 +316,6 @@ fn real_clock_rig() -> RealClockRig {
 }
 
 #[test]
-#[ignore = "implemented with ChangeFeed::wait_poll"]
 fn wait_poll_blocks_until_the_window_fires_then_returns_the_rows() {
     let (_dir, writer, mut feed, wake) = real_clock_rig();
     let seq = append(&writer, 1);
@@ -334,7 +333,6 @@ fn wait_poll_blocks_until_the_window_fires_then_returns_the_rows() {
 }
 
 #[test]
-#[ignore = "implemented with ChangeFeed::wait_poll"]
 fn wait_poll_returns_empty_after_the_timeout_when_nothing_happens() {
     let (_dir, _writer, mut feed, _wake) = real_clock_rig();
 
@@ -346,7 +344,6 @@ fn wait_poll_returns_empty_after_the_timeout_when_nothing_happens() {
 }
 
 #[test]
-#[ignore = "implemented with ChangeFeed::wait_poll"]
 fn wait_poll_returns_a_replay_at_once() {
     let (_dir, writer, mut feed, _wake) = real_clock_rig();
     let first = append(&writer, 1);
