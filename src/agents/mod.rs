@@ -14,6 +14,7 @@ use crate::model::{Event, Session};
 
 pub mod claude;
 pub mod claude_discover;
+pub mod copilot;
 
 /// A hook payload that is present but malformed.
 ///
