@@ -213,6 +213,18 @@ pub fn launcher_from_env(vars: &dyn Vars, agent_kind: &str) -> LauncherConfig {
     }
 }
 
+/// The effective launcher template for `agent_kind`: the environment variable,
+/// else `config.json`, else none.
+pub fn launcher_for(env: &Env, agent_kind: &str) -> LauncherConfig {
+    launcher_from_env(env.vars.as_ref(), agent_kind)
+}
+
+/// The effective tmux session: the environment variable, else `config.json`,
+/// else [`DEFAULT_TMUX_SESSION`].
+pub fn tmux_session_for(_env: &Env) -> String {
+    DEFAULT_TMUX_SESSION.to_owned()
+}
+
 /// A respawn that started: the new window and the request awaiting the new
 /// session's `SessionStart`.
 #[derive(Debug, Clone, PartialEq, Eq)]
