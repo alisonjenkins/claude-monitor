@@ -420,7 +420,6 @@ mod respawn_through_the_restore_preview {
     }
 
     #[test]
-    #[ignore = "the Respawn button still starts a session directly"]
     fn the_overview_button_links_to_the_preview_instead_of_starting() {
         let web = Plain::new();
         web.put("s-int", State::Interrupted);
@@ -435,7 +434,6 @@ mod respawn_through_the_restore_preview {
     }
 
     #[test]
-    #[ignore = "the Respawn button still starts a session directly"]
     fn the_session_page_button_links_to_the_preview_too() {
         let web = Plain::new();
         web.put("s-int", State::Interrupted);
@@ -456,7 +454,6 @@ mod respawn_through_the_restore_preview {
     }
 
     #[test]
-    #[ignore = "the Respawn button still starts a session directly"]
     fn the_preview_is_for_that_one_session_and_starts_nothing() {
         let Some(fx) = Fixture::new() else { return };
         fx.add_session("int1", State::Interrupted, "a");
@@ -481,7 +478,6 @@ mod respawn_through_the_restore_preview {
     }
 
     #[test]
-    #[ignore = "the Respawn button still starts a session directly"]
     fn a_finished_session_can_be_previewed_too() {
         let Some(fx) = Fixture::new() else { return };
         fx.add_session("fin1", State::Finished, "c");
@@ -497,7 +493,6 @@ mod respawn_through_the_restore_preview {
     }
 
     #[test]
-    #[ignore = "the Respawn button still starts a session directly"]
     fn a_session_that_cannot_start_shows_its_refusal_and_no_confirm_form() {
         let Some(fx) = Fixture::new() else { return };
         let gone = fx.add_session("gone", State::Interrupted, "gone-dir");
@@ -511,7 +506,6 @@ mod respawn_through_the_restore_preview {
     }
 
     #[test]
-    #[ignore = "the Respawn button still starts a session directly"]
     fn json_lists_only_that_session() {
         let Some(fx) = Fixture::new() else { return };
         fx.add_session("int1", State::Interrupted, "a");
@@ -527,7 +521,6 @@ mod respawn_through_the_restore_preview {
     }
 
     #[test]
-    #[ignore = "the Respawn button still starts a session directly"]
     fn an_unknown_session_is_a_404_page() {
         let web = Plain::new();
 

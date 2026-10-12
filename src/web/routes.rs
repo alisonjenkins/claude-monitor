@@ -22,7 +22,7 @@ use super::AppState;
 use crate::cli::confirm::{self, Question};
 use crate::cli::migrate::open_viewer_store;
 use crate::cli::respawn::{plan_all, started_json, usage_error};
-use crate::cli::restore::candidates;
+use crate::cli::restore::{self, candidates};
 use crate::cli::show::resolve;
 use crate::cli::{self, Command, Output, ProjectAction};
 use crate::env::Env;
@@ -1201,6 +1201,8 @@ async fn respawn_many(State(state): State<AppState>, body: Payload) -> Result<Re
 #[derive(Debug, Default, Deserialize)]
 pub struct RestoreParams {
     include_finished: Option<String>,
+    /// Preview this one session instead of every interrupted one.
+    session: Option<String>,
 }
 
 async fn restore(
@@ -1210,21 +1212,33 @@ async fn restore(
 ) -> Response {
     let json = wants_json(&headers);
     let include_finished = params.include_finished.as_deref().is_some_and(truthy);
+    let only = blank(params.session);
     let result = async {
-        let output = run(
-            &state,
-            Command::Restore {
-                all_interrupted: false,
-                include_finished,
-                fresh: false,
-                skip: Vec::new(),
-                yes: false,
-            },
-        )
-        .await?;
+        let output = match &only {
+            Some(session) => {
+                let (env, dir, session) =
+                    (state.env.clone(), state.state_dir.clone(), session.clone());
+                blocking(move || restore::preview_session(&env, Some(&dir), &session))
+                    .await?
+                    .map_err(ApiError::from)?
+            }
+            None => {
+                run(
+                    &state,
+                    Command::Restore {
+                        all_interrupted: false,
+                        include_finished,
+                        fresh: false,
+                        skip: Vec::new(),
+                        yes: false,
+                    },
+                )
+                .await?
+            }
+        };
         let preview = output_json(&output, false);
         Ok(page_or_json(&state, json, &preview, |ctx| {
-            pages::restore(ctx, &preview, include_finished)
+            pages::restore(ctx, &preview, include_finished, only.as_deref())
         }))
     }
     .await;

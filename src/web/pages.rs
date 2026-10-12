@@ -146,6 +146,14 @@ fn post_button(url: &str, label: &str, primary: bool) -> Markup {
     }
 }
 
+/// Respawn starts a process, so the button goes to the preview first and the
+/// start waits for the confirm there.
+fn respawn_link(id: &str, primary: bool) -> Markup {
+    html! {
+        a.btn.primary[primary] href=(format!("/restore?session={}", seg(id))) { "Respawn" }
+    }
+}
+
 fn row_actions(entry: &Value) -> Markup {
     let id = str_of(entry, "id").unwrap_or_default();
     let state = str_of(entry, "state").unwrap_or_default();
@@ -153,7 +161,7 @@ fn row_actions(entry: &Value) -> Markup {
     let base = format!("/sessions/{}", seg(id));
     html! {
         @if state == "interrupted" {
-            (post_button(&format!("{base}/respawn"), "Respawn", true))
+            (respawn_link(id, true))
         } @else if section == "finished" {
             (post_button(&format!("{base}/done"), "Mark done", false))
         } @else if section == "done" {
@@ -620,7 +628,7 @@ pub fn session(ctx: &Ctx<'_>, detail: &Value) -> String {
         }
         div.inline {
             @if state == "interrupted" || section_name == "finished" || section_name == "done" {
-                (post_button(&format!("{base}/respawn"), "Respawn", state == "interrupted"))
+                (respawn_link(id, state == "interrupted"))
             }
             @if section_name == "finished" {
                 (post_button(&format!("{base}/done"), "Mark done", false))
@@ -701,16 +709,28 @@ pub fn session(ctx: &Ctx<'_>, detail: &Value) -> String {
     .into_string()
 }
 
-pub fn restore(ctx: &Ctx<'_>, preview: &Value, include_finished: bool) -> String {
+/// The restore preview; with `only` it is for that one session, which is how
+/// a Respawn button asks first.
+pub fn restore(
+    ctx: &Ctx<'_>,
+    preview: &Value,
+    include_finished: bool,
+    only: Option<&str>,
+) -> String {
     let start = list_of(preview, "would_start");
     let refuse = list_of(preview, "would_refuse");
     let inner = html! {
-        h1 { "Restore" }
+        @if let Some(id) = only {
+            h1 { "Respawn " span.mono { (short(id)) } }
+        } @else {
+            h1 { "Restore" }
+        }
         p.muted {
             "Nothing starts until you confirm. Sessions open as windows in tmux session "
             span.mono { (str_of(preview, "tmux_session").unwrap_or_default()) } "."
         }
-        @if include_finished {
+        @if only.is_some() {
+        } @else if include_finished {
             p { a href="/restore" { "Hide finished sessions" } }
         } @else {
             p { a href="/restore?include_finished=true" { "Include finished sessions" } }
@@ -745,7 +765,14 @@ pub fn restore(ctx: &Ctx<'_>, preview: &Value, include_finished: bool) -> String
                         }
                     }
                 }
-                div.stack { button.btn.primary type="submit" { "Restore selected" } }
+                @if let Some(id) = only {
+                    div.inline {
+                        button.btn.primary type="submit" { "Respawn" }
+                        a href=(format!("/sessions/{}", seg(id))) { "Cancel" }
+                    }
+                } @else {
+                    div.stack { button.btn.primary type="submit" { "Restore selected" } }
+                }
             }
         }
         @if !refuse.is_empty() {
@@ -771,13 +798,13 @@ pub fn restore(ctx: &Ctx<'_>, preview: &Value, include_finished: bool) -> String
             }
         }
     };
-    let url = if include_finished {
-        "/restore?include_finished=true"
-    } else {
-        "/restore"
+    let url = match (only, include_finished) {
+        (Some(id), _) => format!("/restore?session={}", seg(id)),
+        (None, true) => "/restore?include_finished=true".to_owned(),
+        (None, false) => "/restore".to_owned(),
     };
     let waiting = start.len();
-    let body = live("content", url, waiting, inner);
+    let body = live("content", &url, waiting, inner);
     layout(ctx, "Restore · claude-monitor", waiting, "content", body).into_string()
 }
 

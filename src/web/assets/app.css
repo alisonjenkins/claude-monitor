@@ -120,6 +120,7 @@ textarea { width: 100%; min-height: 5rem; }
   min-height: 2.75rem;
   cursor: pointer;
 }
+a.btn { display: inline-flex; align-items: center; text-decoration: none; }
 .btn:hover { background: var(--paper-2); }
 .btn.primary { background: var(--signal); border-color: var(--signal); color: #fff; }
 @media (prefers-color-scheme: dark) { .btn.primary { color: #1a1205; } }

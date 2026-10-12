@@ -78,6 +78,23 @@ pub fn run(env: &Env, state_dir: Option<&Path>, args: RestoreArgs) -> Result<Out
     finish("restore", &items, &skipped)
 }
 
+/// What starting `session` alone would do, in the shape `restore` previews
+/// with. Starts nothing; works for a finished or done session as well.
+#[cfg(feature = "web")]
+pub(crate) fn preview_session(
+    env: &Env,
+    state_dir: Option<&Path>,
+    session: &str,
+) -> Result<Output, Error> {
+    let store = open_viewer_store(env, state_dir)?;
+    let id = resolve(&store, session)?;
+    let planned = plan_all(&store, env, &[id], &PlanFlags::default())?;
+    if let Some(error) = usage_error(&planned) {
+        return Err(error);
+    }
+    Ok(preview(env, &planned, &[]))
+}
+
 /// Interrupted sessions the user has not dismissed, plus finished ones when
 /// asked, oldest first.
 pub(crate) fn candidates(store: &Store, include_finished: bool) -> Result<Vec<Session>, Error> {
