@@ -8,6 +8,7 @@ use crate::hook;
 use crate::session;
 use crate::store::{resolve_state_dir, StateDirEnv};
 
+mod boot_check;
 mod command;
 mod list;
 pub mod migrate;
@@ -103,6 +104,12 @@ enum Commands {
     },
     /// Log one line per session state change until interrupted (SIGINT or SIGTERM)
     Watch,
+    /// Count sessions a reboot or crash interrupted, notify once and start nothing
+    BootCheck {
+        /// Show the pending notice as a tmux message once, then clear it
+        #[arg(long)]
+        banner: bool,
+    },
 }
 
 impl Cli {
@@ -156,6 +163,7 @@ impl Cli {
                 session: session.clone(),
             },
             Some(Commands::Watch) => Command::Watch,
+            Some(Commands::BootCheck { banner }) => Command::BootCheck { banner: *banner },
         }
     }
 }
@@ -219,6 +227,7 @@ pub fn run_with(
         Command::Show { session } => show::run(env, state_dir, &session),
         Command::Reconcile { pane, session } => reconcile::run(env, state_dir, pane, session),
         Command::Watch => watch::run(env, state_dir),
+        Command::BootCheck { banner } => boot_check::run(env, state_dir, banner),
         Command::Hook { agent, event } => {
             hook::run(agent.as_deref(), event.as_deref(), state_dir, env);
             Ok(Output::empty())
@@ -301,7 +310,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "implemented by T075"]
     fn boot_check_subcommand_maps_to_boot_check() {
         let cli = Cli::try_parse_from(["claude-monitor", "boot-check"]).unwrap();
         assert_eq!(cli.command(), Command::BootCheck { banner: false });

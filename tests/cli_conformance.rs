@@ -11,8 +11,9 @@
 //!
 //! Rule: the task that implements a command removes that command's
 //! `#[ignore]` (its reason names the task) and makes `implemented` pass.
-//! `hook`, `dashboard`, `migrate`, `list`, `show`, `reconcile` and `watch`
-//! exist and are not ignored; `migrate`, `list`, `show` and `reconcile` have
+//! `hook`, `dashboard`, `migrate`, `list`, `show`, `reconcile`, `boot-check`
+//! and `watch` exist and are not ignored; `migrate`, `list`, `show`,
+//! `reconcile` and `boot-check` have
 //! their own tests because they need a temporary store, and `watch` runs until
 //! signalled, so `tests/watch_cli.rs` drives the real binary.
 
@@ -111,7 +112,6 @@ macro_rules! command_tests {
 command_tests! {
     restore => "restore", "implemented by T073";
     respawn => "respawn", "implemented by T073";
-    boot_check => "boot-check", "implemented by T075";
     project => "project", "implemented by T108";
     group => "group", "implemented by T108";
     note => "note", "implemented by T109";
@@ -204,6 +204,26 @@ mod reconcile {
     }
 }
 
+mod boot_check {
+    use super::*;
+    use claude_monitor::cli::run_in;
+
+    /// Runs against a temporary state directory: `boot-check` writes a marker
+    /// file there and must never touch the real one.
+    #[test]
+    fn implemented() {
+        let state = tempfile::tempdir().unwrap();
+        let info = Command::all()
+            .iter()
+            .find(|info| info.name == "boot-check")
+            .unwrap();
+        let fake = FakeEnv::new();
+        let result = run_in((info.example)(), &fake.env, Some(state.path()));
+        assert!(result.is_ok(), "{result:?}");
+        assert_contract("boot-check", &result);
+    }
+}
+
 /// `list` and `show` read the store, so they run against a temporary state
 /// directory with the legacy-import marker already recorded; the real
 /// runtime directory is then never read.
@@ -264,7 +284,8 @@ mod dashboard {
 fn every_command_has_generated_tests_with_the_right_task() {
     for info in Command::all() {
         match info.name {
-            "hook" | "dashboard" | "migrate" | "list" | "show" | "reconcile" | "watch" => {}
+            "hook" | "dashboard" | "migrate" | "list" | "show" | "reconcile" | "watch"
+            | "boot-check" => {}
             name => {
                 let reason = GENERATED
                     .iter()
@@ -279,7 +300,7 @@ fn every_command_has_generated_tests_with_the_right_task() {
             }
         }
     }
-    assert_eq!(GENERATED.len() + 7, Command::all().len());
+    assert_eq!(GENERATED.len() + 8, Command::all().len());
 }
 
 #[test]

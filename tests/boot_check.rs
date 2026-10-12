@@ -60,7 +60,6 @@ fn spawn_calls(fx: &Fx) -> Vec<TmuxCall> {
 }
 
 #[test]
-#[ignore = "implemented by T075"]
 fn interrupted_sessions_give_one_notification_and_a_marker() {
     let fx = fixture(&[
         ("a", State::Interrupted, false),
@@ -82,7 +81,58 @@ fn interrupted_sessions_give_one_notification_and_a_marker() {
 }
 
 #[test]
-#[ignore = "implemented by T075"]
+fn a_second_run_over_the_same_sessions_does_not_notify_again() {
+    let fx = fixture(&[("a", State::Interrupted, false)]);
+
+    let first = boot_check(&fx, false);
+    boot_check(&fx, true);
+    let second = boot_check(&fx, false);
+
+    assert_eq!(fx.fake.notifier.sent().len(), 1);
+    assert!(!marker_exists(&fx), "the shown banner must not come back");
+    assert_eq!(first["interrupted"], 1);
+    assert_eq!(second["interrupted"], 1);
+}
+
+#[test]
+fn a_newly_interrupted_session_notifies_again() {
+    let fx = fixture(&[("a", State::Interrupted, false)]);
+    boot_check(&fx, false);
+    boot_check(&fx, true);
+
+    let store = Store::open_in_dir(fx.state.path(), &StoreOptions::viewer()).unwrap();
+    let mut late = Session::new("b", "claude", "b", "/w/proj", "2026-10-12T09:00:00Z");
+    late.state = State::Interrupted;
+    store.upsert_session(&late).unwrap();
+    boot_check(&fx, false);
+
+    let sent = fx.fake.notifier.sent();
+    assert_eq!(sent.len(), 2, "{sent:?}");
+    assert!(sent[1].1.contains('2'), "{sent:?}");
+    assert!(marker_exists(&fx));
+}
+
+#[test]
+fn once_everything_is_cleared_a_later_interruption_notifies_again() {
+    let fx = fixture(&[("a", State::Interrupted, false)]);
+    boot_check(&fx, false);
+    let store = Store::open_in_dir(fx.state.path(), &StoreOptions::viewer()).unwrap();
+    let mut session = store
+        .get_session_by_agent_id("claude", "a")
+        .unwrap()
+        .unwrap();
+    session.dismissed = true;
+    store.upsert_session(&session).unwrap();
+    boot_check(&fx, false);
+    session.dismissed = false;
+    store.upsert_session(&session).unwrap();
+
+    boot_check(&fx, false);
+
+    assert_eq!(fx.fake.notifier.sent().len(), 2);
+}
+
+#[test]
 fn boot_check_starts_nothing() {
     let fx = fixture(&[("a", State::Interrupted, false)]);
 
@@ -98,7 +148,6 @@ fn boot_check_starts_nothing() {
 }
 
 #[test]
-#[ignore = "implemented by T075"]
 fn no_interrupted_sessions_emits_nothing() {
     let fx = fixture(&[("a", State::Idle, false), ("b", State::Working, false)]);
 
@@ -110,7 +159,6 @@ fn no_interrupted_sessions_emits_nothing() {
 }
 
 #[test]
-#[ignore = "implemented by T075"]
 fn finished_and_dismissed_sessions_are_not_counted() {
     let fx = fixture(&[
         ("fin", State::Finished, false),
@@ -125,7 +173,6 @@ fn finished_and_dismissed_sessions_are_not_counted() {
 }
 
 #[test]
-#[ignore = "implemented by T075"]
 fn a_stale_marker_is_cleared_when_nothing_is_interrupted() {
     let fx = fixture(&[("a", State::Idle, false)]);
     std::fs::write(fx.state.path().join(MARKER), "1 AI session interrupted").unwrap();
