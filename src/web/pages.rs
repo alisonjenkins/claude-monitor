@@ -294,7 +294,8 @@ fn row(
             div.actions {
                 (row_actions(entry))
                 @if style.movable.is_some() {
-                    button.btn.quiet type="button" data-move-toggle aria-expanded="false"
+                    button.btn.quiet type="button" id=(format!("mvb-{id}"))
+                        data-move-toggle aria-expanded="false"
                         aria-controls=(format!("mv-{id}"))
                         aria-label=(format!("Move session {}", short(id))) { "Move" }
                 }
