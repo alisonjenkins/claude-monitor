@@ -882,3 +882,289 @@ mod restore_view_model {
         assert!(view.selected_ids().is_empty());
     }
 }
+
+/// The restore view end to end: real store, real planner, FakeTmux. Effects
+/// are carried out the way the runner does, synchronously.
+mod restore_flow {
+    use super::*;
+    use claude_monitor::agents::kinds;
+    use claude_monitor::model::Session;
+    use claude_monitor::testing::{FakeEnv, TmuxCall};
+    use claude_monitor::tui::restore::{preview_restore, run_restore, RestoreResult, Stage};
+
+    struct World {
+        _dir: TempDir,
+        fake: FakeEnv,
+        store: Store,
+        added: std::cell::Cell<u32>,
+    }
+
+    impl World {
+        fn new() -> Self {
+            let dir = TempDir::new().unwrap();
+            let store = Store::open_in_dir(dir.path(), &StoreOptions::viewer()).unwrap();
+            let fake = FakeEnv::new();
+            fake.vars.set("HOME", "/home/u");
+            fake.vars.set("CLAUDE_MONITOR_LAUNCHER_CLAUDE", "sleep 30");
+            Self {
+                _dir: dir,
+                fake,
+                store,
+                added: std::cell::Cell::new(0),
+            }
+        }
+
+        /// A session of `state` in `/w/<id>`; `transcript` false leaves the
+        /// resume transcript missing so the planner refuses it.
+        fn add(&self, id: &str, state: State, transcript: bool) {
+            let cwd = format!("/w/{id}");
+            self.fake.fs.add_dir(&cwd);
+            let mut session = Session::new(
+                id,
+                "claude",
+                &format!("agent-{id}"),
+                &cwd,
+                "2026-10-12T10:00:00Z",
+            );
+            session.state = state;
+            // Earlier calls are more recent, so the overview lists them first.
+            let n = self.added.get();
+            self.added.set(n + 1);
+            session.last_activity_at = format!("2026-10-12T10:{:02}:00Z", 59 - n);
+            self.store.upsert_session(&session).unwrap();
+            if transcript {
+                let kind = kinds().into_iter().find(|k| k.id() == "claude").unwrap();
+                for need in kind.resume_preconditions(&session, &self.fake.env) {
+                    self.fake.fs.add_file(need.required_path, "{}\n");
+                }
+            }
+        }
+
+        fn app(&self) -> App {
+            let snapshot = Snapshot::load(&self.store, NOW).unwrap();
+            update(App::new(), Msg::Refreshed(snapshot)).0
+        }
+
+        fn spawns(&self) -> Vec<(String, String)> {
+            self.fake
+                .tmux
+                .calls()
+                .into_iter()
+                .filter_map(|call| match call {
+                    TmuxCall::SpawnWindow { label, cwd, .. } => {
+                        Some((label, cwd.to_string_lossy().into_owned()))
+                    }
+                    _ => None,
+                })
+                .collect()
+        }
+
+        fn tmux_untouched(&self) -> bool {
+            !self.fake.tmux.calls().iter().any(|c| {
+                matches!(
+                    c,
+                    TmuxCall::SpawnWindow { .. } | TmuxCall::EnsureSession { .. }
+                )
+            })
+        }
+
+        /// Feed `msg`, then carry out the effects it causes until none are left.
+        fn send(&self, app: App, msg: Msg) -> App {
+            let (mut app, mut effects) = update(app, msg);
+            while !effects.is_empty() {
+                let mut msgs = Vec::new();
+                for effect in effects.drain(..) {
+                    match effect {
+                        Effect::PreviewRestore { ids } => msgs.push(Msg::RestorePreview(
+                            preview_restore(&self.store, &self.fake.env, &ids),
+                        )),
+                        Effect::StartRestore { ids } => {
+                            run_restore(&self.store, &self.fake.env, &ids, &mut |r| {
+                                msgs.push(Msg::RestoreResult(r));
+                            });
+                        }
+                        other => panic!("unexpected effect {other:?}"),
+                    }
+                }
+                for msg in msgs {
+                    let (next, more) = update(app, msg);
+                    app = next;
+                    effects.extend(more);
+                }
+            }
+            app
+        }
+
+        fn keys(&self, mut app: App, keys: &[KeyCode]) -> App {
+            for key in keys {
+                app = self.send(app, Msg::Key(*key, KeyModifiers::NONE));
+            }
+            app
+        }
+    }
+
+    const R: KeyCode = KeyCode::Char('R');
+    const SPACE: KeyCode = KeyCode::Char(' ');
+    const DOWN: KeyCode = KeyCode::Char('j');
+
+    fn two_interrupted_one_finished() -> World {
+        let w = World::new();
+        w.add("i1", State::Interrupted, true);
+        w.add("i2", State::Interrupted, true);
+        w.add("f1", State::Finished, true);
+        w
+    }
+
+    #[test]
+    #[ignore = "T074 restore flow"]
+    fn r_opens_the_view_with_interrupted_sessions_selected() {
+        let w = two_interrupted_one_finished();
+        let app = w.keys(w.app(), &[R]);
+
+        let view = app.restore().expect("restore view open");
+        assert_eq!(view.selected_ids(), ["i1", "i2"]);
+        let text = wide(&app);
+        assert!(text.contains("[x]"), "{text}");
+        assert!(text.contains("[ ]"), "{text}");
+        assert!(text.to_lowercase().contains("finished"), "{text}");
+        assert!(w.tmux_untouched());
+    }
+
+    #[test]
+    #[ignore = "T074 restore flow"]
+    fn the_help_line_offers_restore() {
+        let w = two_interrupted_one_finished();
+        let text = wide(&w.app());
+        assert!(text.contains("R restore"), "{text}");
+    }
+
+    #[test]
+    #[ignore = "T074 restore flow"]
+    fn enter_shows_the_summary_and_starts_nothing() {
+        let w = two_interrupted_one_finished();
+        let app = w.keys(w.app(), &[R, KeyCode::Enter]);
+
+        let view = app.restore().unwrap();
+        assert!(matches!(view.stage(), Stage::Confirm(rows) if rows.len() == 2));
+        let text = wide(&app);
+        assert!(text.contains("i1") && text.contains("/w/i1"), "{text}");
+        assert!(text.contains("i2"), "{text}");
+        assert!(!text.contains("f1"), "{text}");
+        assert!(w.tmux_untouched(), "started before the second Enter");
+    }
+
+    #[test]
+    #[ignore = "T074 restore flow"]
+    fn enter_enter_starts_only_the_selected_sessions() {
+        let w = two_interrupted_one_finished();
+        // Deselect i2, select the finished f1.
+        let app = w.keys(w.app(), &[R, DOWN, SPACE, DOWN, SPACE]);
+        assert_eq!(app.restore().unwrap().selected_ids(), ["i1", "f1"]);
+
+        let app = w.keys(app, &[KeyCode::Enter, KeyCode::Enter]);
+
+        let spawned = w.spawns();
+        assert_eq!(spawned.len(), 2, "{spawned:?}");
+        let cwds: Vec<&str> = spawned.iter().map(|(_, cwd)| cwd.as_str()).collect();
+        assert!(
+            cwds.contains(&"/w/i1") && cwds.contains(&"/w/f1"),
+            "{cwds:?}"
+        );
+        assert!(!cwds.contains(&"/w/i2"), "{cwds:?}");
+        assert!(matches!(
+            app.restore().unwrap().stage(),
+            Stage::Finished(results) if results.iter().all(|r| matches!(r, RestoreResult::Started { .. }))
+        ));
+        let text = wide(&app);
+        assert!(text.contains("started"), "{text}");
+    }
+
+    #[test]
+    #[ignore = "T074 restore flow"]
+    fn deselecting_does_not_dismiss_or_change_the_state() {
+        let w = two_interrupted_one_finished();
+        let app = w.keys(w.app(), &[R, DOWN, SPACE, KeyCode::Enter, KeyCode::Enter]);
+        assert!(app.restore().is_some());
+
+        let skipped = w.store.get_session("i2").unwrap().unwrap();
+        assert_eq!(skipped.state, State::Interrupted);
+        assert!(!skipped.dismissed);
+    }
+
+    #[test]
+    #[ignore = "T074 restore flow"]
+    fn escape_cancels_without_starting_anything() {
+        let w = two_interrupted_one_finished();
+
+        let app = w.keys(w.app(), &[R, KeyCode::Esc]);
+        assert!(app.restore().is_none());
+
+        let app = w.keys(app, &[R, KeyCode::Enter, KeyCode::Esc]);
+        assert!(matches!(app.restore().unwrap().stage(), Stage::Select));
+        let app = w.keys(app, &[KeyCode::Esc]);
+        assert!(app.restore().is_none());
+        assert!(w.tmux_untouched());
+    }
+
+    #[test]
+    #[ignore = "T074 restore flow"]
+    fn keys_in_the_view_do_not_quit_the_dashboard() {
+        let w = two_interrupted_one_finished();
+        let app = w.app();
+        let (app, _) = update(app, Msg::Key(R, KeyModifiers::NONE));
+        let (_, effects) = update(app, Msg::Key(KeyCode::Esc, KeyModifiers::NONE));
+        assert!(!effects.contains(&Effect::Quit), "{effects:?}");
+    }
+
+    #[test]
+    #[ignore = "T074 restore flow"]
+    fn enter_with_nothing_selected_does_nothing() {
+        let w = two_interrupted_one_finished();
+        let app = w.keys(w.app(), &[R, KeyCode::Char('n')]);
+        let (app, effects) = update(app, Msg::Key(KeyCode::Enter, KeyModifiers::NONE));
+        assert!(effects.is_empty(), "{effects:?}");
+        assert!(matches!(app.restore().unwrap().stage(), Stage::Select));
+    }
+
+    #[test]
+    #[ignore = "T074 restore flow"]
+    fn the_summary_shows_refusals_with_their_alternatives() {
+        let w = World::new();
+        w.add("ok1", State::Interrupted, true);
+        w.add("bad1", State::Interrupted, false);
+        let app = w.keys(w.app(), &[R, KeyCode::Enter]);
+
+        let text = wide(&app);
+        assert!(text.contains("missing_transcript"), "{text}");
+        assert!(text.contains("respawn bad1 --fresh"), "{text}");
+        assert!(w.tmux_untouched());
+
+        let app = w.keys(app, &[KeyCode::Enter]);
+        assert_eq!(w.spawns().len(), 1);
+        assert!(matches!(app.restore().unwrap().stage(), Stage::Finished(_)));
+    }
+
+    #[test]
+    #[ignore = "T074 restore flow"]
+    fn each_result_shows_as_it_arrives() {
+        let w = two_interrupted_one_finished();
+        let app = w.keys(w.app(), &[R, KeyCode::Enter]);
+        let (app, effects) = update(app, Msg::Key(KeyCode::Enter, KeyModifiers::NONE));
+        assert_eq!(effects.len(), 1);
+
+        let (app, _) = update(
+            app,
+            Msg::RestoreResult(RestoreResult::Started {
+                session_id: "i1".to_owned(),
+                pane: "%7".to_owned(),
+            }),
+        );
+
+        assert!(matches!(
+            app.restore().unwrap().stage(),
+            Stage::Running { total: 2, results } if results.len() == 1
+        ));
+        let text = wide(&app);
+        assert!(text.contains("%7"), "{text}");
+    }
+}

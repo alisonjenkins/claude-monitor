@@ -208,6 +208,7 @@ enum Done {
 fn perform(effect: &Effect, env: &Env) -> Done {
     match effect {
         Effect::Quit => Done::Quit,
+        Effect::PreviewRestore { .. } | Effect::StartRestore { .. } => Done::Ok,
         Effect::JumpToPane { pane } => match tmux::switch_to_pane(pane) {
             Ok(()) => Done::Ok,
             Err(e) => Done::Failed(format!("switch failed: {e:#}")),

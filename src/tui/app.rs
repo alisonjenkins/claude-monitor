@@ -6,6 +6,7 @@ use std::path::Path;
 
 use crossterm::event::{KeyCode, KeyModifiers};
 
+use super::restore::{PreviewRow, RestoreResult, RestoreView};
 use crate::model::State;
 use crate::store::queries::{Overview, OverviewEntry, OverviewQuery, Section, SectionName};
 use crate::store::Store;
@@ -47,12 +48,29 @@ pub enum Msg {
     Refreshed(Snapshot),
     /// An effect or a read failed; shown in the footer.
     Failed(String),
+    /// The plans for the restore view's confirm screen.
+    RestorePreview(Vec<PreviewRow>),
+    /// One session of a confirmed restore started or was refused.
+    RestoreResult(RestoreResult),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Effect {
-    JumpToPane { pane: String },
-    Notify { project: String, state: State },
+    /// Plan these sessions and answer with [`Msg::RestorePreview`].
+    PreviewRestore {
+        ids: Vec<String>,
+    },
+    /// Start these sessions and answer with a [`Msg::RestoreResult`] each.
+    StartRestore {
+        ids: Vec<String>,
+    },
+    JumpToPane {
+        pane: String,
+    },
+    Notify {
+        project: String,
+        state: State,
+    },
     Quit,
 }
 
@@ -67,6 +85,8 @@ pub struct App {
     status: Option<String>,
     /// Toggled with `u`: the unseen section lists its rows only when set.
     unseen_expanded: bool,
+    /// Open with `R`; takes over the keys until closed.
+    restore: Option<RestoreView>,
 }
 
 impl App {
@@ -78,7 +98,12 @@ impl App {
             seen: HashMap::new(),
             status: None,
             unseen_expanded: false,
+            restore: None,
         }
+    }
+
+    pub fn restore(&self) -> Option<&RestoreView> {
+        self.restore.as_ref()
     }
 
     pub fn unseen_expanded(&self) -> bool {
@@ -296,6 +321,7 @@ pub fn update(mut app: App, msg: Msg) -> (App, Vec<Effect>) {
             app.status = Some(message);
             Vec::new()
         }
+        Msg::RestorePreview(_) | Msg::RestoreResult(_) => Vec::new(),
     };
     (app, effects)
 }
