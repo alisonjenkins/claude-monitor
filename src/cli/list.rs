@@ -57,9 +57,10 @@ fn parse_section(value: Option<&str>) -> Result<Option<SectionName>, Error> {
 
 pub fn run(env: &Env, state_dir: Option<&Path>, args: ListArgs) -> Result<Output, Error> {
     // Compatibility only: finished sessions are never collapsed (FR-019).
-    let _ = (args.expand_finished, args.expand_unseen);
+    let _ = args.expand_finished;
     let states = parse_states(&args.states)?;
     let section = parse_section(args.section.as_deref())?;
+    let asked_for_unknown = states.contains(&State::Unknown);
     let store = open_viewer_store(env, state_dir)?;
     let query = OverviewQuery {
         states,
@@ -82,7 +83,23 @@ pub fn run(env: &Env, state_dir: Option<&Path>, args: ListArgs) -> Result<Output
         entries.extend(part.sessions);
     }
 
-    let lines: Vec<String> = entries.iter().map(|entry| line(entry, &now)).collect();
+    // Presentation only: the JSON keeps every unseen session.
+    let show_unseen =
+        args.expand_unseen || asked_for_unknown || section == Some(SectionName::Unseen);
+    let mut lines: Vec<String> = entries
+        .iter()
+        .filter(|entry| show_unseen || entry.section != SectionName::Unseen)
+        .map(|entry| line(entry, &now))
+        .collect();
+    let hidden = entries
+        .iter()
+        .filter(|entry| entry.section == SectionName::Unseen)
+        .count();
+    if !show_unseen && hidden > 0 {
+        lines.push(format!(
+            "({hidden} unseen sessions hidden; use --expand-unseen)"
+        ));
+    }
     Ok(Output::Dual {
         text: lines.join("\n"),
         json: json!({ "sessions": entries }),

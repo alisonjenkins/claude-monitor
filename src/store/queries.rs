@@ -127,7 +127,9 @@ fn read_error(operation: &'static str) -> impl Fn(rusqlite::Error) -> QueriesErr
     move |source| QueriesError::Read { operation, source }
 }
 
-fn classify(state: State, dismissed: bool, done: bool) -> SectionName {
+/// `degraded` rows (an unreadable state) stay in Active so the damage is seen;
+/// a readable `Unknown` was found on disk but never reported by a hook.
+fn classify(state: State, dismissed: bool, done: bool, degraded: bool) -> SectionName {
     if dismissed {
         SectionName::Dismissed
     } else if done {
@@ -136,6 +138,7 @@ fn classify(state: State, dismissed: bool, done: bool) -> SectionName {
         match state {
             State::Interrupted => SectionName::Interrupted,
             State::Finished => SectionName::Finished,
+            State::Unknown if !degraded => SectionName::Unseen,
             State::Working | State::NeedsPermission | State::Idle | State::Unknown => {
                 SectionName::Active
             }
@@ -194,7 +197,7 @@ fn entry_from_row(row: &Row<'_>) -> rusqlite::Result<OverviewEntry> {
         left_off: row.get(9)?,
         project: row.get(14)?,
         flags,
-        section: classify(state, dismissed, done_at.is_some()),
+        section: classify(state, dismissed, done_at.is_some(), error.is_some()),
         error,
     })
 }
@@ -276,6 +279,7 @@ impl Store {
             SectionName::Interrupted,
             SectionName::Finished,
             SectionName::Done,
+            SectionName::Unseen,
         ];
         if query.include_dismissed {
             names.push(SectionName::Dismissed);

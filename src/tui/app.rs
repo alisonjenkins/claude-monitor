@@ -7,7 +7,7 @@ use std::path::Path;
 use crossterm::event::{KeyCode, KeyModifiers};
 
 use crate::model::State;
-use crate::store::queries::{Overview, OverviewEntry, OverviewQuery, Section};
+use crate::store::queries::{Overview, OverviewEntry, OverviewQuery, Section, SectionName};
 use crate::store::Store;
 
 const NO_PANE_STATUS: &str = "no tmux pane recorded for this session";
@@ -65,6 +65,8 @@ pub struct App {
     hidden: HashSet<(String, State)>,
     seen: HashMap<String, State>,
     status: Option<String>,
+    /// Toggled with `u`: the unseen section lists its rows only when set.
+    unseen_expanded: bool,
 }
 
 impl App {
@@ -75,7 +77,12 @@ impl App {
             hidden: HashSet::new(),
             seen: HashMap::new(),
             status: None,
+            unseen_expanded: false,
         }
+    }
+
+    pub fn unseen_expanded(&self) -> bool {
+        self.unseen_expanded
     }
 
     /// `None` until the first load.
@@ -91,7 +98,8 @@ impl App {
         self.status.as_deref()
     }
 
-    /// Each section with the entries that are not hidden, in display order.
+    /// Each section with the entries that are not hidden, in display order. A
+    /// collapsed unseen section shows none.
     pub fn sections(&self) -> Vec<(&Section, Vec<&OverviewEntry>)> {
         let Some(snapshot) = &self.snapshot else {
             return Vec::new();
@@ -101,10 +109,11 @@ impl App {
             .sections
             .iter()
             .map(|section| {
+                let collapsed = section.name == SectionName::Unseen && !self.unseen_expanded;
                 let shown = section
                     .sessions
                     .iter()
-                    .filter(|entry| !self.is_hidden(entry))
+                    .filter(|entry| !collapsed && !self.is_hidden(entry))
                     .collect();
                 (section, shown)
             })
@@ -189,6 +198,12 @@ impl App {
         }
     }
 
+    fn toggle_unseen(&mut self) {
+        let current = self.selected_index();
+        self.unseen_expanded = !self.unseen_expanded;
+        self.keep_selection(current.unwrap_or(0));
+    }
+
     fn on_key(&mut self, code: KeyCode, modifiers: KeyModifiers) -> Vec<Effect> {
         if code == KeyCode::Char('c') && modifiers.contains(KeyModifiers::CONTROL) {
             return vec![Effect::Quit];
@@ -204,6 +219,7 @@ impl App {
             KeyCode::Char('k') | KeyCode::Up => self.move_selection(false),
             KeyCode::Enter => return self.jump(),
             KeyCode::Char('d') => self.hide_selected(),
+            KeyCode::Char('u') => self.toggle_unseen(),
             _ => {}
         }
         Vec::new()

@@ -265,7 +265,6 @@ fn old_finished_sessions_are_listed_by_default() {
 }
 
 #[test]
-#[ignore = "T062a: unseen section"]
 fn json_lists_every_unknown_session_in_the_unseen_section() {
     let fx = Fixture::new();
     seed(&fx);
@@ -285,7 +284,6 @@ fn json_lists_every_unknown_session_in_the_unseen_section() {
 }
 
 #[test]
-#[ignore = "T062a: unseen section"]
 fn text_collapses_unseen_sessions_to_a_count_until_expanded() {
     let fx = Fixture::new();
     seed(&fx);
@@ -309,7 +307,6 @@ fn text_collapses_unseen_sessions_to_a_count_until_expanded() {
 }
 
 #[test]
-#[ignore = "T062a: unseen section"]
 fn the_unseen_section_flag_lists_them_without_expanding() {
     let fx = Fixture::new();
     seed(&fx);

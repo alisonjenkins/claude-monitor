@@ -204,9 +204,9 @@ fn flags_mark_missing_worktree_parked_and_unknown_state() {
     );
     assert_eq!(flags_of(SectionName::Active, "parked"), [Flag::Parked]);
     assert_eq!(
-        flags_of(SectionName::Active, "passive"),
+        flags_of(SectionName::Unseen, "passive"),
         [Flag::StateUnknown],
-        "unknown state is shown with the active group but flagged"
+        "unknown state is shown in the unseen group, flagged"
     );
 }
 
@@ -340,7 +340,6 @@ fn an_undecodable_row_degrades_instead_of_failing_the_query() {
 }
 
 #[test]
-#[ignore = "T062a: unseen section"]
 fn unknown_sessions_get_their_own_unseen_section_newest_first() {
     let fx = Fixture::new();
     fx.put("live", State::Working, "2026-10-12T11:00:00Z");
@@ -365,7 +364,6 @@ fn unknown_sessions_get_their_own_unseen_section_newest_first() {
 }
 
 #[test]
-#[ignore = "T062a: unseen section"]
 fn a_dismissed_unknown_session_is_dismissed_not_unseen() {
     let fx = Fixture::new();
     fx.put_with("gone", State::Unknown, "2026-10-12T11:00:00Z", |s| {
@@ -382,7 +380,6 @@ fn a_dismissed_unknown_session_is_dismissed_not_unseen() {
 }
 
 #[test]
-#[ignore = "T062a: unseen section"]
 fn an_undecodable_row_stays_in_active_not_unseen() {
     let fx = Fixture::new();
     fx.put("bad", State::Working, "2026-10-12T10:00:00Z");

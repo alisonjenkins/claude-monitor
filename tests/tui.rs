@@ -724,7 +724,6 @@ fn with_unseen() -> App {
 }
 
 #[test]
-#[ignore = "T062a: unseen section"]
 fn the_unseen_section_is_collapsed_to_a_count_by_default() {
     let app = with_unseen();
 
@@ -736,7 +735,6 @@ fn the_unseen_section_is_collapsed_to_a_count_by_default() {
 }
 
 #[test]
-#[ignore = "T062a: unseen section"]
 fn u_expands_and_collapses_the_unseen_section() {
     let (app, effects) = press(with_unseen(), KeyCode::Char('u'));
 
@@ -749,7 +747,6 @@ fn u_expands_and_collapses_the_unseen_section() {
 }
 
 #[test]
-#[ignore = "T062a: unseen section"]
 fn expanded_unseen_sessions_are_selectable() {
     let (app, _) = press(with_unseen(), KeyCode::Char('u'));
     let (app, _) = press(app, KeyCode::Char('j'));
@@ -759,7 +756,6 @@ fn expanded_unseen_sessions_are_selectable() {
 }
 
 #[test]
-#[ignore = "T062a: unseen section"]
 fn unseen_sessions_never_count_toward_the_title() {
     let app = with_unseen();
 

@@ -185,11 +185,17 @@ fn body_lines(app: &App, width: usize) -> (Vec<Line<'static>>, usize) {
     let mut lines = Vec::new();
     let mut selected_line = 0;
     for (section, entries) in app.sections() {
-        if entries.is_empty() {
+        let collapsed = section.name == SectionName::Unseen && !app.unseen_expanded();
+        if entries.is_empty() && (!collapsed || section.sessions.is_empty()) {
             continue;
         }
+        let (count, hint) = if collapsed {
+            (section.sessions.len(), " — u to show")
+        } else {
+            (entries.len(), "")
+        };
         lines.push(Line::from(Span::styled(
-            format!("{} ({})", section_title(section.name), entries.len()),
+            format!("{} ({count}){hint}", section_title(section.name)),
             Style::default().fg(MAUVE).add_modifier(Modifier::BOLD),
         )));
         for entry in entries {
@@ -236,6 +242,8 @@ fn help_line(app: &App) -> Line<'static> {
         Span::raw(" jump  "),
         Span::styled("d", key),
         Span::raw(" hide  "),
+        Span::styled("u", key),
+        Span::raw(" unseen  "),
         Span::styled("q", key),
         Span::raw(" quit"),
     ]);
