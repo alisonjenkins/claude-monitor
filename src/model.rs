@@ -234,6 +234,27 @@ pub enum ProjectStatus {
     Archived,
 }
 
+impl ProjectStatus {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Active => "active",
+            Self::Parked => "parked",
+            Self::Done => "done",
+            Self::Archived => "archived",
+        }
+    }
+
+    pub fn parse(value: &str) -> Option<Self> {
+        Some(match value {
+            "active" => Self::Active,
+            "parked" => Self::Parked,
+            "done" => Self::Done,
+            "archived" => Self::Archived,
+            _ => return None,
+        })
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct Project {
