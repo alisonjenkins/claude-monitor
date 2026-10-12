@@ -14,6 +14,7 @@ use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{SocketAddr, TcpStream};
 use std::time::Duration;
 
+use claude_monitor::env::Env;
 use claude_monitor::feed::{ChangeFeed, FakeHandle, FakeSource, SystemMonotonic};
 use claude_monitor::store::{Store, StoreOptions};
 use claude_monitor::web::{self, Server, Token, WebConfig};
@@ -34,9 +35,21 @@ impl Rig {
         Self::start_with(|_| {})
     }
 
+    /// A server over the store in `state_dir`, running its actions against
+    /// `env` (a private tmux, a fake clock).
+    pub fn start_on(state_dir: &std::path::Path, env: Env) -> Self {
+        Self::build(TempDir::new().unwrap(), state_dir.join("state.db"), |c| {
+            c.env = env;
+        })
+    }
+
     pub fn start_with(tweak: impl FnOnce(&mut WebConfig)) -> Self {
         let dir = TempDir::new().unwrap();
         let db = dir.path().join("state.db");
+        Self::build(dir, db, tweak)
+    }
+
+    fn build(dir: TempDir, db: std::path::PathBuf, tweak: impl FnOnce(&mut WebConfig)) -> Self {
         let writer = Store::open(&db, &StoreOptions::default()).unwrap();
         let (source, wake) = FakeSource::new();
         let feed = ChangeFeed::new(
@@ -87,6 +100,11 @@ impl Response {
             .map(|(_, v)| v.as_str())
     }
 
+    pub fn json(&self) -> serde_json::Value {
+        serde_json::from_str(&self.body)
+            .unwrap_or_else(|e| panic!("not JSON ({e}): {:?}", self.body))
+    }
+
     pub fn headers_named(&self, name: &str) -> Vec<&str> {
         self.headers
             .iter()
@@ -101,6 +119,7 @@ pub struct Request<'a> {
     pub path: &'a str,
     pub host: Option<String>,
     pub headers: Vec<(&'a str, String)>,
+    pub body: String,
 }
 
 impl<'a> Request<'a> {
@@ -114,7 +133,32 @@ impl<'a> Request<'a> {
             path,
             host: None,
             headers: Vec::new(),
+            body: String::new(),
         }
+    }
+
+    /// A JSON body with its content type.
+    pub fn json_body(mut self, value: &serde_json::Value) -> Self {
+        self.headers
+            .push(("Content-Type", "application/json".to_owned()));
+        self.body = value.to_string();
+        self
+    }
+
+    /// A form body, already urlencoded.
+    pub fn form_body(mut self, encoded: &str) -> Self {
+        self.headers.push((
+            "Content-Type",
+            "application/x-www-form-urlencoded".to_owned(),
+        ));
+        self.body = encoded.to_owned();
+        self
+    }
+
+    /// The headers a browser sends once signed in, plus the CSRF header.
+    pub fn signed_in(self, rig: &Rig) -> Self {
+        self.header("Cookie", rig.cookie())
+            .header("X-CC-Token", rig.token.as_str())
     }
 
     pub fn host(mut self, host: impl Into<String>) -> Self {
@@ -137,9 +181,10 @@ impl<'a> Request<'a> {
             out.push_str(&format!("{name}: {value}\r\n"));
         }
         if self.method != "GET" && self.method != "OPTIONS" {
-            out.push_str("Content-Length: 0\r\n");
+            out.push_str(&format!("Content-Length: {}\r\n", self.body.len()));
         }
         out.push_str("\r\n");
+        out.push_str(&self.body);
         out
     }
 
