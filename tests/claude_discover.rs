@@ -179,7 +179,6 @@ impl Fx {
 }
 
 #[test]
-#[ignore = "T044"]
 fn a_transcript_becomes_a_stub_with_cwd_taken_from_its_lines() {
     let fx = Fx::new();
     fx.write(CWD, SESSION, &simple_transcript(SESSION, "Fix the build"));
@@ -204,7 +203,6 @@ fn a_transcript_becomes_a_stub_with_cwd_taken_from_its_lines() {
 }
 
 #[test]
-#[ignore = "T044"]
 fn the_first_prompt_may_be_a_block_array_and_skips_tool_results() {
     let fx = Fx::new();
     let mut lines = preamble();
@@ -227,7 +225,6 @@ fn the_first_prompt_may_be_a_block_array_and_skips_tool_results() {
 }
 
 #[test]
-#[ignore = "T044"]
 fn a_long_prompt_is_truncated_to_the_character_limit() {
     let fx = Fx::new();
     let long = "é".repeat(MAX_PROMPT_CHARS + 100);
@@ -241,7 +238,6 @@ fn a_long_prompt_is_truncated_to_the_character_limit() {
 }
 
 #[test]
-#[ignore = "T044"]
 fn cwd_is_the_original_and_branch_and_activity_are_the_latest() {
     let fx = Fx::new();
     let mut lines = preamble();
@@ -263,7 +259,6 @@ fn cwd_is_the_original_and_branch_and_activity_are_the_latest() {
 }
 
 #[test]
-#[ignore = "T044"]
 fn no_assistant_or_tool_text_reaches_a_stub_or_a_stored_row() {
     let fx = Fx::new();
     let mut lines = simple_transcript(SESSION, "Fix the build");
@@ -286,7 +281,6 @@ fn no_assistant_or_tool_text_reaches_a_stub_or_a_stored_row() {
 }
 
 #[test]
-#[ignore = "T044"]
 fn discovery_stores_an_unknown_session_and_a_system_event_once() {
     let fx = Fx::new();
     fx.write(CWD, SESSION, &simple_transcript(SESSION, "Fix the build"));
@@ -321,7 +315,6 @@ fn discovery_stores_an_unknown_session_and_a_system_event_once() {
 }
 
 #[test]
-#[ignore = "T044"]
 fn discovery_never_downgrades_a_session_a_hook_reported() {
     let fx = Fx::new();
     fx.hook(&json!({
@@ -342,10 +335,11 @@ fn discovery_never_downgrades_a_session_a_hook_reported() {
     let sessions = fx.store().list_sessions().unwrap();
     assert_eq!(sessions.len(), 1);
     assert_eq!(sessions[0], before, "every hook-derived field is untouched");
+    assert_eq!(sessions[0].cwd, "/tmp/hook-cwd");
+    assert_eq!(sessions[0].task_description.as_deref(), Some("Say hi"));
 }
 
 #[test]
-#[ignore = "T044"]
 fn a_later_hook_upgrades_a_discovered_session_in_place() {
     let fx = Fx::new();
     fx.write(CWD, SESSION, &simple_transcript(SESSION, "Fix the build"));
@@ -365,7 +359,6 @@ fn a_later_hook_upgrades_a_discovered_session_in_place() {
 }
 
 #[test]
-#[ignore = "T044"]
 fn a_huge_transcript_is_read_within_the_byte_bound() {
     let mut fx = Fx::new();
     let path = fx.project_dir(CWD).join(format!("{SESSION}.jsonl"));
@@ -406,7 +399,6 @@ fn a_huge_transcript_is_read_within_the_byte_bound() {
 }
 
 #[test]
-#[ignore = "T044"]
 fn unreadable_files_are_skipped_and_counted_without_failing_the_scan() {
     let fx = Fx::new();
     fx.write(CWD, SESSION, &simple_transcript(SESSION, "Fix the build"));
@@ -436,7 +428,6 @@ fn unreadable_files_are_skipped_and_counted_without_failing_the_scan() {
 }
 
 #[test]
-#[ignore = "T044"]
 fn a_truncated_last_line_does_not_hide_the_complete_lines_before_it() {
     let fx = Fx::new();
     let path = fx.write(CWD, SESSION, &simple_transcript(SESSION, "Fix the build"));
@@ -454,7 +445,6 @@ fn a_truncated_last_line_does_not_hide_the_complete_lines_before_it() {
 }
 
 #[test]
-#[ignore = "T044"]
 fn sidechain_transcripts_are_not_sessions() {
     let fx = Fx::new();
     let mut lines = preamble();
@@ -470,7 +460,6 @@ fn sidechain_transcripts_are_not_sessions() {
 }
 
 #[test]
-#[ignore = "T044"]
 fn an_absent_projects_directory_is_an_empty_result() {
     let fx = Fx::new();
     let store = fx.store();
@@ -486,7 +475,6 @@ fn an_absent_projects_directory_is_an_empty_result() {
 }
 
 #[test]
-#[ignore = "T044"]
 fn the_root_falls_back_to_home_dot_claude_and_errors_without_either() {
     let fx = Fx::new();
     let home = fx._dir.path().join("home");
@@ -512,7 +500,6 @@ fn the_root_falls_back_to_home_dot_claude_and_errors_without_either() {
 }
 
 #[test]
-#[ignore = "T044"]
 fn stub_fields_respect_their_length_limits() {
     let fx = Fx::new();
     let long_cwd = format!("/{}", "d".repeat(MAX_CWD_BYTES + 1));
@@ -550,7 +537,6 @@ fn simple_transcript_at(id: &str, cwd: &str, branch: &str) -> Vec<Value> {
 }
 
 #[test]
-#[ignore = "T044"]
 fn the_projects_watch_wakes_on_new_transcripts_and_directories_only() {
     let fx = Fx::new();
     let dir = fx.project_dir(CWD);
