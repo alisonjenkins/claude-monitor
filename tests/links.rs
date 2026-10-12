@@ -12,11 +12,17 @@
 use clap::Parser;
 use claude_monitor::cli::{run_in, Cli, Command, Output, ProjectAction};
 use claude_monitor::error::Error;
-use claude_monitor::model::{Author, OwnerKind, Session};
+use claude_monitor::export::links::{
+    check_links, remote_status, statuses_agree, Check, LinkCheck, Outcome, LOOKUP_TIMEOUT,
+};
+use claude_monitor::model::{Author, OwnerKind, Session, State};
 use claude_monitor::store::links::NewLink;
 use claude_monitor::store::{legacy, Store, StoreOptions};
 use claude_monitor::testing::FakeEnv;
 use serde_json::Value;
+use std::os::unix::fs::PermissionsExt;
+use std::path::Path;
+use std::time::Duration;
 use tempfile::TempDir;
 
 const T0: &str = "2026-10-12T10:00:00Z";
@@ -338,5 +344,375 @@ mod commands {
         assert_eq!(json(&first)["changed"], true);
         assert_eq!(json(&second)["changed"], false);
         assert!(fix.store.all_links().unwrap().is_empty());
+    }
+}
+
+/// A `cortexiphan` stand-in on a private PATH. For `--id N` it logs its
+/// arguments, then prints `out.N` (exit 0), exits 1 when `fail.N` exists, or
+/// sleeps when `slow.N` exists.
+struct FakeClient {
+    dir: TempDir,
+}
+
+impl FakeClient {
+    fn new() -> Self {
+        let dir = TempDir::new().unwrap();
+        let script = format!(
+            r#"#!/bin/sh
+echo "$*" >> "{dir}/calls.log"
+id=""
+prev=""
+for arg in "$@"; do
+  if [ "$prev" = "--id" ]; then id="$arg"; fi
+  prev="$arg"
+done
+[ -e "{dir}/slow.$id" ] && exec sleep 5
+[ -e "{dir}/fail.$id" ] && exit 1
+[ -e "{dir}/out.$id" ] && exec cat "{dir}/out.$id"
+exit 3
+"#,
+            dir = dir.path().display()
+        );
+        let program = dir.path().join("cortexiphan");
+        std::fs::write(&program, script).unwrap();
+        std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755)).unwrap();
+        Self { dir }
+    }
+
+    fn path(&self) -> &Path {
+        self.dir.path()
+    }
+
+    fn reply(&self, id: &str, status: &str) {
+        let body = format!(r#"{{"node":{{"id":{id},"fields":{{"status":"{status}"}}}}}}"#);
+        std::fs::write(self.path().join(format!("out.{id}")), body).unwrap();
+    }
+
+    fn make(&self, prefix: &str, id: &str) {
+        std::fs::write(self.path().join(format!("{prefix}.{id}")), "").unwrap();
+    }
+
+    fn calls(&self) -> Vec<String> {
+        std::fs::read_to_string(self.path().join("calls.log"))
+            .map(|log| log.lines().map(str::to_owned).collect())
+            .unwrap_or_default()
+    }
+}
+
+fn configured(fix: &Fixture, client: &FakeClient) {
+    fix.fake.vars.set("PATH", client.path().to_str().unwrap());
+    fix.fake
+        .vars
+        .set("CORTEXIPHAN_SERVER", "http://127.0.0.1:1");
+    fix.fake.vars.set("CORTEXIPHAN_TOKEN", "secret-token");
+}
+
+fn put_session(fix: &Fixture, id: &str, state: State, done: bool) {
+    let mut session = Session::new(id, "claude", &format!("agent-{id}"), "/work", T0);
+    session.state = state;
+    session.done_at = done.then(|| T0.to_owned());
+    fix.store.upsert_session(&session).unwrap();
+}
+
+fn link_session(fix: &Fixture, id: &str, node: &str) {
+    fix.link(id, node).unwrap();
+}
+
+fn checked(fix: &Fixture, timeout: Duration) -> Vec<LinkCheck> {
+    match check_links(&fix.store, fix.fake.vars.as_ref(), timeout).unwrap() {
+        Check::Checked(checks) => checks,
+        Check::Skipped { reason } => panic!("skipped: {reason}"),
+    }
+}
+
+fn outcome_for<'a>(checks: &'a [LinkCheck], owner: &str) -> &'a Outcome {
+    &checks
+        .iter()
+        .find(|c| c.link.owner_id == owner)
+        .unwrap()
+        .outcome
+}
+
+mod check {
+    use super::*;
+
+    #[test]
+    #[ignore = "implemented by T101"]
+    fn remote_status_is_found_wherever_the_reply_puts_it() {
+        assert_eq!(
+            remote_status(r#"{"node":{"fields":{"status":"done"}}}"#).as_deref(),
+            Some("done")
+        );
+        assert_eq!(
+            remote_status(r#"{"status":{"custom":"review"}}"#).as_deref(),
+            Some("review")
+        );
+        assert_eq!(remote_status(r#"{"node":{"title":"x"}}"#), None);
+        assert_eq!(remote_status("not json"), None);
+    }
+
+    #[test]
+    #[ignore = "implemented by T101"]
+    fn statuses_agree_when_they_mean_the_same_thing() {
+        for (local, remote) in [
+            ("working", "doing"),
+            ("idle", "Doing"),
+            ("finished", "done"),
+            ("done", "done"),
+            ("interrupted", "blocked"),
+            ("active", "doing"),
+            ("review", "review"),
+        ] {
+            assert!(statuses_agree(local, remote), "{local} vs {remote}");
+        }
+        for (local, remote) in [
+            ("interrupted", "done"),
+            ("working", "todo"),
+            ("done", "doing"),
+            ("unknown", "todo"),
+        ] {
+            assert!(!statuses_agree(local, remote), "{local} vs {remote}");
+        }
+    }
+
+    #[test]
+    #[ignore = "implemented by T101"]
+    fn without_server_and_token_the_check_is_skipped_and_runs_nothing() {
+        let fix = Fixture::new();
+        let client = FakeClient::new();
+        put_session(&fix, "s2", State::Working, false);
+        link_session(&fix, "s2", "41");
+        fix.fake.vars.set("PATH", client.path().to_str().unwrap());
+
+        let result = check_links(&fix.store, fix.fake.vars.as_ref(), LOOKUP_TIMEOUT).unwrap();
+        let Check::Skipped { reason } = result else {
+            panic!("expected a skip, got {result:?}");
+        };
+        assert!(reason.contains("CORTEXIPHAN_SERVER"), "{reason}");
+        assert!(reason.contains("CORTEXIPHAN_TOKEN"), "{reason}");
+
+        fix.fake
+            .vars
+            .set("CORTEXIPHAN_SERVER", "http://127.0.0.1:1");
+        let Check::Skipped { reason } =
+            check_links(&fix.store, fix.fake.vars.as_ref(), LOOKUP_TIMEOUT).unwrap()
+        else {
+            panic!("a token is still missing");
+        };
+        assert!(reason.contains("CORTEXIPHAN_TOKEN"), "{reason}");
+        assert!(!reason.contains("CORTEXIPHAN_SERVER"), "{reason}");
+        assert!(client.calls().is_empty());
+    }
+
+    #[test]
+    #[ignore = "implemented by T101"]
+    fn matching_statuses_agree() {
+        let fix = Fixture::new();
+        let client = FakeClient::new();
+        configured(&fix, &client);
+        put_session(&fix, "s2", State::Working, false);
+        put_session(&fix, "s3", State::Finished, true);
+        link_session(&fix, "s2", "41");
+        link_session(&fix, "s3", "42");
+        client.reply("41", "doing");
+        client.reply("42", "done");
+
+        let checks = checked(&fix, LOOKUP_TIMEOUT);
+
+        assert_eq!(checks.len(), 2);
+        assert_eq!(
+            outcome_for(&checks, "s2"),
+            &Outcome::Agree {
+                status: "working".to_owned()
+            }
+        );
+        assert_eq!(
+            outcome_for(&checks, "s3"),
+            &Outcome::Agree {
+                status: "done".to_owned()
+            }
+        );
+    }
+
+    #[test]
+    #[ignore = "implemented by T101"]
+    fn a_project_is_compared_by_its_status() {
+        let fix = Fixture::new();
+        let client = FakeClient::new();
+        configured(&fix, &client);
+        fix.link("p1", "50").unwrap();
+        client.reply("50", "done");
+
+        let checks = checked(&fix, LOOKUP_TIMEOUT);
+
+        let project = fix.store.project_by_name("p1").unwrap().unwrap();
+        assert_eq!(
+            outcome_for(&checks, &project.id),
+            &Outcome::Disagree {
+                local: "active".to_owned(),
+                remote: "done".to_owned()
+            }
+        );
+    }
+
+    #[test]
+    #[ignore = "implemented by T101"]
+    fn a_disagreement_reports_both_values() {
+        let fix = Fixture::new();
+        let client = FakeClient::new();
+        configured(&fix, &client);
+        put_session(&fix, "s2", State::Interrupted, false);
+        link_session(&fix, "s2", "41");
+        client.reply("41", "done");
+
+        let checks = checked(&fix, LOOKUP_TIMEOUT);
+
+        assert_eq!(
+            outcome_for(&checks, "s2"),
+            &Outcome::Disagree {
+                local: "interrupted".to_owned(),
+                remote: "done".to_owned()
+            }
+        );
+        assert_eq!(checks[0].local_status.as_deref(), Some("interrupted"));
+    }
+
+    #[test]
+    #[ignore = "implemented by T101"]
+    fn a_failing_slow_or_missing_client_is_unreachable_not_an_error() {
+        let fix = Fixture::new();
+        let client = FakeClient::new();
+        configured(&fix, &client);
+        for (id, node) in [("s2", "41"), ("s3", "42"), ("s4", "43")] {
+            put_session(&fix, id, State::Working, false);
+            link_session(&fix, id, node);
+        }
+        client.make("fail", "41");
+        client.make("slow", "42");
+
+        let checks = checked(&fix, Duration::from_millis(300));
+
+        assert!(matches!(
+            outcome_for(&checks, "s2"),
+            Outcome::Unreachable { .. }
+        ));
+        let Outcome::Unreachable { reason } = outcome_for(&checks, "s3") else {
+            panic!("a slow client is unreachable");
+        };
+        assert!(reason.contains("timed out"), "{reason}");
+        assert!(
+            matches!(outcome_for(&checks, "s4"), Outcome::Unreachable { .. }),
+            "no out file makes the fake exit 3"
+        );
+
+        let empty = TempDir::new().unwrap();
+        fix.fake.vars.set("PATH", empty.path().to_str().unwrap());
+        let checks = checked(&fix, LOOKUP_TIMEOUT);
+        assert!(checks
+            .iter()
+            .all(|c| matches!(&c.outcome, Outcome::Unreachable { reason } if reason.contains("cortexiphan"))));
+    }
+
+    #[test]
+    #[ignore = "implemented by T101"]
+    fn a_link_without_a_doc_id_is_unreachable_and_runs_nothing() {
+        let fix = Fixture::new();
+        let client = FakeClient::new();
+        configured(&fix, &client);
+        put_session(&fix, "s2", State::Working, false);
+        fix.run(Command::Link {
+            owner: "s2".to_owned(),
+            cortex: "41".to_owned(),
+            kind: "task".to_owned(),
+            doc: None,
+        })
+        .unwrap();
+
+        let checks = checked(&fix, LOOKUP_TIMEOUT);
+
+        let Outcome::Unreachable { reason } = outcome_for(&checks, "s2") else {
+            panic!("expected unreachable");
+        };
+        assert!(reason.contains("doc"), "{reason}");
+        assert!(client.calls().is_empty());
+    }
+
+    #[test]
+    #[ignore = "implemented by T101"]
+    fn a_deleted_owner_and_a_reply_without_status_are_reported_as_such() {
+        let fix = Fixture::new();
+        let client = FakeClient::new();
+        configured(&fix, &client);
+        link_session(&fix, "s1", "41");
+        fix.store
+            .add_link(&new_link(OwnerKind::Session, "gone", "42"), T0, &user())
+            .unwrap();
+        std::fs::write(client.path().join("out.41"), r#"{"node":{"title":"x"}}"#).unwrap();
+        client.reply("42", "done");
+
+        let checks = checked(&fix, LOOKUP_TIMEOUT);
+
+        assert_eq!(outcome_for(&checks, "s1"), &Outcome::NoRemoteStatus);
+        assert_eq!(outcome_for(&checks, "gone"), &Outcome::OwnerMissing);
+    }
+
+    #[test]
+    #[ignore = "implemented by T101"]
+    fn a_check_writes_nothing_and_only_runs_read_subcommands() {
+        let fix = Fixture::new();
+        let client = FakeClient::new();
+        configured(&fix, &client);
+        put_session(&fix, "s2", State::Interrupted, false);
+        link_session(&fix, "s2", "41");
+        link_session(&fix, "s1", "42");
+        client.reply("41", "done");
+        client.make("fail", "42");
+        let links_before = fix.store.all_links().unwrap();
+        let seq_before = fix.store.last_seq().unwrap();
+        let sessions_before = fix.store.list_sessions().unwrap();
+        let projects_before = fix.store.list_projects().unwrap();
+
+        checked(&fix, LOOKUP_TIMEOUT);
+        checked(&fix, LOOKUP_TIMEOUT);
+
+        assert_eq!(fix.store.all_links().unwrap(), links_before);
+        assert_eq!(fix.store.last_seq().unwrap(), seq_before);
+        assert_eq!(fix.store.list_sessions().unwrap(), sessions_before);
+        assert_eq!(fix.store.list_projects().unwrap(), projects_before);
+        let calls = client.calls();
+        assert_eq!(calls.len(), 4);
+        for call in &calls {
+            assert!(
+                call.starts_with("--json node get --doc 7 --id "),
+                "unexpected client call: {call}"
+            );
+        }
+    }
+
+    #[test]
+    #[ignore = "implemented by T101"]
+    fn the_client_is_given_the_server_and_token_from_the_environment() {
+        let fix = Fixture::new();
+        let client = FakeClient::new();
+        configured(&fix, &client);
+        let program = client.path().join("cortexiphan");
+        let script = std::fs::read_to_string(&program).unwrap();
+        let script = script.replacen(
+            "id=\"\"",
+            &format!(
+                "echo \"$CORTEXIPHAN_SERVER $CORTEXIPHAN_TOKEN\" > \"{}/env.log\"\nid=\"\"",
+                client.path().display()
+            ),
+            1,
+        );
+        std::fs::write(&program, script).unwrap();
+        put_session(&fix, "s2", State::Working, false);
+        link_session(&fix, "s2", "41");
+        client.reply("41", "doing");
+
+        checked(&fix, LOOKUP_TIMEOUT);
+
+        let seen = std::fs::read_to_string(client.path().join("env.log")).unwrap();
+        assert_eq!(seen.trim(), "http://127.0.0.1:1 secret-token");
     }
 }
