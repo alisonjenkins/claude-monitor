@@ -21,7 +21,7 @@ use claude_monitor::live::LiveSources;
 use claude_monitor::model::{Session, State};
 use claude_monitor::store::{Store, StoreOptions};
 use claude_monitor::testing::FakeEnv;
-use claude_monitor::watch::{state_changes, watch};
+use claude_monitor::watch::{notifications, state_changes, watch};
 use serde_json::json;
 use tempfile::TempDir;
 
@@ -94,6 +94,67 @@ fn a_session_that_appears_later_is_reported_in_any_state() {
         lines,
         [format!("{AT} claude cccccccc finished (new) /w/proj")]
     );
+}
+
+#[test]
+#[ignore = "I7: watch sends desktop notifications"]
+fn the_first_pass_notifies_nothing() {
+    let sessions = [
+        session("aaaaaaaa-1", State::Idle),
+        session("bbbbbbbb-2", State::NeedsPermission),
+    ];
+
+    assert!(notifications(&BTreeMap::new(), &sessions, true).is_empty());
+}
+
+#[test]
+#[ignore = "I7: watch sends desktop notifications"]
+fn a_change_into_permission_or_idle_notifies_once_by_project() {
+    let mut seen = BTreeMap::new();
+    state_changes(
+        &mut seen,
+        &[
+            session("aaaaaaaa-1", State::Working),
+            session("bbbbbbbb-2", State::Working),
+        ],
+        AT,
+        true,
+    );
+    let next = [
+        session("aaaaaaaa-1", State::NeedsPermission),
+        session("bbbbbbbb-2", State::Finished),
+    ];
+
+    let notes = notifications(&seen, &next, false);
+
+    assert_eq!(notes, [("proj".to_owned(), State::NeedsPermission)]);
+    state_changes(&mut seen, &next, AT, false);
+    assert!(
+        notifications(&seen, &next, false).is_empty(),
+        "an unchanged state is not notified again"
+    );
+}
+
+#[test]
+#[ignore = "I7: watch sends desktop notifications"]
+fn a_session_that_appears_idle_after_the_first_pass_notifies() {
+    let mut seen = BTreeMap::new();
+    state_changes(&mut seen, &[], AT, true);
+
+    let notes = notifications(&seen, &[session("cccccccc-3", State::Idle)], false);
+
+    assert_eq!(notes, [("proj".to_owned(), State::Idle)]);
+}
+
+#[test]
+#[ignore = "I7: watch sends desktop notifications"]
+fn the_project_is_the_repository_name_else_the_directory() {
+    let mut with_repo = session("aaaaaaaa-1", State::Idle);
+    with_repo.repo_root = Some("/home/u/git/nix-config".to_owned());
+
+    let notes = notifications(&BTreeMap::new(), &[with_repo], false);
+
+    assert_eq!(notes, [("nix-config".to_owned(), State::Idle)]);
 }
 
 #[derive(Clone, Default)]
@@ -252,6 +313,43 @@ fn warnings_go_to_the_error_stream_once() {
         "warning: claude registry: /x does not exist\n"
     );
     assert_eq!(running.out.text(), "");
+}
+
+#[test]
+#[ignore = "I7: watch sends desktop notifications"]
+fn watch_sends_a_desktop_notification_on_a_new_transition_only() {
+    let (dir, fake) = (TempDir::new().unwrap(), live_fake());
+    let running = start(&dir, &fake, Vec::new());
+    running.wake.wake();
+    eventually("the session to appear", || {
+        running.out.text().contains(" idle (new) /w/proj")
+    });
+    assert!(
+        fake.notifier.sent().is_empty(),
+        "an existing session is not news"
+    );
+
+    fake.fs
+        .add_file("/cfg/sessions/4242.json", &registry_entry("busy"));
+    running.wake.wake();
+    eventually("the busy line", || {
+        running.out.text().contains(" working (was idle)")
+    });
+    assert!(fake.notifier.sent().is_empty());
+
+    fake.fs
+        .add_file("/cfg/sessions/4242.json", &registry_entry("idle"));
+    running.wake.wake();
+    eventually("the notification", || !fake.notifier.sent().is_empty());
+    running.wake.wake();
+    thread::sleep(Duration::from_millis(200));
+
+    running.stop.store(true, Ordering::SeqCst);
+    running.thread.join().unwrap();
+    assert_eq!(
+        fake.notifier.sent(),
+        [("Claude Code".to_owned(), "proj: IDLE".to_owned())]
+    );
 }
 
 #[test]

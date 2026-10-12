@@ -40,6 +40,19 @@ pub fn state_changes(
     lines
 }
 
+/// The `(project, state)` of every session that just changed into a state
+/// worth a desktop notification, by the dashboard's rules. Read-only: call it
+/// before [`state_changes`] brings `previous` up to date. The `first` pass
+/// notifies nothing: sessions that already exist are not news.
+pub fn notifications(
+    previous: &BTreeMap<String, State>,
+    sessions: &[Session],
+    first: bool,
+) -> Vec<(String, State)> {
+    let _ = (previous, sessions, first);
+    Vec::new()
+}
+
 /// Refreshes on every wake of `built`'s sources and writes a line per state
 /// change to `out` and per new warning to `err`, until `stop` is set or `out`
 /// can no longer be written.
