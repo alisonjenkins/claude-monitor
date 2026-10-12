@@ -8,8 +8,7 @@ use serde_json::{json, Value};
 
 use crate::agents::{self, ParseError, ParsedHook};
 use crate::env::{Clock, Env};
-use crate::model::{next_state, Author, Event, Session, StartSource, State};
-use crate::session::{self, SessionState};
+use crate::model::{Author, Event, Session, StartSource};
 use crate::store::events::{EventsError, NewEvent};
 use crate::store::sessions::SessionsError;
 use crate::store::{resolve_state_dir, StateDirEnv, Store, StoreError, StoreOptions};
@@ -87,8 +86,6 @@ impl GitProbe for FsGit {
 pub struct HookContext<'a> {
     pub agent: &'a str,
     pub state_dir: &'a Path,
-    /// Directory of the legacy per-session JSON files; `None` skips that write.
-    pub runtime_dir: Option<&'a Path>,
     pub tmux_pane: Option<&'a str>,
     pub clock: &'a dyn Clock,
     pub git: &'a dyn GitProbe,
@@ -114,8 +111,6 @@ enum HookError {
     Begin(rusqlite::Error),
     #[error("cannot commit write transaction: {0}")]
     Commit(rusqlite::Error),
-    #[error("legacy status file: {0:#}")]
-    Legacy(anyhow::Error),
 }
 
 /// Ingest one hook payload. Never fails and never prints to stdout: errors go
@@ -129,12 +124,12 @@ pub fn ingest(ctx: &HookContext<'_>, input: &str) {
         .get("hook_event_name")
         .and_then(Value::as_str)
         .unwrap_or(NO_EVENT);
-    if let Err(e) = ingest_payload(ctx, &raw, event_name) {
+    if let Err(e) = ingest_payload(ctx, &raw) {
         log_failure(ctx, event_name, &e);
     }
 }
 
-fn ingest_payload(ctx: &HookContext<'_>, raw: &Value, event_name: &str) -> Result<(), HookError> {
+fn ingest_payload(ctx: &HookContext<'_>, raw: &Value) -> Result<(), HookError> {
     let kinds = agents::kinds();
     let kind = kinds
         .iter()
@@ -145,44 +140,12 @@ fn ingest_payload(ctx: &HookContext<'_>, raw: &Value, event_name: &str) -> Resul
         return Ok(());
     }
 
-    for hook in &hooks {
-        if let Some(dir) = ctx.runtime_dir {
-            if let Err(e) = write_legacy(dir, hook, ctx.tmux_pane) {
-                log_failure(ctx, event_name, &HookError::Legacy(e));
-            }
-        }
-    }
-
     let store = Store::open_in_dir(ctx.state_dir, &StoreOptions::hook())?;
     let now = ctx.clock.now();
     for hook in &hooks {
         apply(ctx, &store, hook, &now)?;
     }
     Ok(())
-}
-
-/// Keeps the old dashboard's per-session file current until it reads the store.
-fn write_legacy(dir: &Path, hook: &ParsedHook, tmux_pane: Option<&str>) -> anyhow::Result<()> {
-    if matches!(hook.event, Event::SessionEnd { .. }) {
-        return session::remove_session(dir, &hook.session_id);
-    }
-    let state = match next_state(State::Idle, &hook.event).0 {
-        State::Working => SessionState::Working,
-        State::NeedsPermission => SessionState::NeedsPermission,
-        _ => SessionState::Idle,
-    };
-    let cwd = hook
-        .cwd
-        .clone()
-        .or_else(current_dir_string)
-        .unwrap_or_default();
-    session::upsert_session(
-        dir,
-        &hook.session_id,
-        state,
-        cwd,
-        tmux_pane.map(str::to_owned),
-    )
 }
 
 fn current_dir_string() -> Option<String> {
@@ -448,12 +411,10 @@ pub fn run(agent: Option<&str>, state_dir: Option<&Path>, env: &Env) {
         Ok(dir) => dir,
         Err(e) => return eprintln!("claude-monitor hook: {e}"),
     };
-    let runtime_dir = session::status_dir();
     let tmux_pane = std::env::var("TMUX_PANE").ok();
     let ctx = HookContext {
         agent,
         state_dir: &state_dir,
-        runtime_dir: Some(&runtime_dir),
         tmux_pane: tmux_pane.as_deref(),
         clock: env.clock.as_ref(),
         git: &FsGit,

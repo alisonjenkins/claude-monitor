@@ -15,6 +15,8 @@ mod output;
 mod show;
 
 pub use command::{Command, CommandInfo, ProjectAction};
+#[cfg(feature = "tui")]
+pub(crate) use list::age;
 pub use output::Output;
 
 #[derive(Parser)]
@@ -168,8 +170,7 @@ pub fn run_in(cmd: Command, env: &Env, state_dir: Option<&Path>) -> Result<Outpu
 
 #[cfg(feature = "tui")]
 fn run_dashboard(env: &Env, state_dir: Option<&Path>) -> Result<Output, Error> {
-    migrate::auto_migrate(state_dir, env);
-    crate::tui::dashboard::run().map_err(|e| Error::Io {
+    crate::tui::dashboard::run(env, state_dir).map_err(|e| Error::Io {
         operation: "run dashboard".to_owned(),
         path: None,
         source: std::io::Error::other(format!("{e:#}")),

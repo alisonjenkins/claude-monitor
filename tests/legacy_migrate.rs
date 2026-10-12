@@ -341,7 +341,6 @@ fn the_hook_path_never_triggers_migration() {
     let ctx = HookContext {
         agent: "claude",
         state_dir: &h.state_dir,
-        runtime_dir: Some(&h.runtime_dir),
         tmux_pane: None,
         clock: &h.clock,
         git: &NoGit,

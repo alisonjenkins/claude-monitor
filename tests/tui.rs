@@ -122,7 +122,6 @@ fn position(text: &str, needle: &str) -> usize {
 }
 
 #[test]
-#[ignore = "T033"]
 fn sections_render_in_order_with_headers() {
     let app = loaded(overview(vec![
         (SectionName::Active, vec![active("a", State::Working)], 0),
@@ -155,7 +154,6 @@ fn sections_render_in_order_with_headers() {
 }
 
 #[test]
-#[ignore = "T033"]
 fn needs_permission_rows_come_first_and_are_marked() {
     let app = loaded(active_only(vec![
         active("p", State::NeedsPermission),
@@ -171,7 +169,6 @@ fn needs_permission_rows_come_first_and_are_marked() {
 }
 
 #[test]
-#[ignore = "T033"]
 fn every_state_has_its_own_label() {
     let app = loaded(overview(vec![
         (
@@ -200,7 +197,6 @@ fn every_state_has_its_own_label() {
 }
 
 #[test]
-#[ignore = "T033"]
 fn rows_show_agent_repo_branch_state_age_and_task() {
     let mut e = active("a", State::Idle);
     e.agent_kind = "copilot".to_owned();
@@ -223,7 +219,6 @@ fn rows_show_agent_repo_branch_state_age_and_task() {
 }
 
 #[test]
-#[ignore = "T033"]
 fn a_row_without_a_repo_shows_its_directory() {
     let mut e = active("a", State::Idle);
     e.repo = None;
@@ -235,7 +230,6 @@ fn a_row_without_a_repo_shows_its_directory() {
 }
 
 #[test]
-#[ignore = "T033"]
 fn j_k_and_arrows_move_the_selection_and_clamp_at_both_ends() {
     let app = loaded(active_only(vec![
         active("a", State::Idle),
@@ -262,7 +256,6 @@ fn j_k_and_arrows_move_the_selection_and_clamp_at_both_ends() {
 }
 
 #[test]
-#[ignore = "T033"]
 fn selection_skips_section_headers() {
     let app = loaded(overview(vec![
         (SectionName::Active, vec![active("a", State::Idle)], 0),
@@ -279,7 +272,6 @@ fn selection_skips_section_headers() {
 }
 
 #[test]
-#[ignore = "T033"]
 fn enter_on_a_session_with_a_pane_jumps_to_it() {
     let (app, _) = update(
         App::new(),
@@ -300,7 +292,6 @@ fn enter_on_a_session_with_a_pane_jumps_to_it() {
 }
 
 #[test]
-#[ignore = "T033"]
 fn enter_without_a_pane_sets_a_status_message_and_no_effect() {
     let app = loaded(active_only(vec![active("a", State::Idle)]));
 
@@ -313,7 +304,6 @@ fn enter_without_a_pane_sets_a_status_message_and_no_effect() {
 }
 
 #[test]
-#[ignore = "T033"]
 fn enter_and_navigation_on_an_empty_list_do_not_panic() {
     let mut app = loaded(active_only(Vec::new()));
     for code in [
@@ -330,7 +320,6 @@ fn enter_and_navigation_on_an_empty_list_do_not_panic() {
 }
 
 #[test]
-#[ignore = "T033"]
 fn d_hides_the_selected_session_until_its_state_changes() {
     let both = || active_only(vec![active("a", State::Idle), active("b", State::Idle)]);
     let (app, _) = press(loaded(both()), KeyCode::Char('d'));
@@ -348,7 +337,6 @@ fn d_hides_the_selected_session_until_its_state_changes() {
 }
 
 #[test]
-#[ignore = "T033"]
 fn hiding_is_ui_local_and_a_fresh_dashboard_shows_everything() {
     let both = || active_only(vec![active("a", State::Idle), active("b", State::Idle)]);
     let (_hidden, _) = press(loaded(both()), KeyCode::Char('d'));
@@ -357,7 +345,6 @@ fn hiding_is_ui_local_and_a_fresh_dashboard_shows_everything() {
 }
 
 #[test]
-#[ignore = "T033"]
 fn q_escape_and_ctrl_c_quit() {
     for (code, modifiers) in [
         (KeyCode::Char('q'), KeyModifiers::NONE),
@@ -371,7 +358,6 @@ fn q_escape_and_ctrl_c_quit() {
 }
 
 #[test]
-#[ignore = "T033"]
 fn control_or_alt_letters_do_not_act_as_plain_keys() {
     let app = loaded(active_only(vec![active("a", State::Idle)]));
     let (app, effects) = update(app, Msg::Key(KeyCode::Char('d'), KeyModifiers::CONTROL));
@@ -382,7 +368,6 @@ fn control_or_alt_letters_do_not_act_as_plain_keys() {
 }
 
 #[test]
-#[ignore = "T033"]
 fn collapsed_finished_sessions_render_a_hint_line() {
     let app = loaded(overview(vec![(
         SectionName::Finished,
@@ -394,7 +379,6 @@ fn collapsed_finished_sessions_render_a_hint_line() {
 }
 
 #[test]
-#[ignore = "T033"]
 fn the_hint_shows_even_when_every_finished_session_is_collapsed() {
     let app = loaded(overview(vec![
         (SectionName::Active, vec![active("a", State::Idle)], 0),
@@ -405,7 +389,6 @@ fn the_hint_shows_even_when_every_finished_session_is_collapsed() {
 }
 
 #[test]
-#[ignore = "T033"]
 fn an_empty_store_renders_an_empty_state_message() {
     let app = loaded(overview(vec![
         (SectionName::Active, Vec::new(), 0),
@@ -419,13 +402,11 @@ fn an_empty_store_renders_an_empty_state_message() {
 }
 
 #[test]
-#[ignore = "T033"]
 fn before_the_first_load_the_dashboard_says_it_is_loading() {
     assert!(wide(&App::new()).contains("Loading"));
 }
 
 #[test]
-#[ignore = "T033"]
 fn degraded_entries_render_as_degraded_rows() {
     let mut broken = active("x", State::Unknown);
     broken.agent_kind = String::new();
@@ -457,7 +438,6 @@ fn notified(effects: &[Effect]) -> Vec<(String, State)> {
 }
 
 #[test]
-#[ignore = "T033"]
 fn notifications_fire_only_on_a_transition_into_permission_or_idle() {
     let (app, effects) = refresh(
         App::new(),
@@ -517,7 +497,6 @@ fn notifications_fire_only_on_a_transition_into_permission_or_idle() {
 }
 
 #[test]
-#[ignore = "T033"]
 fn a_hidden_session_still_notifies_on_its_next_transition() {
     let (app, _) = press(
         loaded(active_only(vec![active("a", State::Idle)])),
@@ -530,7 +509,6 @@ fn a_hidden_session_still_notifies_on_its_next_transition() {
 }
 
 #[test]
-#[ignore = "T033"]
 fn a_40_column_terminal_truncates_rows_without_panicking() {
     let mut e = active("a", State::NeedsPermission);
     e.repo = Some("a-very-long-repository-name".to_owned());
@@ -550,7 +528,6 @@ fn a_40_column_terminal_truncates_rows_without_panicking() {
 }
 
 #[test]
-#[ignore = "T033"]
 fn tiny_terminals_do_not_panic() {
     let app = loaded(active_only(vec![active("a", State::Idle)]));
     for (width, height) in [(0, 0), (1, 1), (10, 3), (20, 5), (200, 2)] {
@@ -560,7 +537,6 @@ fn tiny_terminals_do_not_panic() {
 }
 
 #[test]
-#[ignore = "T033"]
 fn the_selected_row_stays_on_screen_in_a_short_terminal() {
     let entries: Vec<OverviewEntry> = (0..30)
         .map(|n| active(&format!("s{n:02}"), State::Idle))
@@ -639,7 +615,6 @@ impl Rig {
             &HookContext {
                 agent: "claude",
                 state_dir: &self.state_dir,
-                runtime_dir: None,
                 tmux_pane: pane,
                 clock: &self.clock,
                 git: &FixedGit,
@@ -657,7 +632,6 @@ impl Rig {
 }
 
 #[test]
-#[ignore = "T033"]
 fn a_feed_wake_refreshes_the_overview_and_keeps_the_selection_on_the_same_session() {
     let mut rig = Rig::new();
     rig.hook(Some("%1"), &payload("SessionStart-startup", AGENT_A));
@@ -697,7 +671,6 @@ fn render_has_permission(app: &App) -> bool {
 }
 
 #[test]
-#[ignore = "T033"]
 fn without_a_wake_the_feed_leaves_the_view_alone() {
     let mut rig = Rig::new();
     rig.hook(None, &payload("SessionStart-startup", AGENT_A));
@@ -705,4 +678,45 @@ fn without_a_wake_the_feed_leaves_the_view_alone() {
 
     assert!(effects.is_empty());
     assert!(app.snapshot().is_none());
+}
+
+#[test]
+fn a_scripted_session_goes_from_hook_to_store_to_feed_to_screen() {
+    let mut rig = Rig::new();
+    rig.hook(Some("%1"), &payload("SessionStart-startup", AGENT_A));
+    rig.hook(Some("%2"), &payload("SessionStart-startup", AGENT_B));
+    rig.hook(Some("%2"), &payload("UserPromptSubmit", AGENT_B));
+    rig.hook(Some("%1"), &payload("PermissionRequest", AGENT_A));
+
+    let (app, effects) = rig.settle(App::new());
+    assert!(effects.is_empty(), "the first load never notifies");
+    let screen = wide(&app);
+    assert!(position(&screen, "PERMISSION") < position(&screen, "WORKING"));
+    assert!(screen.contains("Say hi"), "{screen}");
+    assert!(screen.contains("claude-monitor/main"), "{screen}");
+
+    let (app, effects) = press(app, KeyCode::Enter);
+    assert_eq!(
+        effects,
+        [Effect::JumpToPane {
+            pane: "%1".to_owned()
+        }]
+    );
+
+    let (app, _) = press(app, KeyCode::Char('j'));
+    let (app, _) = press(app, KeyCode::Char('d'));
+    assert_eq!(ids(&app).len(), 1);
+    assert!(!wide(&app).contains("WORKING"));
+
+    rig.hook(Some("%2"), &payload("Stop", AGENT_B));
+    let (app, effects) = rig.settle(app);
+    assert_eq!(
+        notified(&effects),
+        [("claude-monitor".to_owned(), State::Idle)]
+    );
+    assert_eq!(ids(&app).len(), 2, "the state change showed it again");
+    assert!(wide(&app).contains("IDLE"));
+
+    let (_, effects) = press(app, KeyCode::Char('q'));
+    assert_eq!(effects, [Effect::Quit]);
 }

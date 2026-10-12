@@ -92,18 +92,3 @@ pub fn store_migrate_if_needed(
 ) -> Result<Option<MigrateReport>, LegacyError> {
     legacy::migrate_if_needed(store, &session::status_dir(), env.clock.as_ref())
 }
-
-/// Opens the store and runs [`store_migrate_if_needed`] for a viewer that has
-/// no store handle of its own yet. A failure is reported on stderr and never
-/// stops the viewer (FR-021).
-pub fn auto_migrate(state_dir: Option<&Path>, env: &Env) {
-    let outcome = resolve_state_dir(state_dir, &StateDirEnv::from_process())
-        .map_err(|e| store_error(&e))
-        .and_then(|dir| {
-            Store::open_in_dir(&dir, &StoreOptions::viewer()).map_err(|e| store_error(&e))
-        })
-        .and_then(|store| store_migrate_if_needed(&store, env).map_err(|e| legacy_error(&e)));
-    if let Err(error) = outcome {
-        eprintln!("claude-monitor: legacy import skipped: {error}");
-    }
-}

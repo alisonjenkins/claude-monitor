@@ -104,7 +104,7 @@ pub fn run(env: &Env, state_dir: Option<&Path>, args: ListArgs) -> Result<Output
 }
 
 /// `5s`, `12m`, `3h` or `2d`; `?` when either time does not parse.
-pub(super) fn age(now: &str, then: &str) -> String {
+pub(crate) fn age(now: &str, then: &str) -> String {
     let (Ok(now), Ok(then)) = (
         DateTime::parse_from_rfc3339(now),
         DateTime::parse_from_rfc3339(then),

@@ -13,7 +13,6 @@ use std::time::{Duration, Instant};
 
 use claude_monitor::hook::{ingest, FsGit, GitInfo, GitProbe, HookContext, NoGit};
 use claude_monitor::model::{Author, Session, State};
-use claude_monitor::session::{read_all_sessions, SessionState};
 use claude_monitor::store::{Store, StoreOptions};
 use claude_monitor::testing::FakeClock;
 use serde_json::Value;
@@ -35,7 +34,6 @@ impl GitProbe for FakeGit {
 struct Harness {
     _dir: TempDir,
     state_dir: PathBuf,
-    runtime_dir: PathBuf,
     clock: FakeClock,
     git: FakeGit,
 }
@@ -49,7 +47,6 @@ impl Harness {
         let dir = TempDir::new().unwrap();
         Self {
             state_dir: dir.path().join("state"),
-            runtime_dir: dir.path().join("runtime"),
             _dir: dir,
             clock: FakeClock::new(T0),
             git: FakeGit(git),
@@ -60,7 +57,6 @@ impl Harness {
         let ctx = HookContext {
             agent,
             state_dir: &self.state_dir,
-            runtime_dir: Some(&self.runtime_dir),
             tmux_pane: pane,
             clock: &self.clock,
             git: &self.git,
@@ -427,27 +423,37 @@ fn a_pane_or_branch_change_appends_a_location_event() {
 }
 
 #[test]
-fn legacy_runtime_file_is_still_written_and_removed() {
-    let h = Harness::new();
-    let id = "sess-a";
-    h.feed(Some("%7"), &payload("SessionStart-startup", id));
-    h.feed(Some("%7"), &payload("UserPromptSubmit", id));
+fn the_hook_no_longer_writes_legacy_runtime_files() {
+    let dir = TempDir::new().unwrap();
+    let state = dir.path().join("state");
+    let runtime = dir.path().join("runtime");
 
-    let files = read_all_sessions(&h.runtime_dir);
-    assert_eq!(files.len(), 1);
-    assert_eq!(files[0].session_id, id);
-    assert_eq!(files[0].state, SessionState::Working);
-    assert_eq!(files[0].cwd, CWD);
-    assert_eq!(files[0].tmux_pane.as_deref(), Some("%7"));
-
-    h.feed(Some("%7"), &payload("PermissionRequest", id));
-    assert_eq!(
-        read_all_sessions(&h.runtime_dir)[0].state,
-        SessionState::NeedsPermission
+    run_binary(
+        &state,
+        &runtime,
+        &[],
+        &payload("SessionStart-startup", "sess-a"),
+    );
+    run_binary(
+        &state,
+        &runtime,
+        &[],
+        &payload("UserPromptSubmit", "sess-a"),
+    );
+    run_binary(
+        &state,
+        &runtime,
+        &[],
+        &payload("SessionEnd-other", "sess-a"),
     );
 
-    h.feed(Some("%7"), &payload("SessionEnd-other", id));
-    assert!(read_all_sessions(&h.runtime_dir).is_empty());
+    assert!(!runtime.exists(), "{runtime:?} was created");
+    let store = Store::open_in_dir(&state, &StoreOptions::viewer()).unwrap();
+    let session = store
+        .get_session_by_agent_id("claude", "sess-a")
+        .unwrap()
+        .unwrap();
+    assert_eq!(session.state, State::Finished);
 }
 
 #[test]
@@ -515,7 +521,7 @@ fn hook_busy_timeout_is_200_ms() {
 }
 
 #[test]
-fn a_locked_database_returns_quickly_logs_and_keeps_the_legacy_file() {
+fn a_locked_database_returns_quickly_and_logs() {
     let h = Harness::new();
     let id = "sess-a";
     h.feed(None, &payload("SessionStart-startup", id));
@@ -531,10 +537,6 @@ fn a_locked_database_returns_quickly_logs_and_keeps_the_legacy_file() {
     let log = h.hook_log();
     assert_eq!(log.lines().count(), 1, "{log}");
     assert!(log.contains("event=UserPromptSubmit"), "{log}");
-    assert_eq!(
-        read_all_sessions(&h.runtime_dir)[0].state,
-        SessionState::Working
-    );
 
     other.execute_batch("ROLLBACK").unwrap();
     assert_eq!(h.session(id).state, State::Idle);

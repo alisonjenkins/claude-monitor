@@ -169,7 +169,6 @@ impl Fx {
         let ctx = HookContext {
             agent: "claude",
             state_dir: &self.state_dir,
-            runtime_dir: None,
             tmux_pane: None,
             clock: &clock,
             git: &NoGit,

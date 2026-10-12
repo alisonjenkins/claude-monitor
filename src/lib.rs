@@ -5,7 +5,6 @@ pub mod error;
 pub mod feed;
 pub mod hook;
 pub mod model;
-pub mod notify;
 pub mod session;
 pub mod store;
 #[doc(hidden)]
