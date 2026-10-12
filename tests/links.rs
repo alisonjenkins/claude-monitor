@@ -705,3 +705,97 @@ mod check {
         assert_eq!(seen.trim(), "http://127.0.0.1:1 secret-token");
     }
 }
+
+mod links_check_command {
+    use super::*;
+
+    fn links_check(fix: &Fixture) -> Result<Output, Error> {
+        fix.run(Command::LinksCheck)
+    }
+
+    #[test]
+    fn it_parses_as_links_check() {
+        let cli = Cli::try_parse_from(["claude-monitor", "links", "check"]).unwrap();
+        assert_eq!(cli.command(), Command::LinksCheck);
+        assert!(Cli::try_parse_from(["claude-monitor", "links"]).is_err());
+    }
+
+    #[test]
+    #[ignore = "implemented by T101"]
+    fn without_settings_it_says_it_was_skipped_and_why_and_still_succeeds() {
+        let fix = Fixture::new();
+        fix.link("s1", "42").unwrap();
+
+        let output = links_check(&fix).unwrap();
+
+        let text = output.render(false);
+        assert!(text.contains("skipped"), "{text}");
+        assert!(text.contains("CORTEXIPHAN_SERVER"), "{text}");
+        let value = json(&output);
+        assert_eq!(value["ok"], true);
+        assert_eq!(value["checked"], false);
+        assert!(value["skipped"]
+            .as_str()
+            .unwrap()
+            .contains("CORTEXIPHAN_TOKEN"));
+    }
+
+    #[test]
+    #[ignore = "implemented by T101"]
+    fn it_reports_agreement_disagreement_and_unreachable_links_with_exit_0() {
+        let fix = Fixture::new();
+        let client = FakeClient::new();
+        configured(&fix, &client);
+        put_session(&fix, "s2", State::Working, false);
+        put_session(&fix, "s3", State::Interrupted, false);
+        put_session(&fix, "s4", State::Working, false);
+        link_session(&fix, "s2", "41");
+        link_session(&fix, "s3", "42");
+        link_session(&fix, "s4", "43");
+        client.reply("41", "doing");
+        client.reply("42", "done");
+        client.make("fail", "43");
+
+        let output = links_check(&fix).unwrap();
+
+        let value = json(&output);
+        assert_eq!(value["ok"], true);
+        assert_eq!(value["checked"], true);
+        assert_eq!(value["summary"]["agree"], 1);
+        assert_eq!(value["summary"]["disagree"], 1);
+        assert_eq!(value["summary"]["unreachable"], 1);
+        let by_owner = |owner: &str| {
+            value["links"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|l| l["owner"]["id"] == owner)
+                .unwrap()
+                .clone()
+        };
+        let disagreeing = by_owner("s3");
+        assert_eq!(disagreeing["outcome"], "disagree");
+        assert_eq!(disagreeing["local_status"], "interrupted");
+        assert_eq!(disagreeing["remote_status"], "done");
+        assert_eq!(by_owner("s2")["outcome"], "agree");
+        assert_eq!(by_owner("s4")["outcome"], "unreachable");
+        assert!(by_owner("s4")["reason"].is_string());
+        let text = output.render(false);
+        assert!(text.contains("interrupted"), "{text}");
+        assert!(text.contains("done"), "{text}");
+        assert!(!text.contains("secret-token"), "{text}");
+    }
+
+    #[test]
+    #[ignore = "implemented by T101"]
+    fn with_no_links_it_says_so() {
+        let fix = Fixture::new();
+        let client = FakeClient::new();
+        configured(&fix, &client);
+
+        let output = links_check(&fix).unwrap();
+
+        assert!(output.render(false).contains("no links"));
+        assert_eq!(json(&output)["links"].as_array().unwrap().len(), 0);
+    }
+}

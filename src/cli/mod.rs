@@ -244,11 +244,22 @@ enum Commands {
         /// The node's id
         node_id: String,
     },
+    /// Work with links to the external graph
+    Links {
+        #[command(subcommand)]
+        action: LinksAction,
+    },
     /// Write projects, steps, notes and sessions for another tool to import
     Export {
         #[command(subcommand)]
         target: ExportTarget,
     },
+}
+
+#[derive(Subcommand)]
+enum LinksAction {
+    /// Show linked records whose two sides disagree; reads both sides and writes neither
+    Check,
 }
 
 #[derive(Subcommand)]
@@ -460,6 +471,9 @@ impl Cli {
                 owner: owner.clone(),
                 cortex: node_id.clone(),
             },
+            Some(Commands::Links {
+                action: LinksAction::Check,
+            }) => Command::LinksCheck,
             Some(Commands::Export {
                 target:
                     ExportTarget::Cortexiphan {
