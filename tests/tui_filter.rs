@@ -33,7 +33,6 @@ fn entry(id: &str, agent: &str, state: State, task: &str) -> OverviewEntry {
 }
 
 #[test]
-#[ignore = "T111: implemented in the next commit"]
 fn an_untouched_filter_matches_everything_and_narrows_nothing() {
     let filter = Filter::default();
 
@@ -43,7 +42,6 @@ fn an_untouched_filter_matches_everything_and_narrows_nothing() {
 }
 
 #[test]
-#[ignore = "T111: implemented in the next commit"]
 fn text_matches_task_cwd_repo_branch_and_project_ignoring_case() {
     let mut filter = Filter::default();
     let row = entry("s1", "claude", State::Idle, "Fix the BUILD");
@@ -58,7 +56,6 @@ fn text_matches_task_cwd_repo_branch_and_project_ignoring_case() {
 }
 
 #[test]
-#[ignore = "T111: implemented in the next commit"]
 fn a_row_with_no_task_does_not_break_the_text_match() {
     let mut row = entry("s1", "claude", State::Idle, "x");
     row.task_description = None;
@@ -69,7 +66,6 @@ fn a_row_with_no_task_does_not_break_the_text_match() {
 }
 
 #[test]
-#[ignore = "T111: implemented in the next commit"]
 fn the_state_filter_cycles_through_every_state_and_back_to_none() {
     let mut filter = Filter::default();
     let mut seen = Vec::new();
@@ -94,7 +90,6 @@ fn the_state_filter_cycles_through_every_state_and_back_to_none() {
 }
 
 #[test]
-#[ignore = "T111: implemented in the next commit"]
 fn the_state_filter_keeps_only_that_state() {
     let mut filter = Filter::default();
     filter.cycle_state();
@@ -107,7 +102,6 @@ fn the_state_filter_keeps_only_that_state() {
 }
 
 #[test]
-#[ignore = "T111: implemented in the next commit"]
 fn the_agent_filter_cycles_through_the_kinds_present_and_back_to_none() {
     let kinds = vec!["claude".to_owned(), "copilot".to_owned()];
     let mut filter = Filter::default();
@@ -125,7 +119,6 @@ fn the_agent_filter_cycles_through_the_kinds_present_and_back_to_none() {
 }
 
 #[test]
-#[ignore = "T111: implemented in the next commit"]
 fn the_agent_filter_keeps_only_that_agent_and_resets_when_the_kind_is_gone() {
     let mut filter = Filter::default();
     filter.cycle_agent(&["claude".to_owned(), "copilot".to_owned()]);
@@ -139,7 +132,6 @@ fn the_agent_filter_keeps_only_that_agent_and_resets_when_the_kind_is_gone() {
 }
 
 #[test]
-#[ignore = "T111: implemented in the next commit"]
 fn cycling_the_agent_with_no_kinds_stays_on_none() {
     let mut filter = Filter::default();
 
@@ -149,7 +141,6 @@ fn cycling_the_agent_with_no_kinds_stays_on_none() {
 }
 
 #[test]
-#[ignore = "T111: implemented in the next commit"]
 fn the_dismissed_toggle_does_not_narrow_and_flips() {
     let mut filter = Filter::default();
     assert!(!filter.show_dismissed());
@@ -163,7 +154,6 @@ fn the_dismissed_toggle_does_not_narrow_and_flips() {
 }
 
 #[test]
-#[ignore = "T111: implemented in the next commit"]
 fn the_summary_names_every_active_filter() {
     let mut filter = Filter::default();
     filter.cycle_state();
