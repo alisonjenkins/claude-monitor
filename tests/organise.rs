@@ -162,7 +162,6 @@ mod projects {
     use super::*;
 
     #[test]
-    #[ignore = "implemented by T108"]
     fn group_puts_three_sessions_in_a_project() {
         let fx = Fixture::new();
         for id in ["s1", "s2", "s3", "s4"] {
@@ -182,7 +181,6 @@ mod projects {
     }
 
     #[test]
-    #[ignore = "implemented by T108"]
     fn grouping_again_changes_nothing_and_records_nothing() {
         let fx = Fixture::new();
         fx.put("s1", State::Idle, RECENT);
@@ -195,7 +193,6 @@ mod projects {
     }
 
     #[test]
-    #[ignore = "implemented by T108"]
     fn a_dash_unassigns_the_sessions() {
         let fx = Fixture::new();
         fx.put("s1", State::Idle, RECENT);
@@ -211,7 +208,6 @@ mod projects {
     }
 
     #[test]
-    #[ignore = "implemented by T108"]
     fn an_unknown_session_refuses_the_whole_group_and_changes_nothing() {
         let fx = Fixture::new();
         fx.put("s1", State::Idle, RECENT);
@@ -224,7 +220,6 @@ mod projects {
     }
 
     #[test]
-    #[ignore = "implemented by T108"]
     fn add_rename_and_set_status_record_user_events() {
         let fx = Fixture::new();
         fx.put("s1", State::Idle, RECENT);
@@ -252,7 +247,6 @@ mod projects {
     }
 
     #[test]
-    #[ignore = "implemented by T108"]
     fn project_mistakes_are_refused_or_usage_errors() {
         let fx = Fixture::new();
         fx.json(project(ProjectAction::Add, "alpha", None));

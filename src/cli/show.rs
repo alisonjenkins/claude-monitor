@@ -10,6 +10,7 @@ use super::output::strip_control;
 use super::Output;
 use crate::env::Env;
 use crate::error::Error;
+use crate::model::Author;
 use crate::store::queries::OverviewEntry;
 use crate::store::Store;
 
@@ -17,6 +18,13 @@ const LABEL_WIDTH: usize = 14;
 
 fn refused(code: &'static str, message: String) -> Error {
     Error::Refused { code, message }
+}
+
+/// The author of a change the person asked for: `$USER`, else `user`.
+pub(super) fn user_author(env: &Env) -> Author {
+    Author::User {
+        name: env.vars.var("USER").unwrap_or_else(|| "user".to_owned()),
+    }
 }
 
 /// `id` exactly, else the one session whose id starts with it.

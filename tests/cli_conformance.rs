@@ -110,8 +110,6 @@ macro_rules! command_tests {
 }
 
 command_tests! {
-    project => "project", "implemented by T108";
-    group => "group", "implemented by T108";
     note => "note", "implemented by T109";
     park => "park", "implemented by T109";
     unpark => "unpark", "implemented by T109";
@@ -309,6 +307,38 @@ mod viewers {
     }
 }
 
+/// The organising commands write the store, so they run against a temporary
+/// state directory with the legacy-import marker already recorded.
+mod organisers {
+    use super::*;
+    use claude_monitor::cli::run_in;
+    use claude_monitor::store::{legacy, Store, StoreOptions};
+
+    fn run_against_empty_store(name: &str) -> Result<Output, Error> {
+        let state = tempfile::tempdir().unwrap();
+        let fake = FakeEnv::new();
+        let store = Store::open_in_dir(state.path(), &StoreOptions::viewer()).unwrap();
+        let empty = tempfile::tempdir().unwrap();
+        legacy::migrate(&store, empty.path(), fake.env.clock.as_ref()).unwrap();
+        let info = Command::all().iter().find(|i| i.name == name).unwrap();
+        run_in((info.example)(), &fake.env, Some(state.path()))
+    }
+
+    #[test]
+    fn project_implemented() {
+        let result = run_against_empty_store("project");
+        assert!(result.is_ok(), "{result:?}");
+        assert_contract("project", &result);
+    }
+
+    #[test]
+    fn group_implemented() {
+        let result = run_against_empty_store("group");
+        assert!(matches!(result, Err(Error::Refused { .. })), "{result:?}");
+        assert_contract("group", &result);
+    }
+}
+
 mod dashboard {
     use super::*;
 
@@ -336,7 +366,8 @@ fn every_command_has_generated_tests_with_the_right_task() {
     for info in Command::all() {
         match info.name {
             "hook" | "dashboard" | "migrate" | "list" | "show" | "reconcile" | "watch"
-            | "boot-check" | "restore" | "respawn" | "summarize" | "progress-bind" => {}
+            | "boot-check" | "restore" | "respawn" | "summarize" | "progress-bind" | "project"
+            | "group" => {}
             name => {
                 let reason = GENERATED
                     .iter()
@@ -351,7 +382,7 @@ fn every_command_has_generated_tests_with_the_right_task() {
             }
         }
     }
-    assert_eq!(GENERATED.len() + 12, Command::all().len());
+    assert_eq!(GENERATED.len() + 14, Command::all().len());
 }
 
 #[test]

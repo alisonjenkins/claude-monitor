@@ -14,6 +14,7 @@ mod list;
 pub mod migrate;
 mod output;
 mod progress;
+mod project;
 mod reconcile;
 mod respawn;
 mod restore;
@@ -164,6 +165,19 @@ enum Commands {
         #[command(subcommand)]
         action: Option<ProgressAction>,
     },
+    /// Create, rename or set the status of a project
+    Project {
+        #[command(subcommand)]
+        action: ProjectCommands,
+    },
+    /// Put sessions in a project (created if new); `-` as the project removes them from theirs
+    Group {
+        /// Project name, or `-` for no project
+        project: String,
+        /// Session ids, or the start of each
+        #[arg(required = true)]
+        sessions: Vec<String>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -183,6 +197,16 @@ enum ProgressAction {
         #[arg(long, value_name = "SOURCE")]
         source: Option<String>,
     },
+}
+
+#[derive(Subcommand)]
+enum ProjectCommands {
+    /// Create an active project
+    Add { name: String },
+    /// Give a project another name
+    Rename { name: String, new_name: String },
+    /// Set a project's status: active, parked, done or archived
+    SetStatus { name: String, status: String },
 }
 
 impl Cli {
@@ -291,6 +315,27 @@ impl Cli {
                 file: None,
                 source: None,
             },
+            Some(Commands::Project { action }) => match action {
+                ProjectCommands::Add { name } => Command::Project {
+                    action: ProjectAction::Add,
+                    name: name.clone(),
+                    value: None,
+                },
+                ProjectCommands::Rename { name, new_name } => Command::Project {
+                    action: ProjectAction::Rename,
+                    name: name.clone(),
+                    value: Some(new_name.clone()),
+                },
+                ProjectCommands::SetStatus { name, status } => Command::Project {
+                    action: ProjectAction::SetStatus,
+                    name: name.clone(),
+                    value: Some(status.clone()),
+                },
+            },
+            Some(Commands::Group { project, sessions }) => Command::Group {
+                project: project.clone(),
+                sessions: sessions.clone(),
+            },
         }
     }
 }
@@ -310,7 +355,8 @@ pub struct RunOptions {
 
 /// Run one command; `state_dir` is the `--state-dir` override. `Hook`,
 /// `Dashboard`, `Migrate`, `List`, `Show`, `Reconcile`, `Watch`, `BootCheck`,
-/// `Restore`, `Respawn`, `Summarize` and `ProgressBind` are implemented; every other
+/// `Restore`, `Respawn`, `Summarize`, `ProgressBind`, `Project` and `Group` are
+/// implemented; every other
 /// command reports `NotImplemented` until its task lands. Reads the store as it
 /// is; [`run_with`] adds the refresh pass the binary runs.
 pub fn run_in(cmd: Command, env: &Env, state_dir: Option<&Path>) -> Result<Output, Error> {
@@ -394,6 +440,14 @@ pub fn run_with(
             file,
             source,
         } => progress::run(env, state_dir, &owner, file, source),
+        Command::Project {
+            action,
+            name,
+            value,
+        } => project::run_project(env, state_dir, &action, &name, value.as_deref()),
+        Command::Group { project, sessions } => {
+            project::run_group(env, state_dir, &project, &sessions)
+        }
         Command::Hook { agent, event } => {
             hook::run(agent.as_deref(), event.as_deref(), state_dir, env);
             Ok(Output::empty())
@@ -417,6 +471,7 @@ fn reads_sessions(cmd: &Command) -> bool {
             | Command::ProgressBind { .. }
             | Command::Restore { .. }
             | Command::Respawn { .. }
+            | Command::Group { .. }
     )
 }
 
