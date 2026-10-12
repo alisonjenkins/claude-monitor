@@ -1,3 +1,5 @@
+use std::fmt;
+
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -121,21 +123,178 @@ impl Session {
         }
     }
 
-    pub fn apply_event(&mut self, _event: &Event, _at: &str) -> EventOutcome {
+    pub fn apply_event(&mut self, event: &Event, at: &str) -> EventOutcome {
+        let is_start = matches!(event, Event::SessionStart { .. });
+        if self.state == State::Finished && !is_start {
+            return EventOutcome {
+                lineage_continuation: false,
+            };
+        }
+        let (next, lineage_continuation) = next_state(self.state, event);
+        self.set_state(next, at);
+        at.clone_into(&mut self.last_activity_at);
+        match event {
+            Event::SessionStart { .. } => self.end_reason = None,
+            Event::SessionEnd { reason } => self.end_reason = Some(reason.clone()),
+            _ => {}
+        }
         EventOutcome {
-            lineage_continuation: false,
+            lineage_continuation,
         }
     }
 
-    pub fn reconcile(&mut self, _liveness: Liveness, _at: &str) {}
-
-    pub fn running(&self, _liveness: Liveness) -> bool {
-        false
+    pub fn reconcile(&mut self, liveness: Liveness, at: &str) {
+        if self.state != State::Finished && liveness != Liveness::Alive {
+            self.set_state(State::Interrupted, at);
+        }
     }
 
-    pub fn mark_done(&mut self, _at: &str) -> Result<(), DoneError> {
+    pub fn running(&self, liveness: Liveness) -> bool {
+        self.state.is_active() && liveness == Liveness::Alive
+    }
+
+    pub fn mark_done(&mut self, at: &str) -> Result<(), DoneError> {
+        if self.state != State::Finished {
+            return Err(DoneError::NotFinished { state: self.state });
+        }
+        self.done_at = Some(at.to_owned());
         Ok(())
     }
 
-    pub fn clear_done_on_respawn(&mut self) {}
+    pub fn clear_done_on_respawn(&mut self) {
+        self.done_at = None;
+    }
+
+    fn set_state(&mut self, next: State, at: &str) {
+        if self.state != next {
+            self.state = next;
+            at.clone_into(&mut self.state_since);
+        }
+    }
+}
+
+const CLEAR_REASON: &str = "clear";
+const ABNORMAL_END_REASONS: [&str; 3] = ["error", "abort", "timeout"];
+
+/// Returns the next state and whether a `/clear` continuation Session must be created.
+/// A finished session only leaves `Finished` through `SessionStart`.
+pub fn next_state(current: State, event: &Event) -> (State, bool) {
+    match event {
+        Event::SessionStart { .. } => (State::Idle, false),
+        _ if current == State::Finished => (State::Finished, false),
+        Event::UserPromptSubmit | Event::PreToolUse | Event::PostToolUse => (State::Working, false),
+        Event::PermissionRequest
+        | Event::Notification(
+            NotificationKind::PermissionPrompt | NotificationKind::ElicitationDialog,
+        ) => (State::NeedsPermission, false),
+        Event::Stop
+        | Event::Notification(
+            NotificationKind::IdlePrompt
+            | NotificationKind::AgentIdle
+            | NotificationKind::AgentCompleted,
+        ) => (State::Idle, false),
+        Event::Notification(_) => (current, false),
+        Event::SessionEnd { reason } if reason == CLEAR_REASON => (State::Finished, true),
+        Event::SessionEnd { reason } if ABNORMAL_END_REASONS.contains(&reason.as_str()) => {
+            (State::Interrupted, false)
+        }
+        Event::SessionEnd { .. } => (State::Finished, false),
+    }
+}
+
+impl State {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            State::Working => "working",
+            State::NeedsPermission => "needs_permission",
+            State::Idle => "idle",
+            State::Finished => "finished",
+            State::Interrupted => "interrupted",
+            State::Unknown => "unknown",
+        }
+    }
+
+    pub fn is_active(self) -> bool {
+        matches!(self, State::Working | State::NeedsPermission | State::Idle)
+    }
+}
+
+impl fmt::Display for State {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProjectStatus {
+    Active,
+    Parked,
+    Done,
+    Archived,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
+pub struct Project {
+    pub id: String,
+    pub name: String,
+    pub status: ProjectStatus,
+    pub note: Option<String>,
+    pub progress_binding_id: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum StepStatus {
+    Todo,
+    Doing,
+    Done,
+    Blocked,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
+pub struct Step {
+    pub binding_id: String,
+    pub ordinal: u32,
+    pub text: String,
+    pub status: StepStatus,
+    pub group: Option<String>,
+    pub external_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OwnerKind {
+    Session,
+    Project,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "author_kind", rename_all = "snake_case")]
+pub enum Author {
+    User { name: String },
+    Agent { kind: String, model: Option<String> },
+    System { component: String },
+}
+
+/// Who made a change, and when; the shape of an `events` row's author columns.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Attribution {
+    pub at: String,
+    pub author: Author,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
+pub struct Note {
+    pub id: String,
+    pub owner_kind: OwnerKind,
+    pub owner_id: String,
+    pub body: String,
+    pub created_at: String,
+    pub author: Author,
 }

@@ -57,7 +57,6 @@ const ALL: [State; 6] = [
 ];
 
 #[test]
-#[ignore = "T011"]
 fn passive_discovery_is_unknown_until_first_hook() {
     let mut s = discovered();
     assert_eq!(s.state, State::Unknown);
@@ -66,7 +65,6 @@ fn passive_discovery_is_unknown_until_first_hook() {
 }
 
 #[test]
-#[ignore = "T011"]
 fn session_start_goes_idle() {
     let mut s = discovered();
     let out = s.apply_event(&start(StartSource::Startup), T1);
@@ -75,7 +73,6 @@ fn session_start_goes_idle() {
 }
 
 #[test]
-#[ignore = "T011"]
 fn prompt_and_tool_events_go_working() {
     for ev in [
         Event::UserPromptSubmit,
@@ -89,7 +86,6 @@ fn prompt_and_tool_events_go_working() {
 }
 
 #[test]
-#[ignore = "T011"]
 fn permission_request_and_notifications_need_permission() {
     let mut s = in_state(State::Working);
     s.apply_event(&Event::PermissionRequest, T1);
@@ -106,7 +102,6 @@ fn permission_request_and_notifications_need_permission() {
 }
 
 #[test]
-#[ignore = "T011"]
 fn stop_and_idle_notifications_go_idle() {
     let mut s = in_state(State::Working);
     s.apply_event(&Event::Stop, T1);
@@ -124,7 +119,6 @@ fn stop_and_idle_notifications_go_idle() {
 }
 
 #[test]
-#[ignore = "T011"]
 fn unrelated_notification_changes_nothing() {
     let mut s = in_state(State::Working);
     s.apply_event(&Event::Notification(NotificationKind::Other), T1);
@@ -133,7 +127,6 @@ fn unrelated_notification_changes_nothing() {
 }
 
 #[test]
-#[ignore = "T011"]
 fn normal_session_end_is_finished_without_continuation() {
     for reason in ["logout", "prompt_input_exit", "complete"] {
         let mut s = in_state(State::Working);
@@ -145,7 +138,6 @@ fn normal_session_end_is_finished_without_continuation() {
 }
 
 #[test]
-#[ignore = "T011"]
 fn session_end_clear_is_finished_with_lineage_continuation() {
     let mut s = in_state(State::Idle);
     let out = s.apply_event(&end("clear"), T1);
@@ -155,7 +147,6 @@ fn session_end_clear_is_finished_with_lineage_continuation() {
 }
 
 #[test]
-#[ignore = "T011"]
 fn copilot_abnormal_end_is_interrupted() {
     for reason in ["error", "abort", "timeout"] {
         let mut s = Session::new("c1", "copilot", "uuid-1", "/work/repo", T0);
@@ -168,7 +159,6 @@ fn copilot_abnormal_end_is_interrupted() {
 }
 
 #[test]
-#[ignore = "T011"]
 fn late_events_do_not_reopen_a_finished_session() {
     let mut s = in_state(State::Finished);
     s.apply_event(&Event::Stop, T1);
@@ -177,7 +167,6 @@ fn late_events_do_not_reopen_a_finished_session() {
 }
 
 #[test]
-#[ignore = "T011"]
 fn hook_on_interrupted_session_proves_it_is_alive() {
     let mut s = in_state(State::Interrupted);
     s.apply_event(&Event::PostToolUse, T1);
@@ -185,7 +174,6 @@ fn hook_on_interrupted_session_proves_it_is_alive() {
 }
 
 #[test]
-#[ignore = "T011"]
 fn process_gone_interrupts_every_non_finished_state() {
     for state in ALL {
         let mut s = in_state(state);
@@ -200,7 +188,6 @@ fn process_gone_interrupts_every_non_finished_state() {
 }
 
 #[test]
-#[ignore = "T011"]
 fn boot_change_interrupts_every_non_finished_state() {
     for state in ALL {
         let mut s = in_state(state);
@@ -215,7 +202,6 @@ fn boot_change_interrupts_every_non_finished_state() {
 }
 
 #[test]
-#[ignore = "T011"]
 fn alive_reconcile_changes_nothing() {
     for state in ALL {
         let mut s = in_state(state);
@@ -226,7 +212,6 @@ fn alive_reconcile_changes_nothing() {
 }
 
 #[test]
-#[ignore = "T011"]
 fn reconcile_is_idempotent() {
     for liveness in [Liveness::ProcessGone, Liveness::BootChanged] {
         for state in ALL {
@@ -240,7 +225,6 @@ fn reconcile_is_idempotent() {
 }
 
 #[test]
-#[ignore = "T011"]
 fn resume_returns_interrupted_and_finished_to_idle_on_the_same_record() {
     for state in [State::Interrupted, State::Finished] {
         let mut s = in_state(state);
@@ -256,7 +240,6 @@ fn resume_returns_interrupted_and_finished_to_idle_on_the_same_record() {
 }
 
 #[test]
-#[ignore = "T011"]
 fn state_since_is_kept_when_state_does_not_change() {
     let mut s = in_state(State::Working);
     s.apply_event(&Event::PreToolUse, T1);
@@ -270,7 +253,6 @@ fn state_since_is_kept_when_state_does_not_change() {
 }
 
 #[test]
-#[ignore = "T011"]
 fn reconcile_sets_state_since_only_on_change() {
     let mut s = in_state(State::Working);
     s.reconcile(Liveness::ProcessGone, T1);
@@ -282,7 +264,6 @@ fn reconcile_sets_state_since_only_on_change() {
 }
 
 #[test]
-#[ignore = "T011"]
 fn running_is_true_only_for_live_active_states() {
     for state in ALL {
         let s = in_state(state);
@@ -294,7 +275,6 @@ fn running_is_true_only_for_live_active_states() {
 }
 
 #[test]
-#[ignore = "T011"]
 fn done_can_be_set_only_on_a_finished_session() {
     let mut s = in_state(State::Finished);
     s.mark_done(T1).unwrap();
@@ -311,7 +291,6 @@ fn done_can_be_set_only_on_a_finished_session() {
 }
 
 #[test]
-#[ignore = "T011"]
 fn respawn_request_clears_done() {
     let mut s = in_state(State::Finished);
     s.mark_done(T1).unwrap();
@@ -320,7 +299,6 @@ fn respawn_request_clears_done() {
 }
 
 #[test]
-#[ignore = "T011"]
 fn reconcile_never_touches_done() {
     let mut s = in_state(State::Finished);
     s.mark_done(T1).unwrap();
