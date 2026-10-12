@@ -11,8 +11,10 @@ use std::time::{Duration, Instant};
 use crate::store::events::{EventRow, EventsError};
 use crate::store::Store;
 
+pub mod claude;
 pub mod fs;
 
+pub use claude::{ClaudeProjectsSource, ClaudeSourceError};
 pub use fs::{FsSourceError, FsWatcherSource};
 
 /// Start-anchored: a fire comes this long after the first wake of a group. A

@@ -1,6 +1,7 @@
 use serde_json::Value;
 
-use super::{AgentKind, ParseError, ParsedHook};
+use super::{claude_discover, AgentKind, DiscoverError, ParseError, ParsedHook, SessionStub};
+use crate::env::Env;
 use crate::model::{Event, NotificationKind, StartSource};
 
 const TOOL_SEARCH: &str = "ToolSearch";
@@ -13,6 +14,10 @@ pub struct ClaudeKind;
 impl AgentKind for ClaudeKind {
     fn id(&self) -> &'static str {
         "claude"
+    }
+
+    fn discover(&self, env: &Env) -> Result<Vec<SessionStub>, DiscoverError> {
+        claude_discover::scan(env).map(|report| report.stubs)
     }
 
     /// Payload shapes are those confirmed on Claude Code 2.1.293

@@ -9,9 +9,11 @@ use std::path::PathBuf;
 
 use thiserror::Error;
 
+use crate::env::Env;
 use crate::model::{Event, Session};
 
 pub mod claude;
+pub mod claude_discover;
 
 /// A hook payload that is present but malformed.
 ///
@@ -30,6 +32,14 @@ pub enum ParseError {
 pub enum DiscoverError {
     #[error("discovery is not supported by agent kind `{kind}`")]
     Unsupported { kind: &'static str },
+    #[error("cannot locate the `{kind}` config directory: neither its override variable nor HOME is set")]
+    NoConfigDir { kind: &'static str },
+    #[error("cannot list `{kind}` sessions in {path}: {detail}")]
+    List {
+        kind: &'static str,
+        path: String,
+        detail: String,
+    },
 }
 
 #[derive(Debug, Error, PartialEq, Eq)]
@@ -70,11 +80,24 @@ impl ParsedHook {
     }
 }
 
-/// A session found on disk without hooks.
+/// A session found on disk without hooks. Holds identity, place and times
+/// only; the first prompt is the one piece of conversation it carries.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SessionStub {
     pub agent_session_id: String,
     pub cwd: String,
+    pub branch: Option<String>,
+    pub started_at: String,
+    pub last_activity_at: String,
+    /// Truncated to [`claude_discover::MAX_PROMPT_CHARS`] characters.
+    pub first_prompt: Option<String>,
+}
+
+/// What one scan found, and how many files it had to skip as unreadable.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ScanReport {
+    pub stubs: Vec<SessionStub>,
+    pub degraded: usize,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -118,7 +141,7 @@ pub trait AgentKind: Send + Sync {
     fn parse_hook(&self, raw: &serde_json::Value) -> Result<Vec<ParsedHook>, ParseError>;
 
     /// Sessions visible on disk without hooks. Read-only; may return empty.
-    fn discover(&self) -> Result<Vec<SessionStub>, DiscoverError> {
+    fn discover(&self, _env: &Env) -> Result<Vec<SessionStub>, DiscoverError> {
         Ok(Vec::new())
     }
 
@@ -173,7 +196,10 @@ mod tests {
     #[test]
     fn defaults_report_unsupported_or_empty() {
         let session = Session::new("s", "bare", "a", "/tmp", "2026-10-12T00:00:00Z");
-        assert_eq!(Bare.discover(), Ok(Vec::new()));
+        assert_eq!(
+            Bare.discover(&crate::testing::FakeEnv::new().env),
+            Ok(Vec::new())
+        );
         assert_eq!(
             Bare.launch(&session, LaunchMode::Fresh, &LauncherConfig::default()),
             Err(LaunchError::Unsupported { kind: "bare" })

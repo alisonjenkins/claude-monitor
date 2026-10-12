@@ -3,9 +3,11 @@
 //! process spawn.
 
 use std::collections::HashMap;
+use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Arc;
+use std::time::SystemTime;
 
 use crate::tmux::PaneLocation;
 
@@ -61,12 +63,30 @@ pub trait Notifier: Send + Sync {
     fn send(&self, summary: &str, body: &str) -> Result<(), EnvError>;
 }
 
+/// Size and kind of a file, without reading it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FileMeta {
+    pub len: u64,
+    pub is_dir: bool,
+    pub modified: Option<SystemTime>,
+}
+
 pub trait Fs: Send + Sync {
     fn read_to_string(&self, path: &Path) -> Result<String, EnvError>;
     fn exists(&self, path: &Path) -> bool;
     /// Entries of a directory, sorted by path.
     fn list_dir(&self, path: &Path) -> Result<Vec<PathBuf>, EnvError>;
     fn read_link(&self, path: &Path) -> Result<PathBuf, EnvError>;
+    fn metadata(&self, path: &Path) -> Result<FileMeta, EnvError>;
+    /// Up to `max_len` bytes starting at `offset`; shorter at end of file.
+    /// For files that may be too large to read whole.
+    fn read_range(&self, path: &Path, offset: u64, max_len: usize) -> Result<Vec<u8>, EnvError>;
+}
+
+/// Process environment variables.
+pub trait Vars: Send + Sync {
+    /// The variable's value; `None` when unset, empty or not UTF-8.
+    fn var(&self, name: &str) -> Option<String>;
 }
 
 /// The providers a command runs against.
@@ -78,6 +98,7 @@ pub struct Env {
     pub tmux: Arc<dyn Tmux>,
     pub notifier: Arc<dyn Notifier>,
     pub fs: Arc<dyn Fs>,
+    pub vars: Arc<dyn Vars>,
 }
 
 impl Env {
@@ -89,7 +110,17 @@ impl Env {
             tmux: Arc::new(SystemTmux),
             notifier: Arc::new(SystemNotifier),
             fs: Arc::new(SystemFs),
+            vars: Arc::new(SystemVars),
         }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct SystemVars;
+
+impl Vars for SystemVars {
+    fn var(&self, name: &str) -> Option<String> {
+        std::env::var(name).ok().filter(|value| !value.is_empty())
     }
 }
 
@@ -344,6 +375,38 @@ impl Fs for SystemFs {
             path: path.to_owned(),
             source,
         })
+    }
+
+    fn metadata(&self, path: &Path) -> Result<FileMeta, EnvError> {
+        let meta = std::fs::metadata(path).map_err(|source| EnvError::Io {
+            operation: "stat file",
+            path: path.to_owned(),
+            source,
+        })?;
+        Ok(FileMeta {
+            len: meta.len(),
+            is_dir: meta.is_dir(),
+            modified: meta.modified().ok(),
+        })
+    }
+
+    fn read_range(&self, path: &Path, offset: u64, max_len: usize) -> Result<Vec<u8>, EnvError> {
+        let io = |operation| {
+            move |source| EnvError::Io {
+                operation,
+                path: path.to_owned(),
+                source,
+            }
+        };
+        let mut file = std::fs::File::open(path).map_err(io("open file"))?;
+        file.seek(SeekFrom::Start(offset))
+            .map_err(io("seek in file"))?;
+        let limit = u64::try_from(max_len).unwrap_or(u64::MAX);
+        let mut buf = Vec::new();
+        file.take(limit)
+            .read_to_end(&mut buf)
+            .map_err(io("read file range"))?;
+        Ok(buf)
     }
 }
 

@@ -6,7 +6,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
-use crate::env::{BootId, Clock, Env, EnvError, Fs, Notifier, Processes, Tmux};
+use crate::env::{BootId, Clock, Env, EnvError, FileMeta, Fs, Notifier, Processes, Tmux, Vars};
 use crate::tmux::PaneLocation;
 
 fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -313,6 +313,56 @@ impl Fs for FakeFs {
             .cloned()
             .ok_or_else(|| Self::not_found("read link", path))
     }
+
+    fn metadata(&self, path: &Path) -> Result<FileMeta, EnvError> {
+        let state = lock(&self.0);
+        if let Some(contents) = state.files.get(path) {
+            return Ok(FileMeta {
+                len: u64::try_from(contents.len()).unwrap_or(u64::MAX),
+                is_dir: false,
+                modified: None,
+            });
+        }
+        if state.dirs.contains(path) {
+            return Ok(FileMeta {
+                len: 0,
+                is_dir: true,
+                modified: None,
+            });
+        }
+        Err(Self::not_found("stat file", path))
+    }
+
+    fn read_range(&self, path: &Path, offset: u64, max_len: usize) -> Result<Vec<u8>, EnvError> {
+        let state = lock(&self.0);
+        let contents = state
+            .files
+            .get(path)
+            .ok_or_else(|| Self::not_found("read file range", path))?;
+        let start = usize::try_from(offset).unwrap_or(usize::MAX);
+        Ok(contents
+            .as_bytes()
+            .iter()
+            .skip(start)
+            .take(max_len)
+            .copied()
+            .collect())
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct FakeVars(Mutex<BTreeMap<String, String>>);
+
+impl FakeVars {
+    pub fn set(&self, name: &str, value: &str) {
+        lock(&self.0).insert(name.to_owned(), value.to_owned());
+    }
+}
+
+impl Vars for FakeVars {
+    fn var(&self, name: &str) -> Option<String> {
+        lock(&self.0).get(name).filter(|v| !v.is_empty()).cloned()
+    }
 }
 
 /// An [`Env`] built from fakes, with the typed handles kept for control and
@@ -325,6 +375,7 @@ pub struct FakeEnv {
     pub tmux: Arc<FakeTmux>,
     pub notifier: Arc<FakeNotifier>,
     pub fs: Arc<FakeFs>,
+    pub vars: Arc<FakeVars>,
 }
 
 impl FakeEnv {
@@ -335,6 +386,7 @@ impl FakeEnv {
         let tmux = Arc::new(FakeTmux::default());
         let notifier = Arc::new(FakeNotifier::default());
         let fs = Arc::new(FakeFs::default());
+        let vars = Arc::new(FakeVars::default());
         let env = Env {
             clock: clock.clone(),
             boot_id: boot_id.clone(),
@@ -342,6 +394,7 @@ impl FakeEnv {
             tmux: tmux.clone(),
             notifier: notifier.clone(),
             fs: fs.clone(),
+            vars: vars.clone(),
         };
         Self {
             env,
@@ -351,6 +404,7 @@ impl FakeEnv {
             tmux,
             notifier,
             fs,
+            vars,
         }
     }
 }
