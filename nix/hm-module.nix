@@ -145,6 +145,17 @@ in
       };
     };
 
+    watch = {
+      enable = lib.mkEnableOption "a systemd user service that runs `claude-monitor watch`" // {
+        description = ''
+          Run `claude-monitor watch` as a systemd user service (Linux only),
+          so session states are tracked and logged to the journal, one line
+          per state change, even when no dashboard is open. It only reads the
+          agents' own directories and never starts an agent.
+        '';
+      };
+    };
+
     enable = lib.mkEnableOption "claude-monitor, a TUI dashboard for Claude Code sessions in tmux";
 
     package = lib.mkOption {
@@ -163,6 +174,18 @@ in
     };
 
     programs.tmux.extraConfig = lib.mkIf cfg.tmuxHooks.enable cfg.tmuxHooks.snippet;
+
+    systemd.user.services.claude-monitor-watch =
+      lib.mkIf (cfg.watch.enable && pkgs.stdenv.hostPlatform.isLinux)
+        {
+          Unit.Description = "claude-monitor: log AI agent session state changes";
+          Service = {
+            ExecStart = "${cfg.package}/bin/claude-monitor watch";
+            Restart = "on-failure";
+            RestartSec = 5;
+          };
+          Install.WantedBy = [ "default.target" ];
+        };
 
     # Merged into the upstream home-manager `programs.claude-code.settings`
     # option (JSON-value type: attrsOf recurses, listOf concatenates), so this
