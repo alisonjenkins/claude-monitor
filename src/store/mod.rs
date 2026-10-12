@@ -8,6 +8,7 @@ use rusqlite::Connection;
 
 pub mod events;
 pub mod legacy;
+pub mod links;
 pub mod markers;
 mod migrations;
 pub mod progress;
