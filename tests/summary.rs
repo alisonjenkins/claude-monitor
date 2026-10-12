@@ -229,14 +229,14 @@ mod endpoint {
 
     use super::*;
 
-    struct Captured {
-        request_line: String,
-        headers: String,
-        body: Value,
+    pub(super) struct Captured {
+        pub(super) request_line: String,
+        pub(super) headers: String,
+        pub(super) body: Value,
     }
 
     /// Serves exactly one connection on a loopback port with `response`.
-    fn fake_server(response: String) -> (SocketAddr, JoinHandle<Captured>) {
+    pub(super) fn fake_server(response: String) -> (SocketAddr, JoinHandle<Captured>) {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let addr = listener.local_addr().unwrap();
         let handle = std::thread::spawn(move || {
@@ -286,7 +286,7 @@ mod endpoint {
         )
     }
 
-    fn completion(text: &str) -> String {
+    pub(super) fn completion(text: &str) -> String {
         http(
             "200 OK",
             "",
@@ -545,5 +545,205 @@ mod storage {
     fn nothing_is_generated_without_an_explicit_request() {
         let (_h, store, id) = seeded();
         assert!(store.list_summaries("session", &id).unwrap().is_empty());
+    }
+}
+
+mod summarize_cli {
+    use std::net::TcpListener;
+    use std::process::Command as Process;
+
+    use claude_monitor::cli::{run_in, Command, Output};
+    use claude_monitor::error::Error;
+    use claude_monitor::summary::{MODEL_VAR, URL_VAR};
+    use claude_monitor::testing::FakeEnv;
+
+    use super::endpoint::{completion, fake_server};
+    use super::*;
+
+    const PROMPT: &str = "Fix the flaky test";
+    const LEFT_OFF: &str = "Test now passes";
+
+    fn seeded() -> (Harness, String) {
+        let h = Harness::new();
+        h.event("UserPromptSubmit", json!({"prompt": PROMPT}));
+        h.event("Stop", json!({"last_assistant_message": LEFT_OFF}));
+        let id = h.session().id;
+        (h, id)
+    }
+
+    fn summarize(h: &Harness, fake: &FakeEnv, target: &str) -> Result<Output, Error> {
+        run_in(
+            Command::Summarize {
+                target: target.to_owned(),
+            },
+            &fake.env,
+            Some(&h.state_dir),
+        )
+    }
+
+    fn stored(h: &Harness, id: &str) -> Vec<claude_monitor::store::summaries::Summary> {
+        Store::open_in_dir(&h.state_dir, &StoreOptions::viewer())
+            .unwrap()
+            .list_summaries("session", id)
+            .unwrap()
+    }
+
+    fn refused_code(result: Result<Output, Error>) -> &'static str {
+        match result {
+            Err(Error::Refused { code, .. }) => code,
+            other => panic!("expected a refusal, got {other:?}"),
+        }
+    }
+
+    #[test]
+    #[ignore = "implemented by T092"]
+    fn no_endpoint_configured_is_refused_with_exit_2_and_a_clear_message() {
+        let (h, id) = seeded();
+        let fake = FakeEnv::new();
+        let err = summarize(&h, &fake, &id).unwrap_err();
+        assert_eq!(err.exit_code(), 2);
+        assert!(matches!(
+            err,
+            Error::Refused {
+                code: "summary_not_configured",
+                ..
+            }
+        ));
+        let message = err.to_string();
+        assert!(
+            message.contains(URL_VAR) && message.contains(MODEL_VAR),
+            "{message}"
+        );
+        assert!(stored(&h, &id).is_empty());
+    }
+
+    #[test]
+    #[ignore = "implemented by T092"]
+    fn a_remote_endpoint_is_refused_before_anything_is_sent() {
+        let (h, id) = seeded();
+        let fake = FakeEnv::new();
+        fake.vars.set(URL_VAR, "http://api.example.com");
+        fake.vars.set(MODEL_VAR, "m");
+        let err = summarize(&h, &fake, &id).unwrap_err();
+        assert_eq!(err.exit_code(), 2);
+        assert!(matches!(
+            err,
+            Error::Refused {
+                code: "endpoint_not_loopback",
+                ..
+            }
+        ));
+        assert!(stored(&h, &id).is_empty());
+    }
+
+    #[test]
+    #[ignore = "implemented by T092"]
+    fn summarizing_stores_labelled_model_text_and_leaves_verbatim_text_alone() {
+        let (h, id) = seeded();
+        let (addr, server) = fake_server(completion("Fixed the flaky test."));
+        let fake = FakeEnv::new();
+        fake.vars.set(URL_VAR, &format!("http://{addr}"));
+        fake.vars.set(MODEL_VAR, "tiny-model");
+        fake.clock.set("2026-10-12T11:00:00Z");
+
+        let output = summarize(&h, &fake, &id[..8]).unwrap();
+        let Output::Dual { text, json } = output else {
+            panic!("expected dual output");
+        };
+        assert!(text.contains("Fixed the flaky test."), "{text}");
+        assert!(text.contains("generated"), "{text}");
+        assert!(text.contains("tiny-model"), "{text}");
+        assert_eq!(json["label"], "generated");
+        assert_eq!(json["model"], "tiny-model");
+        assert_eq!(json["summary"], "Fixed the flaky test.");
+        assert_eq!(json["session"], id);
+
+        let rows = stored(&h, &id);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].body, "Fixed the flaky test.");
+        assert_eq!(rows[0].model.as_deref(), Some("tiny-model"));
+        assert_eq!(rows[0].created_at, "2026-10-12T11:00:00Z");
+        let session = h.session();
+        assert_eq!(session.task_description.as_deref(), Some(PROMPT));
+        assert_eq!(session.left_off.as_deref(), Some(LEFT_OFF));
+
+        let request = server.join().unwrap().body.to_string();
+        assert!(
+            request.contains(PROMPT) && request.contains(LEFT_OFF),
+            "{request}"
+        );
+    }
+
+    #[test]
+    #[ignore = "implemented by T092"]
+    fn an_unknown_session_is_refused() {
+        let (h, _id) = seeded();
+        let fake = FakeEnv::new();
+        fake.vars.set(URL_VAR, "http://127.0.0.1:9");
+        fake.vars.set(MODEL_VAR, "m");
+        assert_eq!(
+            refused_code(summarize(&h, &fake, "nope")),
+            "unknown_session"
+        );
+    }
+
+    #[test]
+    #[ignore = "implemented by T092"]
+    fn a_model_that_is_down_is_refused_and_stores_nothing() {
+        let (h, id) = seeded();
+        let addr = TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap();
+        let fake = FakeEnv::new();
+        fake.vars.set(URL_VAR, &format!("http://{addr}"));
+        fake.vars.set(MODEL_VAR, "m");
+        assert_eq!(refused_code(summarize(&h, &fake, &id)), "summary_failed");
+        assert!(stored(&h, &id).is_empty());
+    }
+
+    #[test]
+    fn nothing_is_summarized_unless_asked() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let fake = FakeEnv::new();
+        fake.vars.set(
+            URL_VAR,
+            &format!("http://{}", listener.local_addr().unwrap()),
+        );
+        fake.vars.set(MODEL_VAR, "m");
+
+        let (h, id) = seeded();
+        for command in [
+            Command::Show {
+                session: id.clone(),
+            },
+            Command::BootCheck { banner: false },
+        ] {
+            run_in(command, &fake.env, Some(&h.state_dir)).ok();
+        }
+        assert_eq!(
+            listener.accept().unwrap_err().kind(),
+            std::io::ErrorKind::WouldBlock
+        );
+        assert!(stored(&h, &id).is_empty());
+    }
+
+    #[test]
+    #[ignore = "implemented by T092"]
+    fn the_binary_exits_2_with_a_json_error_when_no_endpoint_is_configured() {
+        let (h, id) = seeded();
+        let out = Process::new(env!("CARGO_BIN_EXE_claude-monitor"))
+            .args(["--json", "--no-refresh", "--state-dir"])
+            .arg(&h.state_dir)
+            .args(["summarize", &id])
+            .env_remove(URL_VAR)
+            .env_remove(MODEL_VAR)
+            .output()
+            .unwrap();
+        assert_eq!(out.status.code(), Some(2));
+        let value: Value = serde_json::from_slice(&out.stdout).unwrap();
+        assert_eq!(value["ok"], false);
+        assert!(value["error"].as_str().unwrap().contains(URL_VAR));
     }
 }

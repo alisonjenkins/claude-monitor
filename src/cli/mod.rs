@@ -17,6 +17,7 @@ mod reconcile;
 mod respawn;
 mod restore;
 mod show;
+mod summarize;
 mod watch;
 
 pub use command::{Command, CommandInfo, ProjectAction};
@@ -149,6 +150,11 @@ enum Commands {
         #[arg(long)]
         banner: bool,
     },
+    /// Ask a model on this machine for a short summary of one session; never automatic
+    Summarize {
+        /// Session id, or the start of one
+        target: String,
+    },
 }
 
 impl Cli {
@@ -228,6 +234,9 @@ impl Cli {
                 recreate_worktree: *recreate_worktree,
             },
             Some(Commands::BootCheck { banner }) => Command::BootCheck { banner: *banner },
+            Some(Commands::Summarize { target }) => Command::Summarize {
+                target: target.clone(),
+            },
         }
     }
 }
@@ -325,6 +334,7 @@ pub fn run_with(
             },
         ),
         Command::BootCheck { banner } => boot_check::run(env, state_dir, banner),
+        Command::Summarize { target } => summarize::run(env, state_dir, &target),
         Command::Hook { agent, event } => {
             hook::run(agent.as_deref(), event.as_deref(), state_dir, env);
             Ok(Output::empty())
