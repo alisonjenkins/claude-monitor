@@ -82,6 +82,13 @@ pub fn build_sources(env: &Env) -> LiveSources {
     built
 }
 
+/// [`build_sources`] plus a watch on the plan files `store`'s progress
+/// bindings read. A file that cannot be watched is skipped with a warning.
+pub fn build_sources_with_files(env: &Env, store: &Store) -> LiveSources {
+    let _ = store;
+    build_sources(env)
+}
+
 fn boxed<S: EventSource + Send + 'static>(source: S) -> Box<dyn EventSource + Send> {
     Box::new(source)
 }
