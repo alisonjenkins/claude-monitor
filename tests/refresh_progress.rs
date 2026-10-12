@@ -61,7 +61,6 @@ fn user() -> Author {
 }
 
 #[test]
-#[ignore = "implemented by T089"]
 fn a_refresh_rereads_a_bound_file_that_changed() {
     let fx = Fx::new();
     fx.fake.fs.add_file(PLAN, "- [ ] one\n- [ ] two\n");
@@ -86,7 +85,6 @@ fn a_refresh_rereads_a_bound_file_that_changed() {
 }
 
 #[test]
-#[ignore = "implemented by T089"]
 fn a_refresh_binds_an_active_session_to_its_plan() {
     let fx = Fx::new();
     fx.fake.fs.add_file(
@@ -102,7 +100,6 @@ fn a_refresh_binds_an_active_session_to_its_plan() {
 }
 
 #[test]
-#[ignore = "implemented by T089"]
 fn a_refresh_does_not_bind_a_finished_session() {
     let fx = Fx::new();
     fx.fake.fs.add_file(PLAN, "- [ ] one\n");
@@ -118,7 +115,6 @@ fn a_refresh_does_not_bind_a_finished_session() {
 }
 
 #[test]
-#[ignore = "implemented by T089"]
 fn a_second_refresh_changes_nothing() {
     let fx = Fx::new();
     fx.fake.fs.add_file(PLAN, "- [ ] one\n");
@@ -134,7 +130,6 @@ fn a_second_refresh_changes_nothing() {
 }
 
 #[test]
-#[ignore = "implemented by T089"]
 fn an_unreadable_bound_file_keeps_its_figure_without_a_warning() {
     let fx = Fx::new();
     fx.fake.fs.add_file(PLAN, "- [x] one\n- [ ] two\n");

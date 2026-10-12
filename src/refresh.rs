@@ -1,7 +1,8 @@
 //! One refresh pass: everything the monitor can learn without a hook.
 //!
 //! Passive discovery of Claude and Copilot sessions, then the Claude live
-//! session registry (pid, tmux pane, busy/waiting/idle), then reconcile. Only
+//! session registry (pid, tmux pane, busy/waiting/idle), then plan progress
+//! (bound files re-read, clear plans bound), then reconcile. Only
 //! reads the agents' own directories; every change is an `events` row.
 
 use rusqlite::{Transaction, TransactionBehavior};
@@ -13,7 +14,7 @@ use crate::agents::discover_store::{DiscoverStoreError, DiscoverSummary};
 use crate::agents::{claude_discover, copilot_discover, AgentKind};
 use crate::env::Env;
 use crate::model::{Author, Session, State};
-use crate::progress::binding::SyncSummary;
+use crate::progress::binding::{self, SyncSummary};
 use crate::reconcile::{reconcile, ReconcileReport, Scope};
 use crate::store::events::{EventsError, NewEvent};
 use crate::store::sessions::SessionsError;
@@ -45,6 +46,8 @@ impl RefreshReport {
             || self.discovered.updated > 0
             || self.registry_created > 0
             || self.registry_updated > 0
+            || self.progress.bound > 0
+            || self.progress.changed > 0
             || self
                 .reconcile
                 .as_ref()
@@ -66,11 +69,18 @@ pub fn refresh(store: &Store, env: &Env, now: &str) -> RefreshReport {
     let mut report = RefreshReport::default();
     discover(store, env, &mut report);
     sync_registry(store, env, now, &mut report);
+    sync_progress(store, env, now, &mut report);
     match reconcile(store, env, Scope::All, now) {
         Ok(done) => report.reconcile = Some(done),
         Err(e) => report.warnings.push(format!("reconcile: {e}")),
     }
     report
+}
+
+fn sync_progress(store: &Store, env: &Env, now: &str, report: &mut RefreshReport) {
+    let mut summary = binding::sync_all(store, env, now);
+    report.warnings.append(&mut summary.warnings);
+    report.progress = summary;
 }
 
 type DiscoverFn = fn(&Env, &Store) -> Result<DiscoverSummary, DiscoverStoreError>;
