@@ -214,6 +214,26 @@ fn ensure_session_creates_when_absent_and_reuses_when_present() {
 }
 
 #[test]
+fn a_respawn_into_a_new_session_leaves_only_the_agent_pane() {
+    let Some(server) = TmuxServer::start() else {
+        return;
+    };
+    let tmux = SystemTmux::with_socket(server.socket());
+    let cwd = TempDir::new().unwrap();
+    tmux.ensure_session("agents", cwd.path()).unwrap();
+
+    let win = tmux
+        .spawn_window("agents", "my-proj", cwd.path(), &sleep_argv())
+        .unwrap();
+
+    // No empty shell window from the session's creation beside the agent's.
+    assert_eq!(
+        server.run(&["list-panes", "-a", "-F", "#{pane_id}"]),
+        win.pane_id
+    );
+}
+
+#[test]
 fn an_existing_session_with_a_similar_name_is_not_reused() {
     let Some(server) = TmuxServer::start() else {
         return;
