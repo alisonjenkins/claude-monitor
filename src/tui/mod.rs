@@ -1,4 +1,5 @@
 pub mod app;
+pub mod bindings;
 pub mod dashboard;
 pub mod detail;
 pub mod filter;

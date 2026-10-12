@@ -6,6 +6,7 @@ use std::path::Path;
 
 use crossterm::event::{KeyCode, KeyModifiers};
 
+use super::bindings::{action_for, Action};
 use super::detail::DetailView;
 use super::filter::Filter;
 use super::organise::Organise;
@@ -493,28 +494,42 @@ impl App {
             return self.on_prompt_key(code);
         }
         match code {
-            KeyCode::Char('p') => self.toggle_grouped(),
-            KeyCode::Char('/') => self.prompt = Some(Prompt::Filter),
-            KeyCode::Char('f') => self.change_filter(Filter::cycle_state),
-            KeyCode::Char('a') => {
+            KeyCode::Char(c) => {
+                if let Some(action) = action_for(c) {
+                    return self.perform(action);
+                }
+            }
+            KeyCode::Esc => return vec![Effect::Quit],
+            KeyCode::Down => self.move_selection(true),
+            KeyCode::Up => self.move_selection(false),
+            KeyCode::Enter => return self.jump(),
+            _ => {}
+        }
+        Vec::new()
+    }
+
+    fn perform(&mut self, action: Action) -> Vec<Effect> {
+        match action {
+            Action::ToggleGrouped => self.toggle_grouped(),
+            Action::Filter => self.prompt = Some(Prompt::Filter),
+            Action::CycleState => self.change_filter(Filter::cycle_state),
+            Action::CycleAgent => {
                 let kinds = self.agent_kinds();
                 self.change_filter(|filter| filter.cycle_agent(&kinds));
             }
-            KeyCode::Char('S') => self.change_filter(Filter::toggle_dismissed),
-            KeyCode::Char('D') => return self.organise_selected(Mark::Done),
-            KeyCode::Char('U') => return self.organise_selected(Mark::Undone),
-            KeyCode::Char('x') => return self.organise_selected(Mark::Dismiss),
-            KeyCode::Char('n') => self.open_note(),
-            KeyCode::Char('i') => return self.open_detail(),
-            KeyCode::Char('L') => return self.open_detail_and_check_links(),
-            KeyCode::Char('R') => self.open_restore(),
-            KeyCode::Char('q') | KeyCode::Esc => return vec![Effect::Quit],
-            KeyCode::Char('j') | KeyCode::Down => self.move_selection(true),
-            KeyCode::Char('k') | KeyCode::Up => self.move_selection(false),
-            KeyCode::Enter => return self.jump(),
-            KeyCode::Char('d') => self.hide_selected(),
-            KeyCode::Char('u') => self.toggle_unseen(),
-            _ => {}
+            Action::ToggleDismissed => self.change_filter(Filter::toggle_dismissed),
+            Action::Done => return self.organise_selected(Mark::Done),
+            Action::Undone => return self.organise_selected(Mark::Undone),
+            Action::Dismiss => return self.organise_selected(Mark::Dismiss),
+            Action::Note => self.open_note(),
+            Action::Detail => return self.open_detail(),
+            Action::Links => return self.open_detail_and_check_links(),
+            Action::Restore => self.open_restore(),
+            Action::Quit => return vec![Effect::Quit],
+            Action::Next => self.move_selection(true),
+            Action::Previous => self.move_selection(false),
+            Action::Hide => self.hide_selected(),
+            Action::ToggleUnseen => self.toggle_unseen(),
         }
         Vec::new()
     }
