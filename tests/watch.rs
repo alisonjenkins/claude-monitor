@@ -97,7 +97,6 @@ fn a_session_that_appears_later_is_reported_in_any_state() {
 }
 
 #[test]
-#[ignore = "I7: watch sends desktop notifications"]
 fn the_first_pass_notifies_nothing() {
     let sessions = [
         session("aaaaaaaa-1", State::Idle),
@@ -108,7 +107,6 @@ fn the_first_pass_notifies_nothing() {
 }
 
 #[test]
-#[ignore = "I7: watch sends desktop notifications"]
 fn a_change_into_permission_or_idle_notifies_once_by_project() {
     let mut seen = BTreeMap::new();
     state_changes(
@@ -136,7 +134,6 @@ fn a_change_into_permission_or_idle_notifies_once_by_project() {
 }
 
 #[test]
-#[ignore = "I7: watch sends desktop notifications"]
 fn a_session_that_appears_idle_after_the_first_pass_notifies() {
     let mut seen = BTreeMap::new();
     state_changes(&mut seen, &[], AT, true);
@@ -147,7 +144,6 @@ fn a_session_that_appears_idle_after_the_first_pass_notifies() {
 }
 
 #[test]
-#[ignore = "I7: watch sends desktop notifications"]
 fn the_project_is_the_repository_name_else_the_directory() {
     let mut with_repo = session("aaaaaaaa-1", State::Idle);
     with_repo.repo_root = Some("/home/u/git/nix-config".to_owned());
@@ -316,7 +312,6 @@ fn warnings_go_to_the_error_stream_once() {
 }
 
 #[test]
-#[ignore = "I7: watch sends desktop notifications"]
 fn watch_sends_a_desktop_notification_on_a_new_transition_only() {
     let (dir, fake) = (TempDir::new().unwrap(), live_fake());
     let running = start(&dir, &fake, Vec::new());

@@ -5,11 +5,13 @@
 
 use std::collections::BTreeMap;
 use std::io::Write;
+use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::env::Env;
 use crate::live::{run_live, LiveSources};
 use crate::model::{Session, State};
+use crate::notify::{self, is_notifiable};
 use crate::refresh::{refresh, RefreshReport};
 use crate::store::Store;
 
@@ -49,8 +51,27 @@ pub fn notifications(
     sessions: &[Session],
     first: bool,
 ) -> Vec<(String, State)> {
-    let _ = (previous, sessions, first);
-    Vec::new()
+    if first {
+        return Vec::new();
+    }
+    sessions
+        .iter()
+        .filter(|session| is_notifiable(session.state))
+        .filter(|session| previous.get(&session.id) != Some(&session.state))
+        .map(|session| (project_name(session), session.state))
+        .collect()
+}
+
+/// The repository name, else the last part of the working directory.
+fn project_name(session: &Session) -> String {
+    [session.repo_root.as_deref(), Some(session.cwd.as_str())]
+        .into_iter()
+        .flatten()
+        .find_map(|path| Path::new(path).file_name())
+        .map_or_else(
+            || session.id.clone(),
+            |name| name.to_string_lossy().into_owned(),
+        )
 }
 
 /// Refreshes on every wake of `built`'s sources and writes a line per state
@@ -76,6 +97,14 @@ pub fn watch(
         let Ok(sessions) = store.list_sessions() else {
             return;
         };
+        for (project, state) in notifications(&previous, &sessions, first) {
+            if let Err(error) = env
+                .notifier
+                .send(notify::SUMMARY, &notify::body(&project, state))
+            {
+                let _ = writeln!(err, "warning: notification failed: {error}");
+            }
+        }
         for line in state_changes(&mut previous, &sessions, &env.clock.now(), first) {
             if writeln!(out, "{line}").is_err() {
                 stop.store(true, Ordering::Release);
