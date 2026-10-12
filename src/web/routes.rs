@@ -9,7 +9,7 @@ use std::path::PathBuf;
 
 use axum::body::Bytes;
 use axum::extract::{FromRequest, OriginalUri, Path, Query, Request, State};
-use axum::http::header::CONTENT_TYPE;
+use axum::http::header::{CONTENT_TYPE, LOCATION};
 use axum::http::{HeaderMap, HeaderName, HeaderValue, StatusCode, Uri};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
@@ -612,14 +612,14 @@ async fn sessions_view(
     let filters = params.filters();
     let output = run(state, params.command()).await?;
     let mut listed = output_json(&output, false);
-    if json && tree {
-        let (projects, figures) = projects_with_progress(state).await?;
-        let grown = super::tree::build(
-            &json!(projects).as_array().cloned().unwrap_or_default(),
-            &entries_of(&listed),
-            &figures,
-        );
-        if let (Some(target), Value::Object(grown)) = (listed.as_object_mut(), grown) {
+    let entries = entries_of(&listed);
+    let grown = if json && !tree {
+        Value::Null
+    } else {
+        project_tree(state, &entries).await?
+    };
+    if json {
+        if let (Some(target), Value::Object(grown)) = (listed.as_object_mut(), grown.clone()) {
             target.extend(grown);
         }
     }
@@ -630,8 +630,15 @@ async fn sessions_view(
     };
     let url = uri.path_and_query().map_or("/", |pq| pq.as_str());
     Ok(page_or_json(state, json, &listed, |ctx| {
-        pages::overview(ctx, &entries_of(&listed), &progress, &filters, url)
+        pages::overview(ctx, &grown, &entries, &progress, &filters, url)
     }))
+}
+
+/// Every project with the listed sessions nested under it.
+async fn project_tree(state: &AppState, entries: &[Value]) -> Result<Value, ApiError> {
+    let (projects, figures) = projects_with_progress(state).await?;
+    let projects = json!(projects).as_array().cloned().unwrap_or_default();
+    Ok(super::tree::build(&projects, entries, &figures))
 }
 
 async fn session_detail(
@@ -971,23 +978,15 @@ fn find_project(store: &Store, key: &str) -> Result<Project, ApiError> {
         .ok_or_else(|| ApiError::unknown_project(key))
 }
 
+/// The project list is part of the overview now; scripts still get the JSON.
 async fn projects(State(state): State<AppState>, headers: HeaderMap) -> Response {
     let json = wants_json(&headers);
-    let result = async {
-        let (env, dir) = (state.env.clone(), state.state_dir.clone());
-        let all = blocking(move || -> Result<Vec<Project>, ApiError> {
-            let store = open_viewer_store(&env, Some(&dir))?;
-            store
-                .list_projects()
-                .map_err(|e| ApiError::internal("list projects", e))
-        })
-        .await??;
-        let body = json!({ "projects": all });
-        Ok(page_or_json(&state, json, &body, |ctx| {
-            pages::projects_index(ctx, &entries_named(&body, "projects"))
-        }))
+    if !json {
+        return (StatusCode::FOUND, [(LOCATION, "/")]).into_response();
     }
-    .await;
+    let result = projects_with_progress(&state)
+        .await
+        .map(|(all, _)| json_response(StatusCode::OK, &json!({ "projects": all })));
     settle(&state, json, result)
 }
 
@@ -1074,11 +1073,17 @@ async fn project_view(
         progress_figures(state).await?
     };
     let url = uri.path_and_query().map_or("/", |pq| pq.as_str());
+    let tree = if json {
+        Value::Null
+    } else {
+        project_tree(state, &entries).await?
+    };
     Ok(page_or_json(state, json, &body, |ctx| {
         pages::project(
             ctx,
             &json!(project),
             &entries_named(&body, "notes"),
+            &tree,
             &entries,
             &progress,
             url,

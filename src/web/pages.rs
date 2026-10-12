@@ -115,7 +115,6 @@ fn layout(ctx: &Ctx<'_>, title: &str, waiting: usize, region: &str, body: Markup
                     nav aria-label="Pages" {
                         a href="/" { "Overview" }
                         a href="/restore" { "Restore" }
-                        a href="/projects" { "Projects" }
                         a href="/links" { "Links" }
                     }
                 }
@@ -191,7 +190,67 @@ fn progress_figure(progress: &RowProgress) -> Markup {
     }
 }
 
-fn row(ctx: &Ctx<'_>, entry: &Value, progress: &HashMap<String, RowProgress>) -> Markup {
+/// How a row is dressed where it appears.
+#[derive(Clone, Copy)]
+struct RowStyle<'a> {
+    /// In the waiting band: the row id differs so the same session can also
+    /// sit in its project's node.
+    band: bool,
+    /// Name the project in the row (the band, Unseen, Dismissed).
+    show_project: bool,
+    /// The projects a Move panel offers; `None` for no Move control.
+    movable: Option<&'a [Value]>,
+}
+
+const BAND: RowStyle<'static> = RowStyle {
+    band: true,
+    show_project: true,
+    movable: None,
+};
+
+/// The value of the "New project…" option; no project can be named "".
+const NEW_PROJECT: &str = "";
+
+/// The inline panel behind a row's Move button: no modal, shown by `app.js`.
+fn move_panel(id: &str, current: Option<&str>, projects: &[Value]) -> Markup {
+    let panel = format!("mv-{id}");
+    html! {
+        form.move id=(panel.clone()) hidden hx-post=(format!("/sessions/{}/group", seg(id)))
+            hx-swap="none" data-move-form {
+            div.field {
+                label for=(format!("{panel}-to")) { "Move to" }
+                select id=(format!("{panel}-to")) name="project" data-move-to {
+                    @for project in projects {
+                        @let name = str_of(project, "name").unwrap_or_default();
+                        @let here = current == Some(name);
+                        option value=(name) selected[here] disabled[here] {
+                            (name) @if here { " (current)" }
+                        }
+                    }
+                    option value="-" selected[current.is_none()] disabled[current.is_none()] {
+                        "No project (remove)"
+                    }
+                    option value=(NEW_PROJECT) { "New project…" }
+                }
+            }
+            div.field data-move-new-wrap hidden {
+                label for=(format!("{panel}-new")) { "New project name" }
+                input type="text" id=(format!("{panel}-new")) data-move-new autocomplete="off";
+            }
+            div.inline {
+                button.btn.solid type="submit" disabled data-move-go { "Move" }
+                button.btn.quiet type="button" data-move-cancel { "Cancel" }
+            }
+        }
+    }
+}
+
+fn row(
+    ctx: &Ctx<'_>,
+    entry: &Value,
+    progress: &HashMap<String, RowProgress>,
+    style: RowStyle<'_>,
+) -> Markup {
     let id = str_of(entry, "id").unwrap_or_default();
     let state = str_of(entry, "state").unwrap_or_default();
     let task = str_of(entry, "error")
@@ -210,7 +269,7 @@ fn row(ctx: &Ctx<'_>, entry: &Value, progress: &HashMap<String, RowProgress>) ->
         .filter_map(Value::as_str)
         .collect();
     html! {
-        li.row id=(format!("s-{id}")) data-state=(state) {
+        li.row id=(format!("{}-{id}", if style.band { "w" } else { "s" })) data-state=(state) {
             span.state { i.dot {} (state_words(state)) }
             div.what {
                 a.task href=(format!("/sessions/{}", seg(id))) { (task) }
@@ -219,9 +278,9 @@ fn row(ctx: &Ctx<'_>, entry: &Value, progress: &HashMap<String, RowProgress>) ->
                 }
                 p.meta.mono {
                     (place) " · " (short(id))
-                    @if let Some(project) = str_of(entry, "project") {
+                    @if let (true, Some(project)) = (style.show_project, str_of(entry, "project")) {
                         " · "
-                        a href=(format!("/projects/{}", seg(project))) { (project) }
+                        a.project href=(format!("/projects/{}", seg(project))) { (project) }
                     }
                     @for flag in &flags {
                         span.flag { (flag) }
@@ -232,15 +291,30 @@ fn row(ctx: &Ctx<'_>, entry: &Value, progress: &HashMap<String, RowProgress>) ->
                 }
             }
             span.age.mono title=(str_of(entry, "last_activity_at").unwrap_or_default()) { (ago) }
-            div.actions { (row_actions(entry)) }
+            div.actions {
+                (row_actions(entry))
+                @if style.movable.is_some() {
+                    button.btn.quiet type="button" data-move-toggle aria-expanded="false"
+                        aria-controls=(format!("mv-{id}"))
+                        aria-label=(format!("Move session {}", short(id))) { "Move" }
+                }
+            }
+            @if let Some(projects) = style.movable {
+                (move_panel(id, str_of(entry, "project"), projects))
+            }
         }
     }
 }
 
-fn rows(ctx: &Ctx<'_>, entries: &[&Value], progress: &HashMap<String, RowProgress>) -> Markup {
+fn rows(
+    ctx: &Ctx<'_>,
+    entries: &[&Value],
+    progress: &HashMap<String, RowProgress>,
+    style: RowStyle<'_>,
+) -> Markup {
     html! {
         ul.rows {
-            @for entry in entries { (row(ctx, entry, progress)) }
+            @for entry in entries { (row(ctx, entry, progress, style)) }
         }
     }
 }
@@ -252,44 +326,180 @@ fn in_section<'a>(entries: &'a [Value], name: &str) -> Vec<&'a Value> {
         .collect()
 }
 
-fn section(
+/// One group of a node's sessions (Active, Interrupted, Finished).
+fn node_section(
     ctx: &Ctx<'_>,
+    node_id: &str,
     name: &str,
     heading: &str,
     entries: &[&Value],
     progress: &HashMap<String, RowProgress>,
+    style: RowStyle<'_>,
 ) -> Markup {
     html! {
         @if !entries.is_empty() {
-            section id=(format!("section-{name}")) {
-                h2 { (heading) span.count { "(" (entries.len()) ")" } }
-                (rows(ctx, entries, progress))
+            section id=(format!("{node_id}-section-{name}")) {
+                h3 { (heading) span.count { "(" (entries.len()) ")" } }
+                (rows(ctx, entries, progress, style))
+            }
+        }
+    }
+}
+
+/// A node's `Done` group: nested and closed, because done work is out of the
+/// way by definition; finished never is.
+fn node_done(
+    ctx: &Ctx<'_>,
+    node_id: &str,
+    entries: &[&Value],
+    progress: &HashMap<String, RowProgress>,
+    style: RowStyle<'_>,
+) -> Markup {
+    html! {
+        @if !entries.is_empty() {
+            section id=(format!("{node_id}-section-done")) {
+                details id=(format!("{node_id}-done")) {
+                    summary { "Done" span.count { "(" (entries.len()) ")" } }
+                    (rows(ctx, entries, progress, style))
+                }
+            }
+        }
+    }
+}
+
+/// Rename, status, note and park for a project, folded away until wanted.
+fn project_menu(node: &Value, id: &str) -> Markup {
+    let base = format!("/projects/{}", seg(id));
+    let name = str_of(node, "name").unwrap_or_default();
+    let status = str_of(node, "status").unwrap_or_default();
+    let parked = status == "parked";
+    html! {
+        details.menu id=(format!("m-{id}")) {
+            summary { "Manage project" }
+            div.menu-body {
+                form.inline hx-post=(base.clone()) hx-swap="none" {
+                    label for=(format!("m-{id}-name")) { "Rename" }
+                    input type="text" id=(format!("m-{id}-name")) name="name" value=(name) required;
+                    button.btn type="submit" { "Rename" }
+                }
+                form.inline hx-post=(base.clone()) hx-swap="none" {
+                    label for=(format!("m-{id}-status")) { "Status" }
+                    select id=(format!("m-{id}-status")) name="status" {
+                        @for option in ["active", "parked", "done", "archived"] {
+                            option value=(option) selected[status == option] { (option) }
+                        }
+                    }
+                    button.btn type="submit" { "Set status" }
+                }
+                form.inline hx-post=(format!("{base}/note")) hx-swap="none" data-reset="" {
+                    label for=(format!("m-{id}-note")) { "Note" }
+                    input type="text" id=(format!("m-{id}-note")) name="text" required;
+                    button.btn type="submit" { "Add note" }
+                }
+                div.inline {
+                    @if parked {
+                        (post_button(&format!("{base}/unpark"), "Unpark", false))
+                    } @else {
+                        (post_button(&format!("{base}/park"), "Park", false))
+                    }
+                    a.btn.quiet href=(base) { "Open project page" }
+                }
+            }
+        }
+    }
+}
+
+/// A project (or the sessions with none) and its sessions: Active,
+/// Interrupted, Finished and a nested Done. Unseen and dismissed sessions are
+/// gathered in their own nodes below, not here.
+fn project_node(
+    ctx: &Ctx<'_>,
+    node: &Value,
+    projects: &[Value],
+    progress: &HashMap<String, RowProgress>,
+    tools: bool,
+) -> Markup {
+    let project_id = str_of(node, "id");
+    let node_id = format!("n-{}", project_id.unwrap_or("none"));
+    let sessions = list_of(node, "sessions");
+    let style = RowStyle {
+        band: false,
+        show_project: false,
+        movable: Some(projects),
+    };
+    let active: Vec<&Value> = in_section(sessions, "active");
+    let interrupted = in_section(sessions, "interrupted");
+    let finished = in_section(sessions, "finished");
+    let done = in_section(sessions, "done");
+    let empty = [&active, &interrupted, &finished, &done]
+        .iter()
+        .all(|group| group.is_empty());
+    let name = str_of(node, "name").unwrap_or("No project");
+    let figure = node.get("progress").filter(|p| p.is_object());
+    html! {
+        details class=(if empty { "node empty" } else { "node" }) id=(node_id.clone()) data-node open {
+            summary aria-expanded="true" {
+                h2.node-name { (name) }
+                @if let Some(status) = str_of(node, "status") {
+                    span.badge { (status) }
+                }
+                span.node-summary.mono { (str_of(node, "summary").unwrap_or("no sessions")) }
+                @if let Some(figure) = figure {
+                    span.node-progress.mono {
+                        (figure.get("done").and_then(Value::as_u64).unwrap_or(0))
+                        " of "
+                        (figure.get("total").and_then(Value::as_u64).unwrap_or(0))
+                        " " span.src { (str_of(figure, "source").unwrap_or_default()) }
+                    }
+                }
+            }
+            div.node-body {
+                @if let (true, Some(id)) = (tools, project_id) {
+                    (project_menu(node, id))
+                }
+                @if empty {
+                    p.muted { "No sessions here yet. Use Move on any session to bring one in." }
+                }
+                (node_section(ctx, &node_id, "active", "Active", &active, progress, style))
+                (node_section(ctx, &node_id, "interrupted", "Interrupted", &interrupted, progress, style))
+                (node_section(ctx, &node_id, "finished", "Finished", &finished, progress, style))
+                (node_done(ctx, &node_id, &done, progress, style))
             }
         }
     }
 }
 
 /// The sessions region shared by the overview and a project page: the
-/// waiting band first, then the calm sections.
+/// waiting band first, then the tree of project nodes, then the nodes for
+/// unseen and dismissed sessions. `only` limits the tree to one project.
 fn sessions_region(
     ctx: &Ctx<'_>,
+    tree: &Value,
     entries: &[Value],
     progress: &HashMap<String, RowProgress>,
     url: &str,
+    only: Option<&str>,
 ) -> Markup {
     let waiting: Vec<&Value> = entries.iter().filter(|e| is_waiting(e)).collect();
     let interrupted = waiting
         .iter()
         .filter(|e| str_of(e, "state") == Some("interrupted"))
         .count();
-    let active: Vec<&Value> = in_section(entries, "active")
-        .into_iter()
-        .filter(|e| !is_waiting(e))
-        .collect();
-    let finished = in_section(entries, "finished");
-    let done = in_section(entries, "done");
+    let projects = list_of(tree, "projects");
+    let loose = tree.get("no_project").unwrap_or(&Value::Null);
     let unseen = in_section(entries, "unseen");
     let dismissed = in_section(entries, "dismissed");
+    let shown = |node: &&Value| only.is_none_or(|id| str_of(node, "id") == Some(id));
+    let listed: Vec<&Value> = projects.iter().filter(shown).collect();
+    let show_loose = only.is_none()
+        && ["active", "interrupted", "finished", "done"]
+            .iter()
+            .any(|name| !in_section(list_of(loose, "sessions"), name).is_empty());
+    let outside = RowStyle {
+        band: false,
+        show_project: true,
+        movable: Some(projects),
+    };
     let inner = html! {
         @if !waiting.is_empty() {
             section #waiting aria-labelledby="waiting-h" {
@@ -300,20 +510,42 @@ fn sessions_region(
                         a href="/restore" { "Review and restore them together" }
                     }
                 }
-                (rows(ctx, &waiting, progress))
+                (rows(ctx, &waiting, progress, BAND))
             }
         }
-        (section(ctx, "active", "Active", &active, progress))
-        (section(ctx, "finished", "Finished", &finished, progress))
-        (section(ctx, "done", "Done", &done, progress))
+        div.tree {
+            @for node in &listed {
+                (project_node(ctx, node, projects, progress, only.is_none()))
+            }
+            @if show_loose {
+                (project_node(ctx, loose, projects, progress, false))
+            }
+        }
+        @if only.is_none() {
+            details.menu id="m-new-project" {
+                summary { "New empty project" }
+                div.menu-body {
+                    form.inline hx-post="/projects" hx-swap="none" data-reset="" {
+                        label for="m-new-project-name" { "Project name" }
+                        input type="text" id="m-new-project-name" name="name" required;
+                        button.btn type="submit" { "Create" }
+                    }
+                }
+            }
+        }
         @if !unseen.is_empty() {
             details id="section-unseen" class="section" {
                 summary { "Unseen sessions" span.count { "(" (unseen.len()) ")" } }
-                (rows(ctx, &unseen, progress))
+                (rows(ctx, &unseen, progress, outside))
             }
         }
-        (section(ctx, "dismissed", "Dismissed", &dismissed, progress))
-        @if entries.is_empty() {
+        @if !dismissed.is_empty() {
+            section id="section-dismissed" {
+                h2 { "Dismissed" span.count { "(" (dismissed.len()) ")" } }
+                (rows(ctx, &dismissed, progress, outside))
+            }
+        }
+        @if entries.is_empty() && listed.is_empty() {
             p.muted { "No sessions match." }
         }
     };
@@ -350,6 +582,7 @@ fn filter_form(filters: &Filters) -> Markup {
 
 pub fn overview(
     ctx: &Ctx<'_>,
+    tree: &Value,
     entries: &[Value],
     progress: &HashMap<String, RowProgress>,
     filters: &Filters,
@@ -358,7 +591,7 @@ pub fn overview(
     let body = html! {
         h1 { "Sessions" }
         (filter_form(filters))
-        (sessions_region(ctx, entries, progress, url))
+        (sessions_region(ctx, tree, entries, progress, url, None))
     };
     layout(
         ctx,
@@ -374,6 +607,7 @@ pub fn project(
     ctx: &Ctx<'_>,
     project: &Value,
     notes: &[Value],
+    tree: &Value,
     entries: &[Value],
     progress: &HashMap<String, RowProgress>,
     url: &str,
@@ -400,7 +634,7 @@ pub fn project(
             button.btn type="submit" { "Rename" }
         }
         (notes_panel(&format!("{base}/note"), notes))
-        (sessions_region(ctx, entries, progress, url))
+        (sessions_region(ctx, tree, entries, progress, url, Some(id)))
     };
     layout(
         ctx,
@@ -410,36 +644,6 @@ pub fn project(
         body,
     )
     .into_string()
-}
-
-pub fn projects_index(ctx: &Ctx<'_>, projects: &[Value]) -> String {
-    let inner = html! {
-        h1 { "Projects" }
-        form hx-post="/projects" hx-swap="none" class="inline" data-reset="" {
-            label { "New project" input type="text" name="name" required; }
-            button.btn type="submit" { "Create" }
-        }
-        @if projects.is_empty() {
-            p.muted { "No projects yet." }
-        } @else {
-            ul.rows {
-                @for project in projects {
-                    @let id = str_of(project, "id").unwrap_or_default();
-                    li.row data-state="project" {
-                        span.state { (str_of(project, "status").unwrap_or_default()) }
-                        div.what {
-                            a.task href=(format!("/projects/{}", seg(id))) {
-                                (str_of(project, "name").unwrap_or_default())
-                            }
-                        }
-                        span {} span {}
-                    }
-                }
-            }
-        }
-    };
-    let body = live("content", "/projects", 0, inner);
-    layout(ctx, "Projects · claude-monitor", 0, "content", body).into_string()
 }
 
 fn notes_panel(post_url: &str, notes: &[Value]) -> Markup {

@@ -147,7 +147,6 @@ fn every_write_route_needs_the_csrf_header() {
 }
 
 #[test]
-#[ignore = "the tree page arrives with the next commit"]
 fn the_projects_page_redirects_to_the_overview_but_creating_a_project_still_posts_there() {
     let rig = Rig::start();
 

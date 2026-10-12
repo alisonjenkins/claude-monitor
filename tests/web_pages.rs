@@ -344,7 +344,6 @@ fn the_project_page_has_its_sections_and_only_its_own_done_sessions() {
 }
 
 #[test]
-#[ignore = "the tree page arrives with the next commit"]
 fn the_projects_page_is_the_overview_now() {
     let web = Plain::new();
     post(&web.rig, "/projects", &json!({"name": "alpha"}));
@@ -382,9 +381,15 @@ fn node<'a>(html: &'a str, id: &str) -> &'a str {
         .find(&format!("id=\"n-{id}\""))
         .unwrap_or_else(|| panic!("no node n-{id} in page:\n{html}"));
     let rest = &html[start..];
-    let end = rest[1..]
-        .find("<details class=\"node")
-        .map_or(rest.len(), |at| at + 1);
+    let end = [
+        "<details class=\"node",
+        "<details id=\"section-unseen\"",
+        "<section id=\"section-dismissed\"",
+    ]
+    .iter()
+    .filter_map(|marker| rest[1..].find(marker).map(|at| at + 1))
+    .min()
+    .unwrap_or(rest.len());
     &rest[..end]
 }
 
@@ -396,7 +401,6 @@ fn node_tag<'a>(html: &'a str, id: &str) -> &'a str {
 }
 
 #[test]
-#[ignore = "the tree page arrives with the next commit"]
 fn sessions_are_nested_under_their_projects_in_alphabetical_order() {
     let web = Plain::new();
     web.put("in-b", State::Working);
@@ -427,7 +431,6 @@ fn sessions_are_nested_under_their_projects_in_alphabetical_order() {
 }
 
 #[test]
-#[ignore = "the tree page arrives with the next commit"]
 fn a_node_is_open_by_default_and_says_its_state_summary() {
     let web = Plain::new();
     web.put("w1", State::Working);
@@ -449,7 +452,6 @@ fn a_node_is_open_by_default_and_says_its_state_summary() {
 }
 
 #[test]
-#[ignore = "the tree page arrives with the next commit"]
 fn a_project_with_no_sessions_stays_visible_and_muted() {
     let web = Plain::new();
     web.put("loose", State::Working);
@@ -465,7 +467,6 @@ fn a_project_with_no_sessions_stays_visible_and_muted() {
 }
 
 #[test]
-#[ignore = "the tree page arrives with the next commit"]
 fn the_no_project_node_is_left_out_when_nothing_is_loose() {
     let web = Plain::new();
     web.put("s1", State::Working);
@@ -478,7 +479,6 @@ fn the_no_project_node_is_left_out_when_nothing_is_loose() {
 }
 
 #[test]
-#[ignore = "the tree page arrives with the next commit"]
 fn waiting_sessions_repeat_in_the_band_with_their_project_and_stay_in_their_node() {
     let web = Plain::new();
     web.put("s-perm", State::NeedsPermission);
@@ -499,7 +499,6 @@ fn waiting_sessions_repeat_in_the_band_with_their_project_and_stay_in_their_node
 }
 
 #[test]
-#[ignore = "the tree page arrives with the next commit"]
 fn finished_is_never_collapsed_and_done_is_a_nested_collapsed_details() {
     let web = Plain::new();
     web.put("s-fin", State::Finished);
@@ -521,7 +520,6 @@ fn finished_is_never_collapsed_and_done_is_a_nested_collapsed_details() {
 }
 
 #[test]
-#[ignore = "the tree page arrives with the next commit"]
 fn unseen_sessions_stay_in_one_collapsed_node_after_the_projects() {
     let web = Plain::new();
     web.put("s-unseen", State::Unknown);
@@ -538,7 +536,6 @@ fn unseen_sessions_stay_in_one_collapsed_node_after_the_projects() {
 }
 
 #[test]
-#[ignore = "the tree page arrives with the next commit"]
 fn filters_apply_to_the_tree() {
     let web = Plain::new();
     web.put("in-work", State::Working);
@@ -555,7 +552,6 @@ fn filters_apply_to_the_tree() {
 }
 
 #[test]
-#[ignore = "the tree page arrives with the next commit"]
 fn each_row_has_a_move_panel_listing_the_existing_projects() {
     let web = Plain::new();
     web.put("s-one", State::Working);
@@ -598,7 +594,6 @@ fn each_row_has_a_move_panel_listing_the_existing_projects() {
 }
 
 #[test]
-#[ignore = "the tree page arrives with the next commit"]
 fn the_project_page_is_the_same_node_for_one_project() {
     let web = Plain::new();
     web.put("in-a", State::Working);
@@ -617,7 +612,6 @@ fn the_project_page_is_the_same_node_for_one_project() {
 }
 
 #[test]
-#[ignore = "the tree page arrives with the next commit"]
 fn a_project_node_offers_rename_status_note_and_park_in_a_menu() {
     let web = Plain::new();
     web.put("s1", State::Working);
