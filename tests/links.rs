@@ -437,7 +437,6 @@ mod check {
     use super::*;
 
     #[test]
-    #[ignore = "implemented by T101"]
     fn remote_status_is_found_wherever_the_reply_puts_it() {
         assert_eq!(
             remote_status(r#"{"node":{"fields":{"status":"done"}}}"#).as_deref(),
@@ -452,7 +451,6 @@ mod check {
     }
 
     #[test]
-    #[ignore = "implemented by T101"]
     fn statuses_agree_when_they_mean_the_same_thing() {
         for (local, remote) in [
             ("working", "doing"),
@@ -476,7 +474,6 @@ mod check {
     }
 
     #[test]
-    #[ignore = "implemented by T101"]
     fn without_server_and_token_the_check_is_skipped_and_runs_nothing() {
         let fix = Fixture::new();
         let client = FakeClient::new();
@@ -505,7 +502,6 @@ mod check {
     }
 
     #[test]
-    #[ignore = "implemented by T101"]
     fn matching_statuses_agree() {
         let fix = Fixture::new();
         let client = FakeClient::new();
@@ -535,7 +531,6 @@ mod check {
     }
 
     #[test]
-    #[ignore = "implemented by T101"]
     fn a_project_is_compared_by_its_status() {
         let fix = Fixture::new();
         let client = FakeClient::new();
@@ -556,7 +551,6 @@ mod check {
     }
 
     #[test]
-    #[ignore = "implemented by T101"]
     fn a_disagreement_reports_both_values() {
         let fix = Fixture::new();
         let client = FakeClient::new();
@@ -578,7 +572,6 @@ mod check {
     }
 
     #[test]
-    #[ignore = "implemented by T101"]
     fn a_failing_slow_or_missing_client_is_unreachable_not_an_error() {
         let fix = Fixture::new();
         let client = FakeClient::new();
@@ -614,7 +607,6 @@ mod check {
     }
 
     #[test]
-    #[ignore = "implemented by T101"]
     fn a_link_without_a_doc_id_is_unreachable_and_runs_nothing() {
         let fix = Fixture::new();
         let client = FakeClient::new();
@@ -638,7 +630,6 @@ mod check {
     }
 
     #[test]
-    #[ignore = "implemented by T101"]
     fn a_deleted_owner_and_a_reply_without_status_are_reported_as_such() {
         let fix = Fixture::new();
         let client = FakeClient::new();
@@ -657,7 +648,6 @@ mod check {
     }
 
     #[test]
-    #[ignore = "implemented by T101"]
     fn a_check_writes_nothing_and_only_runs_read_subcommands() {
         let fix = Fixture::new();
         let client = FakeClient::new();
@@ -690,7 +680,6 @@ mod check {
     }
 
     #[test]
-    #[ignore = "implemented by T101"]
     fn the_client_is_given_the_server_and_token_from_the_environment() {
         let fix = Fixture::new();
         let client = FakeClient::new();
