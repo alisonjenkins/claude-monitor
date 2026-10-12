@@ -131,7 +131,11 @@ impl Env {
             clock: Arc::new(SystemClock),
             boot_id: Arc::new(SystemBootId),
             processes: Arc::new(SystemProcesses),
-            tmux: Arc::new(SystemTmux::default()),
+            tmux: Arc::new(SystemTmux::from_socket_var(
+                std::env::var(TMUX_SOCKET_VAR)
+                    .ok()
+                    .filter(|value| !value.is_empty()),
+            )),
             notifier: Arc::new(SystemNotifier),
             fs: Arc::new(SystemFs),
             vars: Arc::new(SystemVars),
@@ -273,8 +277,7 @@ impl SystemTmux {
     /// The tmux named by `socket` (the value of [`TMUX_SOCKET_VAR`]), or the
     /// default one when it is `None`.
     pub fn from_socket_var(socket: Option<String>) -> Self {
-        let _ = socket;
-        Self::with_socket("/nonexistent/claude-monitor-unset")
+        socket.map_or_else(Self::default, Self::with_socket)
     }
 
     fn output(&self, operation: &'static str, args: &[&str]) -> Result<String, EnvError> {
