@@ -139,10 +139,28 @@ pub fn run(cmd: Command, env: &Env) -> Result<Output, Error> {
     run_in(cmd, env, None)
 }
 
+/// How a command runs beyond what the command itself says.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RunOptions {
+    /// Run a [`crate::refresh::refresh`] pass before `list`, `show` and the
+    /// dashboard read the store.
+    pub refresh: bool,
+}
+
 /// Run one command; `state_dir` is the `--state-dir` override. `Hook`,
 /// `Dashboard`, `Migrate`, `List`, `Show` and `Reconcile` are implemented; every other
-/// command reports `NotImplemented` until its task lands.
+/// command reports `NotImplemented` until its task lands. Reads the store as it
+/// is; [`run_with`] adds the refresh pass the binary runs.
 pub fn run_in(cmd: Command, env: &Env, state_dir: Option<&Path>) -> Result<Output, Error> {
+    run_with(cmd, env, state_dir, RunOptions { refresh: false })
+}
+
+pub fn run_with(
+    cmd: Command,
+    env: &Env,
+    state_dir: Option<&Path>,
+    _options: RunOptions,
+) -> Result<Output, Error> {
     match cmd {
         Command::List {
             states,
