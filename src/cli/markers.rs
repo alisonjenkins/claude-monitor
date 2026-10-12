@@ -6,6 +6,7 @@ use std::path::Path;
 
 use serde_json::json;
 
+use super::confirm::Question;
 use super::migrate::{open_viewer_store, store_error_message};
 use super::show::{resolve, user_author};
 use super::Output;
@@ -86,15 +87,18 @@ pub(super) fn dismiss_question(
     env: &Env,
     state_dir: Option<&Path>,
     target: &str,
-) -> Result<String, Error> {
+) -> Result<Question, Error> {
     let store = open_viewer_store(env, state_dir)?;
     Ok(match resolve_target(&store, target)? {
-        Target::Session(id) => format!(
-            "Dismiss session {id}: it is hidden from the default views; nothing is deleted"
-        ),
-        Target::Project { name, .. } => format!(
-            "Dismiss project {name}: it is archived and hidden from the default views; nothing is deleted"
-        ),
+        Target::Session(id) => Question {
+            action: format!("Dismiss session {id}"),
+            consequence: "it is hidden from the default views; nothing is deleted".to_owned(),
+        },
+        Target::Project { name, .. } => Question {
+            action: format!("Dismiss project {name}"),
+            consequence: "it is archived and hidden from the default views; nothing is deleted"
+                .to_owned(),
+        },
     })
 }
 

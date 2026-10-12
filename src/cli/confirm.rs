@@ -14,6 +14,53 @@ pub struct Terminal<'a> {
     pub output: &'a mut dyn Write,
 }
 
+/// What a command that needs confirmation will do: `action` names the target
+/// ("Dismiss session s1"), `consequence` says what follows.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Question {
+    pub action: String,
+    pub consequence: String,
+}
+
+impl std::fmt::Display for Question {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}: {}", self.action, self.consequence)
+    }
+}
+
+/// The question to ask before running `command`, or `None` when it needs no
+/// confirmation (it carries `yes`, or is not a destructive command). Fails the
+/// way the command would on an unknown target or a bad node id.
+pub fn question_for(
+    command: &Command,
+    env: &Env,
+    state_dir: Option<&Path>,
+) -> Result<Option<Question>, Error> {
+    match command {
+        Command::Dismiss { target, yes: false } => {
+            markers::dismiss_question(env, state_dir, target).map(Some)
+        }
+        Command::Unlink {
+            owner,
+            cortex,
+            yes: false,
+        } => link::unlink_question(env, state_dir, owner, cortex).map(Some),
+        _ => Ok(None),
+    }
+}
+
+fn with_yes(command: Command) -> Command {
+    match command {
+        Command::Dismiss { target, .. } => Command::Dismiss { target, yes: true },
+        Command::Unlink { owner, cortex, .. } => Command::Unlink {
+            owner,
+            cortex,
+            yes: true,
+        },
+        other => other,
+    }
+}
+
 /// Returns `command` ready to run: unchanged when it needs no confirmation,
 /// with `yes` set once the user has agreed. Without a terminal, or when the
 /// answer is not `y`, it fails and nothing is changed.
@@ -23,28 +70,10 @@ pub fn confirm_command(
     state_dir: Option<&Path>,
     terminal: Option<Terminal<'_>>,
 ) -> Result<Command, Error> {
-    let (question, confirmed) = match &command {
-        Command::Dismiss { target, yes: false } => (
-            markers::dismiss_question(env, state_dir, target)?,
-            Command::Dismiss {
-                target: target.clone(),
-                yes: true,
-            },
-        ),
-        Command::Unlink {
-            owner,
-            cortex,
-            yes: false,
-        } => (
-            link::unlink_question(env, state_dir, owner, cortex)?,
-            Command::Unlink {
-                owner: owner.clone(),
-                cortex: cortex.clone(),
-                yes: true,
-            },
-        ),
-        _ => return Ok(command),
+    let Some(question) = question_for(&command, env, state_dir)? else {
+        return Ok(command);
     };
+    let confirmed = with_yes(command);
     let Some(terminal) = terminal else {
         return Err(Error::Usage(format!(
             "{question}; nothing was changed. Pass --yes to proceed without being asked"
@@ -86,7 +115,7 @@ pub fn confirm_on_terminal(
     )
 }
 
-fn ask(question: &str, terminal: Terminal<'_>) -> Result<bool, Error> {
+fn ask(question: &Question, terminal: Terminal<'_>) -> Result<bool, Error> {
     let io_error = |operation: &str, source| Error::Io {
         operation: operation.to_owned(),
         path: None,

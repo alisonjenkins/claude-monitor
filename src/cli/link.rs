@@ -5,6 +5,7 @@ use std::path::Path;
 
 use serde_json::json;
 
+use super::confirm::Question;
 use super::markers::{resolve_target, Target};
 use super::migrate::{open_viewer_store, store_error_message};
 use super::show::user_author;
@@ -141,16 +142,17 @@ pub(super) fn unlink_question(
     state_dir: Option<&Path>,
     owner: &str,
     node_id: &str,
-) -> Result<String, Error> {
+) -> Result<Question, Error> {
     require_number("a node id", node_id)?;
     let store = open_viewer_store(env, state_dir)?;
     let (kind, shown) = match resolve_target(&store, owner)? {
         Target::Session(id) => ("session", id),
         Target::Project { name, .. } => ("project", name),
     };
-    Ok(format!(
-        "Unlink {kind} {shown} from node {node_id}: the link is removed (the node itself is untouched)"
-    ))
+    Ok(Question {
+        action: format!("Unlink {kind} {shown} from node {node_id}"),
+        consequence: "the link is removed (the node itself is untouched)".to_owned(),
+    })
 }
 
 pub fn run_unlink(
