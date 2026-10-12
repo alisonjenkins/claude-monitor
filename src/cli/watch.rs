@@ -7,7 +7,7 @@ use super::migrate::open_viewer_store;
 use super::Output;
 use crate::env::Env;
 use crate::error::Error;
-use crate::live::build_sources;
+use crate::live::build_sources_with_files;
 use crate::watch::watch;
 
 static STOP: AtomicBool = AtomicBool::new(false);
@@ -32,7 +32,7 @@ fn stop_on_signals() -> &'static AtomicBool {
 pub fn run(env: &Env, state_dir: Option<&Path>) -> Result<Output, Error> {
     let store = open_viewer_store(env, state_dir)?;
     let stop = stop_on_signals();
-    let built = build_sources(env);
+    let built = build_sources_with_files(env, &store);
     watch(
         &store,
         env,

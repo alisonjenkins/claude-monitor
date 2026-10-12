@@ -15,9 +15,9 @@ use std::time::Duration;
 use crate::agents::{claude_discover, claude_registry, copilot_discover};
 use crate::env::Env;
 use crate::feed::{
-    ClaudeProjectsSource, ClaudeRegistrySource, CopilotSessionsSource, EventSource, MergedSource,
-    Monotonic, ProcExitError, ProcExitHandle, ProcExitSource, SafetyNetSource, SystemMonotonic,
-    Throttle, SAFETY_NET_INTERVAL, THROTTLE_WINDOW,
+    BoundFilesSource, ClaudeProjectsSource, ClaudeRegistrySource, CopilotSessionsSource,
+    EventSource, MergedSource, Monotonic, ProcExitError, ProcExitHandle, ProcExitSource,
+    SafetyNetSource, SystemMonotonic, Throttle, SAFETY_NET_INTERVAL, THROTTLE_WINDOW,
 };
 use crate::model::Session;
 use crate::refresh::{refresh, RefreshReport};
@@ -83,10 +83,18 @@ pub fn build_sources(env: &Env) -> LiveSources {
 }
 
 /// [`build_sources`] plus a watch on the plan files `store`'s progress
-/// bindings read. A file that cannot be watched is skipped with a warning.
+/// bindings read; bindings made later are picked up while it runs. A file
+/// that cannot be watched is skipped with a warning.
 pub fn build_sources_with_files(env: &Env, store: &Store) -> LiveSources {
-    let _ = store;
-    build_sources(env)
+    let mut built = build_sources(env);
+    match BoundFilesSource::watch(store.path()) {
+        Ok(source) => {
+            built.warnings.extend(source.warnings().iter().cloned());
+            built.sources.push(Box::new(source));
+        }
+        Err(e) => built.warnings.push(format!("plan files: {e}")),
+    }
+    built
 }
 
 fn boxed<S: EventSource + Send + 'static>(source: S) -> Box<dyn EventSource + Send> {

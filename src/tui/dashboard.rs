@@ -21,7 +21,7 @@ use super::view::{state_label, view};
 use crate::cli::migrate::open_viewer_store;
 use crate::env::Env;
 use crate::feed::{ChangeFeed, EventSource, FsWatcherSource, Monotonic, SystemMonotonic};
-use crate::live::{build_sources, spawn_live, LiveThread};
+use crate::live::{build_sources_with_files, spawn_live, LiveThread};
 use crate::respawn::SPAWN_FAILED;
 use crate::store::{Store, StoreOptions};
 use crate::tmux;
@@ -119,7 +119,7 @@ pub fn warning_line(warnings: &[String]) -> Option<String> {
 }
 
 fn start_live(env: &Env, store: &Store, signals: mpsc::Sender<LiveSignal>) -> Result<LiveThread> {
-    let built = build_sources(env);
+    let built = build_sources_with_files(env, store);
     if let Some(line) = warning_line(&built.warnings) {
         let _ = signals.send(LiveSignal::Warning(line));
     }

@@ -80,7 +80,6 @@ impl Rig {
 }
 
 #[test]
-#[ignore = "implemented by T089"]
 fn the_file_source_joins_the_real_sources() {
     let rig = rig();
 
@@ -92,7 +91,6 @@ fn the_file_source_joins_the_real_sources() {
 }
 
 #[test]
-#[ignore = "implemented by T089"]
 fn an_unwatchable_bound_file_is_a_warning_not_a_failure() {
     let rig = rig();
     rig.bind_plan("- [ ] one\n");
@@ -109,7 +107,6 @@ fn an_unwatchable_bound_file_is_a_warning_not_a_failure() {
 }
 
 #[test]
-#[ignore = "implemented by T089"]
 fn editing_a_bound_file_updates_the_store_without_another_wake() {
     let rig = rig();
     let plan = rig.bind_plan("- [ ] one\n- [ ] two\n");
