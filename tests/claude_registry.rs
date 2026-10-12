@@ -173,7 +173,6 @@ fn scan_ok(rig: &Rig) -> RegistryReport {
 }
 
 #[test]
-#[ignore = "T045b"]
 fn a_normal_entry_is_parsed() {
     let rig = rig();
     add_live(&rig, 4242, &entry(4242, "sess-1"));
@@ -196,7 +195,6 @@ fn a_normal_entry_is_parsed() {
 }
 
 #[test]
-#[ignore = "T045b"]
 fn a_missing_status_is_none() {
     let rig = rig();
     let first_write = without(without(entry(7, "s"), "status"), "updatedAt");
@@ -209,7 +207,6 @@ fn a_missing_status_is_none() {
 }
 
 #[test]
-#[ignore = "T045b"]
 fn unknown_extra_keys_are_ignored() {
     let rig = rig();
     let value = with(entry(7, "s"), "somethingNew", json!({"nested": [1, 2, 3]}));
@@ -222,7 +219,6 @@ fn unknown_extra_keys_are_ignored() {
 }
 
 #[test]
-#[ignore = "T045b"]
 fn statuses_map_to_states() {
     assert_eq!(to_state(&RegistryStatus::Busy), State::Working);
     assert_eq!(to_state(&RegistryStatus::Waiting), State::NeedsPermission);
@@ -246,7 +242,6 @@ fn statuses_map_to_states() {
 }
 
 #[test]
-#[ignore = "T045b"]
 fn waiting_keeps_the_waiting_for_text() {
     let rig = rig();
     let value = with(
@@ -264,7 +259,6 @@ fn waiting_keeps_the_waiting_for_text() {
 }
 
 #[test]
-#[ignore = "T045b"]
 fn an_alive_pid_with_a_matching_start_time_is_live() {
     let rig = rig();
     add(&rig, 10, &entry(10, "s"));
@@ -274,7 +268,6 @@ fn an_alive_pid_with_a_matching_start_time_is_live() {
 }
 
 #[test]
-#[ignore = "T045b"]
 fn a_reused_pid_is_stale() {
     let rig = rig();
     add(&rig, 10, &entry(10, "s"));
@@ -287,7 +280,6 @@ fn a_reused_pid_is_stale() {
 }
 
 #[test]
-#[ignore = "T045b"]
 fn a_dead_pid_is_stale() {
     let rig = rig();
     add(&rig, 10, &entry(10, "s"));
@@ -299,7 +291,6 @@ fn a_dead_pid_is_stale() {
 }
 
 #[test]
-#[ignore = "T045b"]
 fn a_killed_session_goes_stale() {
     let rig = rig();
     add_live(&rig, 10, &entry(10, "s"));
@@ -311,7 +302,6 @@ fn a_killed_session_goes_stale() {
 }
 
 #[test]
-#[ignore = "T045b"]
 fn sdk_cli_entries_are_filtered_out() {
     let rig = rig();
     add_live(&rig, 1, &entry(1, "interactive"));
@@ -333,7 +323,6 @@ fn sdk_cli_entries_are_filtered_out() {
 }
 
 #[test]
-#[ignore = "T045b"]
 fn background_sessions_are_flagged_by_kind() {
     let rig = rig();
     add_live(&rig, 1, &entry(1, "fg"));
@@ -351,7 +340,6 @@ fn background_sessions_are_flagged_by_kind() {
 }
 
 #[test]
-#[ignore = "T045b"]
 fn the_tmux_string_is_split_into_session_window_and_pane() {
     let rig = rig();
     add_live(&rig, 1, &entry(1, "a"));
@@ -386,7 +374,6 @@ fn the_tmux_string_is_split_into_session_window_and_pane() {
 }
 
 #[test]
-#[ignore = "T045b"]
 fn key_files_are_never_touched() {
     let rig = rig();
     add_live(&rig, 1, &entry(1, "s"));
@@ -408,7 +395,6 @@ fn key_files_are_never_touched() {
 }
 
 #[test]
-#[ignore = "T045b"]
 fn a_corrupt_file_is_degraded_after_one_retry() {
     let rig = rig();
     add_live(&rig, 1, &entry(1, "good"));
@@ -424,7 +410,6 @@ fn a_corrupt_file_is_degraded_after_one_retry() {
 }
 
 #[test]
-#[ignore = "T045b"]
 fn a_file_missing_its_session_id_is_degraded() {
     let rig = rig();
     add_live(&rig, 1, &without(entry(1, "x"), "sessionId"));
@@ -436,7 +421,6 @@ fn a_file_missing_its_session_id_is_degraded() {
 }
 
 #[test]
-#[ignore = "T045b"]
 fn an_absent_directory_is_an_empty_result() {
     let rig = rig();
 
@@ -446,7 +430,6 @@ fn an_absent_directory_is_an_empty_result() {
 }
 
 #[test]
-#[ignore = "T045b"]
 fn the_directory_follows_the_config_dir_override_then_home() {
     let rig = rig();
     rig.fake.vars.set("HOME", "/home/x");
@@ -466,7 +449,6 @@ fn the_directory_follows_the_config_dir_override_then_home() {
 }
 
 #[test]
-#[ignore = "T045b"]
 fn no_config_dir_is_an_error() {
     let fake = FakeEnv::new();
 
@@ -474,7 +456,6 @@ fn no_config_dir_is_an_error() {
 }
 
 #[test]
-#[ignore = "T045b"]
 fn a_huge_file_is_read_in_bounded_bytes_and_degraded() {
     let rig = rig();
     let padding = "x".repeat(MAX_ENTRY_BYTES * 4);
@@ -500,7 +481,6 @@ fn a_huge_file_is_read_in_bounded_bytes_and_degraded() {
 }
 
 #[test]
-#[ignore = "T045b"]
 fn two_files_with_one_session_id_do_not_collide() {
     let rig = rig();
     add_live(&rig, 10, &entry(10, "same"));
@@ -513,7 +493,6 @@ fn two_files_with_one_session_id_do_not_collide() {
 }
 
 #[test]
-#[ignore = "T045b"]
 fn clear_keeps_the_pid_and_changes_the_session_id() {
     let rig = rig();
     add_live(&rig, 10, &entry(10, "before-clear"));
@@ -528,7 +507,6 @@ fn clear_keeps_the_pid_and_changes_the_session_id() {
 }
 
 #[test]
-#[ignore = "T045b"]
 fn entries_are_sorted_by_pid_numerically() {
     let rig = rig();
     for pid in [900, 12, 5000, 7] {
@@ -541,7 +519,6 @@ fn entries_are_sorted_by_pid_numerically() {
 }
 
 #[test]
-#[ignore = "T045b"]
 fn live_by_session_id_keeps_only_live_entries() {
     let rig = rig();
     add_live(&rig, 1, &entry(1, "alive"));
@@ -555,7 +532,6 @@ fn live_by_session_id_keeps_only_live_entries() {
 }
 
 #[test]
-#[ignore = "T045b"]
 #[cfg(target_os = "linux")]
 fn the_registry_watch_wakes_on_json_files_only() {
     let dir = TempDir::new().unwrap();
@@ -585,7 +561,6 @@ fn the_registry_watch_wakes_on_json_files_only() {
 }
 
 #[test]
-#[ignore = "T045b"]
 fn watching_a_missing_registry_directory_is_an_error_naming_it() {
     let dir = TempDir::new().unwrap();
     let missing = dir.path().join("nope");
