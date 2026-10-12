@@ -159,8 +159,11 @@ pub fn run_with(
     cmd: Command,
     env: &Env,
     state_dir: Option<&Path>,
-    _options: RunOptions,
+    options: RunOptions,
 ) -> Result<Output, Error> {
+    if options.refresh && reads_sessions(&cmd) {
+        refresh_first(env, state_dir)?;
+    }
     match cmd {
         Command::List {
             states,
@@ -199,6 +202,24 @@ pub fn run_with(
         }
         other => Err(Error::NotImplemented(other.name().to_owned())),
     }
+}
+
+fn reads_sessions(cmd: &Command) -> bool {
+    matches!(
+        cmd,
+        Command::List { .. } | Command::Show { .. } | Command::Dashboard
+    )
+}
+
+/// Brings the store up to date with what is on disk. Warnings go to stderr so
+/// stdout stays the command's own output.
+fn refresh_first(env: &Env, state_dir: Option<&Path>) -> Result<(), Error> {
+    let store = migrate::open_viewer_store(env, state_dir)?;
+    let report = crate::refresh::refresh(&store, env, &env.clock.now());
+    for warning in &report.warnings {
+        eprintln!("claude-monitor: refresh: {warning}");
+    }
+    Ok(())
 }
 
 #[cfg(feature = "tui")]

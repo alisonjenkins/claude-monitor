@@ -57,7 +57,6 @@ fn listed(fake: &FakeEnv, state: &TempDir, options: RunOptions) -> usize {
 }
 
 #[test]
-#[ignore = "refresh not wired into the commands"]
 fn list_shows_sessions_found_on_disk() {
     let fake = disk_only_session();
     let state = state_dir(&fake);
@@ -86,7 +85,6 @@ fn run_in_never_refreshes() {
 }
 
 #[test]
-#[ignore = "refresh not wired into the commands"]
 fn show_refreshes_before_it_looks() {
     let fake = disk_only_session();
     let state = state_dir(&fake);
