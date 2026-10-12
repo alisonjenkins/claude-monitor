@@ -3,11 +3,12 @@
 //! (FR-017, FR-017a, FR-020).
 
 use std::fs::File;
-use std::io::{Read, Seek, SeekFrom};
-use std::net::SocketAddr;
+use std::io::{Read, Seek, SeekFrom, Write};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream};
 use std::path::Path;
+use std::time::Duration;
 
-use serde_json::Value;
+use serde_json::{json, Value};
 
 use crate::env::Vars;
 
@@ -91,6 +92,41 @@ pub enum EndpointError {
     NotLoopback { host: String },
 }
 
+const HTTP_SCHEME: &str = "http://";
+const DEFAULT_PORT: u16 = 80;
+const CHAT_PATH: &str = "/v1/chat/completions";
+
+/// `(host, port)` of `host`, `host:port`, `[v6]` or `[v6]:port`.
+fn split_host_port(authority: &str) -> Option<(&str, u16)> {
+    let (host, port) = if let Some(bracketed) = authority.strip_prefix('[') {
+        let (host, after) = bracketed.split_once(']')?;
+        (host, after.strip_prefix(':'))
+    } else {
+        match authority.split_once(':') {
+            Some((host, port)) => (host, Some(port)),
+            None => (authority, None),
+        }
+    };
+    if host.is_empty() || (!authority.starts_with('[') && host.contains(':')) {
+        return None;
+    }
+    let port = match port {
+        Some(port) => port.parse::<u16>().ok().filter(|p| *p != 0)?,
+        None => DEFAULT_PORT,
+    };
+    Some((host, port))
+}
+
+/// The address `host` stands for when that is on this machine. Only the name
+/// `localhost` and IP literals qualify; any other name is never resolved,
+/// because the answer could point off-machine.
+fn loopback_ip(host: &str) -> Option<IpAddr> {
+    if host.eq_ignore_ascii_case("localhost") {
+        return Some(IpAddr::V4(Ipv4Addr::LOCALHOST));
+    }
+    host.parse::<IpAddr>().ok().filter(IpAddr::is_loopback)
+}
+
 /// A parsed model endpoint that is known to be on this machine.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Endpoint {
@@ -102,9 +138,36 @@ impl Endpoint {
     /// Accepts `http://` URLs whose host is `localhost` or a loopback IP
     /// literal, without userinfo, query or fragment. Never resolves a name.
     pub fn parse(url: &str) -> Result<Self, EndpointError> {
-        Err(EndpointError::Invalid {
+        let invalid = |reason| EndpointError::Invalid {
             url: url.to_owned(),
-            reason: "not implemented",
+            reason,
+        };
+        let rest = url
+            .get(..HTTP_SCHEME.len())
+            .filter(|scheme| scheme.eq_ignore_ascii_case(HTTP_SCHEME))
+            .and_then(|_| url.get(HTTP_SCHEME.len()..))
+            .ok_or_else(|| invalid("only http:// URLs are supported"))?;
+        if rest.chars().any(|c| !c.is_ascii_graphic()) {
+            return Err(invalid("spaces, control and non-ASCII characters"));
+        }
+        if rest.contains(['?', '#']) {
+            return Err(invalid("a query or fragment"));
+        }
+        let (authority, path) = match rest.find('/') {
+            Some(slash) => rest.split_at(slash),
+            None => (rest, ""),
+        };
+        if authority.contains('@') {
+            return Err(invalid("a user or password in the URL"));
+        }
+        let (host, port) =
+            split_host_port(authority).ok_or_else(|| invalid("a bad host or port"))?;
+        let ip = loopback_ip(host).ok_or_else(|| EndpointError::NotLoopback {
+            host: host.to_owned(),
+        })?;
+        Ok(Self {
+            addr: SocketAddr::new(ip, port),
+            base_path: format!("{}{CHAT_PATH}", path.trim_end_matches('/')),
         })
     }
 
@@ -159,8 +222,14 @@ impl ModelClient {
     }
 
     /// Both variables must be set; there is no default endpoint.
-    pub fn from_vars(_vars: &dyn Vars) -> Result<Self, ConfigError> {
-        Err(ConfigError::NotConfigured { var: URL_VAR })
+    pub fn from_vars(vars: &dyn Vars) -> Result<Self, ConfigError> {
+        let url = vars
+            .var(URL_VAR)
+            .ok_or(ConfigError::NotConfigured { var: URL_VAR })?;
+        let model = vars
+            .var(MODEL_VAR)
+            .ok_or(ConfigError::NotConfigured { var: MODEL_VAR })?;
+        Ok(Self::new(Endpoint::parse(&url)?, &model))
     }
 
     pub fn model(&self) -> &str {
@@ -174,9 +243,109 @@ impl ModelClient {
     /// One chat completion over the session's task and left-off text.
     pub fn summarize(
         &self,
-        _task: Option<&str>,
-        _left_off: Option<&str>,
+        task: Option<&str>,
+        left_off: Option<&str>,
     ) -> Result<String, ModelError> {
-        Err(ModelError::BadResponse("not implemented"))
+        let body = json!({
+            "model": self.model,
+            "stream": false,
+            "temperature": SUMMARY_TEMPERATURE,
+            "max_tokens": SUMMARY_MAX_TOKENS,
+            "messages": [
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": user_prompt(task, left_off)},
+            ],
+        })
+        .to_string();
+        let raw = self.exchange(&body)?;
+        parse_completion(&raw)
+    }
+
+    /// Sends one request and returns the whole response. HTTP/1.0 with
+    /// `Connection: close` keeps the answer unchunked and ends it at EOF.
+    fn exchange(&self, body: &str) -> Result<Vec<u8>, ModelError> {
+        let addr = self.endpoint.addr;
+        let io = |source| ModelError::Io { addr, source };
+        let mut stream = TcpStream::connect_timeout(&addr, CONNECT_TIMEOUT).map_err(io)?;
+        stream.set_read_timeout(Some(READ_TIMEOUT)).map_err(io)?;
+        stream.set_write_timeout(Some(WRITE_TIMEOUT)).map_err(io)?;
+        let request = format!(
+            "POST {} HTTP/1.0\r\nHost: {addr}\r\nContent-Type: application/json\r\n\
+             Content-Length: {}\r\nConnection: close\r\n\r\n{body}",
+            self.endpoint.chat_path(),
+            body.len(),
+        );
+        stream.write_all(request.as_bytes()).map_err(io)?;
+        let mut raw = Vec::new();
+        stream
+            .take(MAX_RESPONSE_BYTES.saturating_add(1))
+            .read_to_end(&mut raw)
+            .map_err(io)?;
+        if u64::try_from(raw.len()).map_or(true, |len| len > MAX_RESPONSE_BYTES) {
+            return Err(ModelError::BadResponse("the answer is too large"));
+        }
+        Ok(raw)
     }
 }
+
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
+const WRITE_TIMEOUT: Duration = Duration::from_secs(10);
+/// A local model can take a while on a long session.
+const READ_TIMEOUT: Duration = Duration::from_secs(180);
+const MAX_RESPONSE_BYTES: u64 = 1024 * 1024;
+const SUMMARY_MAX_TOKENS: u32 = 300;
+const SUMMARY_TEMPERATURE: f64 = 0.2;
+/// Characters of each verbatim field sent to the model.
+const MAX_PROMPT_FIELD_CHARS: usize = 4000;
+const SYSTEM_PROMPT: &str = "You summarise a coding-agent session for the person who ran it. \
+Reply in at most three plain sentences: what the session set out to do and where it stopped. \
+Use only the text given; do not invent details.";
+
+fn user_prompt(task: Option<&str>, left_off: Option<&str>) -> String {
+    let field = |label: &str, text: Option<&str>| {
+        let text: String = text
+            .map(|t| t.chars().take(MAX_PROMPT_FIELD_CHARS).collect())
+            .unwrap_or_default();
+        let text = if text.is_empty() { "(none)" } else { &text };
+        format!("{label}:\n{text}")
+    };
+    format!(
+        "{}\n\n{}",
+        field("Opening request", task),
+        field("Latest agent message", left_off)
+    )
+}
+
+fn parse_completion(raw: &[u8]) -> Result<String, ModelError> {
+    let head_end = raw
+        .windows(HEAD_END.len())
+        .position(|w| w == HEAD_END)
+        .ok_or(ModelError::BadResponse("no HTTP header in the answer"))?;
+    let head = String::from_utf8_lossy(raw.get(..head_end).unwrap_or_default());
+    let status = head
+        .lines()
+        .next()
+        .and_then(|line| line.split_whitespace().nth(1))
+        .and_then(|code| code.parse::<u16>().ok())
+        .ok_or(ModelError::BadResponse("no HTTP status in the answer"))?;
+    match status {
+        200..=299 => {}
+        300..=399 => return Err(ModelError::Redirect { status }),
+        _ => return Err(ModelError::Status { status }),
+    }
+    let body = raw
+        .get(head_end.saturating_add(HEAD_END.len())..)
+        .unwrap_or_default();
+    let value: Value = serde_json::from_slice(body).map_err(|_| {
+        ModelError::BadResponse("the body is not JSON (chunked answers are unsupported)")
+    })?;
+    let text = value
+        .pointer("/choices/0/message/content")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|text| !text.is_empty())
+        .ok_or(ModelError::BadResponse("no message text in the answer"))?;
+    Ok(text.to_owned())
+}
+
+const HEAD_END: &[u8] = b"\r\n\r\n";

@@ -300,7 +300,6 @@ mod endpoint {
     }
 
     #[test]
-    #[ignore = "implemented by T091"]
     fn loopback_endpoints_are_accepted() {
         for (url, addr, path) in [
             (
@@ -325,7 +324,6 @@ mod endpoint {
     }
 
     #[test]
-    #[ignore = "implemented by T091"]
     fn anything_not_provably_loopback_is_rejected_before_connecting() {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         listener.set_nonblocking(true).unwrap();
@@ -369,7 +367,6 @@ mod endpoint {
     }
 
     #[test]
-    #[ignore = "implemented by T091"]
     fn no_endpoint_is_configured_by_default() {
         let fake = FakeEnv::new();
         let err = ModelClient::from_vars(fake.env.vars.as_ref()).unwrap_err();
@@ -386,7 +383,6 @@ mod endpoint {
     }
 
     #[test]
-    #[ignore = "implemented by T091"]
     fn a_remote_url_in_the_environment_is_a_config_error() {
         let fake = FakeEnv::new();
         fake.vars.set(URL_VAR, "http://api.example.com");
@@ -402,7 +398,6 @@ mod endpoint {
     }
 
     #[test]
-    #[ignore = "implemented by T091"]
     fn summarize_posts_the_session_text_and_returns_the_reply() {
         let (addr, server) = fake_server(completion("Fixed the flaky test."));
         let text = client_for(addr)
@@ -426,7 +421,6 @@ mod endpoint {
     }
 
     #[test]
-    #[ignore = "implemented by T091"]
     fn redirects_are_not_followed() {
         let target = TcpListener::bind("127.0.0.1:0").unwrap();
         target.set_nonblocking(true).unwrap();
@@ -443,7 +437,6 @@ mod endpoint {
     }
 
     #[test]
-    #[ignore = "implemented by T091"]
     fn error_statuses_and_garbage_answers_are_errors() {
         let (addr, server) = fake_server(http("500 Internal Server Error", "", "{}"));
         let err = client_for(addr).summarize(Some("t"), None).unwrap_err();
@@ -464,7 +457,6 @@ mod endpoint {
     }
 
     #[test]
-    #[ignore = "implemented by T091"]
     fn nothing_listening_is_an_io_error() {
         let addr = {
             let listener = TcpListener::bind("127.0.0.1:0").unwrap();
