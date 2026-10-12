@@ -36,7 +36,7 @@ impl Output {
     /// its JSON under `--json`.
     pub fn render(&self, json: bool) -> String {
         match self {
-            Self::Raw(_) => String::new(),
+            Self::Raw(text) => text.clone(),
             Self::Dual { json: value, .. } if json => format!("{value}\n"),
             Self::Dual { text, .. } => Self::Text(text.clone()).render(false),
             Self::Text(text) if text.is_empty() => String::new(),
@@ -96,7 +96,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "implemented by T098"]
     fn raw_prints_verbatim_in_both_modes() {
         let lines = "{\"a\":1}\n{\"b\":2}\n".to_owned();
         assert_eq!(Output::Raw(lines.clone()).render(true), lines);
