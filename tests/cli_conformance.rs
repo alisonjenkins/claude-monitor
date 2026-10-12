@@ -11,11 +11,17 @@
 //!
 //! Rule: the task that implements a command removes that command's
 //! `#[ignore]` (its reason names the task) and makes `implemented` pass.
-//! `hook`, `dashboard` and `migrate` already exist and are not ignored;
-//! `migrate` has its own test because it writes a store.
+//! `hook`, `dashboard`, `migrate`, `list` and `show` exist and are not
+//! ignored; `migrate`, `list` and `show` have their own tests because they
+//! need a temporary store.
 
 // Panicking with a message on a failed check is the failure mode of a test.
-#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::unwrap_in_result,
+    clippy::panic
+)]
 
 use std::process::{Command as Process, Stdio};
 
@@ -102,8 +108,6 @@ macro_rules! command_tests {
 }
 
 command_tests! {
-    list => "list", "implemented by T032";
-    show => "show", "implemented by T032";
     reconcile => "reconcile", "implemented by T052";
     watch => "watch", "implemented by T060";
     restore => "restore", "implemented by T073";
@@ -172,6 +176,40 @@ mod migrate {
     }
 }
 
+/// `list` and `show` read the store, so they run against a temporary state
+/// directory with the legacy-import marker already recorded; the real
+/// runtime directory is then never read.
+mod viewers {
+    use super::*;
+    use claude_monitor::cli::run_in;
+    use claude_monitor::store::{legacy, Store, StoreOptions};
+
+    fn run_against_empty_store(name: &str) -> Result<Output, Error> {
+        let state = tempfile::tempdir().unwrap();
+        let fake = FakeEnv::new();
+        let store = Store::open_in_dir(state.path(), &StoreOptions::viewer()).unwrap();
+        let empty = tempfile::tempdir().unwrap();
+        legacy::migrate(&store, empty.path(), fake.env.clock.as_ref()).unwrap();
+        let info = Command::all().iter().find(|i| i.name == name).unwrap();
+        run_in((info.example)(), &fake.env, Some(state.path()))
+    }
+
+    #[test]
+    fn list_error_contract() {
+        let result = run_against_empty_store("list");
+        assert!(!matches!(result, Err(Error::NotImplemented(_))));
+        assert!(result.is_ok(), "{result:?}");
+        assert_contract("list", &result);
+    }
+
+    #[test]
+    fn show_error_contract() {
+        let result = run_against_empty_store("show");
+        assert!(matches!(result, Err(Error::Refused { .. })), "{result:?}");
+        assert_contract("show", &result);
+    }
+}
+
 mod dashboard {
     use super::*;
 
@@ -198,7 +236,7 @@ mod dashboard {
 fn every_command_has_generated_tests_with_the_right_task() {
     for info in Command::all() {
         match info.name {
-            "hook" | "dashboard" | "migrate" => {}
+            "hook" | "dashboard" | "migrate" | "list" | "show" => {}
             name => {
                 let reason = GENERATED
                     .iter()
@@ -213,7 +251,7 @@ fn every_command_has_generated_tests_with_the_right_task() {
             }
         }
     }
-    assert_eq!(GENERATED.len() + 3, Command::all().len());
+    assert_eq!(GENERATED.len() + 5, Command::all().len());
 }
 
 #[test]

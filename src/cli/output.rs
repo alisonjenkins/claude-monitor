@@ -4,6 +4,20 @@
 pub enum Output {
     Text(String),
     Json(serde_json::Value),
+    /// Human text normally, the JSON value under `--json`.
+    Dual {
+        text: String,
+        json: serde_json::Value,
+    },
+}
+
+/// `text` without control characters (ESC, BEL, C1) so session text cannot
+/// drive the terminal; `\n` and `\t` stay for multi-line fields. Text mode
+/// only: `--json` escapes them already.
+pub(crate) fn strip_control(text: &str) -> String {
+    text.chars()
+        .filter(|c| !c.is_control() || matches!(c, '\n' | '\t'))
+        .collect()
 }
 
 impl Output {
@@ -15,9 +29,12 @@ impl Output {
     /// The text to print, newline-terminated. `Json` outputs print compact
     /// in `--json` mode and pretty otherwise; `Text` is wrapped as
     /// `{"ok":true,"output":"..."}` in `--json` mode so stdout always parses.
-    /// Empty text prints nothing in either mode.
+    /// Empty text prints nothing in either mode. `Dual` prints its text, or
+    /// its JSON under `--json`.
     pub fn render(&self, json: bool) -> String {
         match self {
+            Self::Dual { json: value, .. } if json => format!("{value}\n"),
+            Self::Dual { text, .. } => Self::Text(text.clone()).render(false),
             Self::Text(text) if text.is_empty() => String::new(),
             Self::Text(text) if json => {
                 let value = serde_json::json!({ "ok": true, "output": text });
@@ -57,6 +74,21 @@ mod tests {
         let out = Output::Json(serde_json::json!({"sessions": []}));
         assert_eq!(out.render(true), "{\"sessions\":[]}\n");
         assert_eq!(out.render(false), "{\n  \"sessions\": []\n}\n");
+    }
+
+    #[test]
+    fn dual_prints_text_or_json_by_mode() {
+        let out = Output::Dual {
+            text: "one line".into(),
+            json: serde_json::json!({"sessions": []}),
+        };
+        assert_eq!(out.render(false), "one line\n");
+        assert_eq!(out.render(true), "{\"sessions\":[]}\n");
+        let empty = Output::Dual {
+            text: String::new(),
+            json: serde_json::json!({"sessions": []}),
+        };
+        assert_eq!(empty.render(false), "");
     }
 
     #[test]

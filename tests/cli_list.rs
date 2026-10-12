@@ -1,5 +1,5 @@
 //! `list` and `show` through `cli::run_in` (`contracts/cli.md`, FR-001..FR-003,
-//! FR-019, FR-021). Every test is ignored until T032 implements the commands.
+//! FR-019, FR-021).
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::indexing_slicing)]
 
@@ -114,7 +114,6 @@ fn seed(fx: &Fixture) {
 }
 
 #[test]
-#[ignore = "T032"]
 fn json_has_the_documented_shape() {
     let fx = Fixture::new();
     seed(&fx);
@@ -169,7 +168,6 @@ fn json_has_the_documented_shape() {
 }
 
 #[test]
-#[ignore = "T032"]
 fn text_is_one_line_per_session_with_state_age_repo_branch_and_task() {
     let fx = Fixture::new();
     seed(&fx);
@@ -193,7 +191,6 @@ fn text_is_one_line_per_session_with_state_age_repo_branch_and_task() {
 }
 
 #[test]
-#[ignore = "T032"]
 fn state_filter_is_repeatable() {
     let fx = Fixture::new();
     seed(&fx);
@@ -205,7 +202,6 @@ fn state_filter_is_repeatable() {
 }
 
 #[test]
-#[ignore = "T032"]
 fn agent_repo_and_text_filters_narrow_the_list() {
     let fx = Fixture::new();
     seed(&fx);
@@ -227,7 +223,6 @@ fn agent_repo_and_text_filters_narrow_the_list() {
 }
 
 #[test]
-#[ignore = "T032"]
 fn section_flag_restricts_to_one_section() {
     let fx = Fixture::new();
     seed(&fx);
@@ -239,7 +234,6 @@ fn section_flag_restricts_to_one_section() {
 }
 
 #[test]
-#[ignore = "T032"]
 fn dismissed_sessions_need_include_dismissed() {
     let fx = Fixture::new();
     seed(&fx);
@@ -257,7 +251,6 @@ fn dismissed_sessions_need_include_dismissed() {
 }
 
 #[test]
-#[ignore = "T032"]
 fn old_finished_sessions_need_expand_finished() {
     let fx = Fixture::new();
     fx.put("recent", State::Finished, "2026-10-10T00:00:00Z", |_| {});
@@ -271,7 +264,6 @@ fn old_finished_sessions_need_expand_finished() {
 }
 
 #[test]
-#[ignore = "T032"]
 fn unknown_state_or_section_is_a_usage_error() {
     let fx = Fixture::new();
     let bad_state = List {
@@ -290,7 +282,6 @@ fn unknown_state_or_section_is_a_usage_error() {
 }
 
 #[test]
-#[ignore = "T032"]
 fn an_empty_store_lists_nothing_and_succeeds() {
     let fx = Fixture::new();
     let output = fx.run(List::default().command()).unwrap();
@@ -299,7 +290,6 @@ fn an_empty_store_lists_nothing_and_succeeds() {
 }
 
 #[test]
-#[ignore = "T032"]
 fn show_returns_the_detail_with_left_off_and_lineage() {
     let fx = Fixture::new();
     seed(&fx);
@@ -331,8 +321,46 @@ fn show_returns_the_detail_with_left_off_and_lineage() {
     assert!(text.contains("successor"), "{text}");
 }
 
+const HOSTILE: &str = "ok \u{1b}]52;c;aGk=\u{7}\u{1b}[2Jdone \u{9b}31m";
+
+fn assert_inert(text: &str) {
+    for c in text.chars() {
+        assert!(
+            !c.is_control() || c == '\n' || c == '\t',
+            "control character {c:?} reached the terminal text: {text:?}"
+        );
+    }
+}
+
 #[test]
-#[ignore = "T032"]
+fn list_text_strips_terminal_escapes_from_the_task() {
+    let fx = Fixture::new();
+    fx.put("evil", State::Idle, "2026-10-11T23:59:30Z", |s| {
+        s.task_description = Some(HOSTILE.to_owned());
+    });
+    let text = fx.run(List::default().command()).unwrap().render(false);
+    assert_inert(&text);
+    assert!(text.contains("ok "), "{text}");
+    assert!(text.contains("done"), "{text}");
+}
+
+#[test]
+fn show_text_strips_terminal_escapes_but_keeps_multiline_layout() {
+    let fx = Fixture::new();
+    fx.put("evil", State::Idle, "2026-10-11T23:59:30Z", |s| {
+        s.task_description = Some(HOSTILE.to_owned());
+        s.left_off = Some(format!("first\n\t{HOSTILE}"));
+    });
+    let text = fx.run(show("evil")).unwrap().render(false);
+    assert_inert(&text);
+    assert!(text.contains("first\n\t"), "{text}");
+
+    let json = fx.run(show("evil")).unwrap().render(true);
+    let value: Value = serde_json::from_str(&json).unwrap();
+    assert_eq!(value["task_description"], HOSTILE, "--json stays verbatim");
+}
+
+#[test]
 fn show_of_an_unknown_id_is_refused_with_exit_2() {
     let fx = Fixture::new();
     seed(&fx);

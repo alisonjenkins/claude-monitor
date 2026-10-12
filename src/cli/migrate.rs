@@ -25,6 +25,31 @@ fn legacy_error(error: &LegacyError) -> Error {
     }
 }
 
+pub fn store_error_message(
+    operation: &str,
+    path: Option<&Path>,
+    error: &dyn std::fmt::Display,
+) -> Error {
+    Error::Store {
+        operation: operation.to_owned(),
+        path: path.map(Path::to_owned),
+        detail: error.to_string(),
+    }
+}
+
+/// Opens the store for a viewer command and runs the first-start legacy
+/// import. An import failure is reported on stderr and never stops the
+/// command (FR-021).
+pub fn open_viewer_store(env: &Env, state_dir: Option<&Path>) -> Result<Store, Error> {
+    let dir =
+        resolve_state_dir(state_dir, &StateDirEnv::from_process()).map_err(|e| store_error(&e))?;
+    let store = Store::open_in_dir(&dir, &StoreOptions::viewer()).map_err(|e| store_error(&e))?;
+    if let Err(error) = store_migrate_if_needed(&store, env) {
+        eprintln!("claude-monitor: legacy import skipped: {error}");
+    }
+    Ok(store)
+}
+
 /// `claude-monitor migrate`: import the legacy runtime JSON files into the store.
 pub fn run(state_dir: &Path, runtime_dir: &Path, env: &Env) -> Result<Output, Error> {
     let store =

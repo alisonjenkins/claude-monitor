@@ -377,6 +377,31 @@ impl Store {
         Ok(rows)
     }
 
+    /// Up to `limit` ids that start with `prefix`, for short ids typed by a person.
+    pub fn session_ids_with_prefix(
+        &self,
+        prefix: &str,
+        limit: usize,
+    ) -> Result<Vec<String>, QueriesError> {
+        let read = read_error("find sessions by id prefix");
+        let limit = i64::try_from(limit).unwrap_or(i64::MAX);
+        let mut stmt = self
+            .connection()
+            .prepare_cached(
+                "SELECT id FROM sessions WHERE substr(id, 1, length(?1)) = ?1 \
+                 ORDER BY id LIMIT ?2",
+            )
+            .map_err(&read)?;
+        let rows = stmt
+            .query_map(rusqlite::params![prefix, limit], |row| {
+                row.get::<_, String>(0)
+            })
+            .map_err(&read)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(&read)?;
+        Ok(rows)
+    }
+
     fn fetch_entries(
         &self,
         clauses: &[String],
