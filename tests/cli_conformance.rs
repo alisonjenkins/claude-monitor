@@ -112,7 +112,6 @@ macro_rules! command_tests {
 command_tests! {
     serve => "serve", "implemented by T117";
     link => "link", "implemented by T100";
-    export_cortexiphan => "export-cortexiphan", "implemented by T098";
     links_check => "links-check", "implemented by T101";
     delete => "delete", "implemented by unscheduled (no task in tasks.md)";
 }
@@ -293,6 +292,13 @@ mod viewers {
     }
 
     #[test]
+    fn export_cortexiphan_error_contract() {
+        let result = run_against_empty_store("export-cortexiphan");
+        assert!(result.is_ok(), "{result:?}");
+        assert_contract("export-cortexiphan", &result);
+    }
+
+    #[test]
     fn show_error_contract() {
         let result = run_against_empty_store("show");
         assert!(matches!(result, Err(Error::Refused { .. })), "{result:?}");
@@ -382,7 +388,7 @@ fn every_command_has_generated_tests_with_the_right_task() {
             "hook" | "dashboard" | "migrate" | "list" | "show" | "reconcile" | "watch"
             | "boot-check" | "restore" | "respawn" | "summarize" | "progress-bind" | "project"
             | "group" | "note" | "park" | "unpark" | "dismiss" | "undismiss" | "done"
-            | "undone" => {}
+            | "undone" | "export-cortexiphan" => {}
             name => {
                 let reason = GENERATED
                     .iter()
@@ -397,7 +403,7 @@ fn every_command_has_generated_tests_with_the_right_task() {
             }
         }
     }
-    assert_eq!(GENERATED.len() + 21, Command::all().len());
+    assert_eq!(GENERATED.len() + 22, Command::all().len());
 }
 
 #[test]

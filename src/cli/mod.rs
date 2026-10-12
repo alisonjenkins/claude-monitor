@@ -13,6 +13,7 @@ mod boot_check;
 mod command;
 pub mod detail;
 mod done;
+mod export;
 mod list;
 mod markers;
 pub mod migrate;
@@ -455,8 +456,8 @@ pub struct RunOptions {
 /// Run one command; `state_dir` is the `--state-dir` override. `Hook`,
 /// `Dashboard`, `Migrate`, `List`, `Show`, `Reconcile`, `Watch`, `BootCheck`,
 /// `Restore`, `Respawn`, `Summarize`, `ProgressBind`, `Project`, `Group`, `Note`,
-/// `Park`, `Unpark`, `Dismiss`, `Undismiss`, `Done` and `Undone` are implemented;
-/// every other
+/// `Park`, `Unpark`, `Dismiss`, `Undismiss`, `Done`, `Undone` and `ExportCortexiphan`
+/// are implemented; every other
 /// command reports `NotImplemented` until its task lands. Reads the store as it
 /// is; [`run_with`] adds the refresh pass the binary runs.
 pub fn run_in(cmd: Command, env: &Env, state_dir: Option<&Path>) -> Result<Output, Error> {
@@ -563,6 +564,19 @@ pub fn run_with(
         Command::Undismiss { target } => {
             markers::run_marker(env, state_dir, Marker::Dismissed, false, &target)
         }
+        Command::ExportCortexiphan {
+            project,
+            include_text,
+            out,
+        } => export::run(
+            env,
+            state_dir,
+            export::ExportArgs {
+                project,
+                include_text,
+                out,
+            },
+        ),
         Command::Hook { agent, event } => {
             hook::run(agent.as_deref(), event.as_deref(), state_dir, env);
             Ok(Output::empty())

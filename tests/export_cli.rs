@@ -66,7 +66,6 @@ fn the_subcommand_parses_into_the_command() {
 }
 
 #[test]
-#[ignore = "implemented by T098"]
 fn stdout_is_the_jsonl_export_in_both_modes() {
     let fix = sealed(project20());
     let fake = fake();
@@ -81,7 +80,6 @@ fn stdout_is_the_jsonl_export_in_both_modes() {
 }
 
 #[test]
-#[ignore = "implemented by T098"]
 fn the_clone_machine_is_this_hosts_name() {
     let fix = sealed(project20());
     let output = run_in(export(None, false, None), &fake().env, Some(fix.dir.path())).unwrap();
@@ -94,7 +92,6 @@ fn the_clone_machine_is_this_hosts_name() {
 }
 
 #[test]
-#[ignore = "implemented by T098"]
 fn project_and_include_text_reach_the_export() {
     let fix = project20();
     fix.session("sess-x", None, |s| {
@@ -120,7 +117,6 @@ fn project_and_include_text_reach_the_export() {
 }
 
 #[test]
-#[ignore = "implemented by T098"]
 fn an_unknown_project_is_refused_with_exit_2() {
     let fix = sealed(project20());
     let err = run_in(
@@ -143,7 +139,6 @@ fn an_unknown_project_is_refused_with_exit_2() {
 }
 
 #[test]
-#[ignore = "implemented by T098"]
 fn out_writes_the_file_and_prints_a_summary() {
     let fix = sealed(project20());
     let target = tempfile::TempDir::new().unwrap();
@@ -176,7 +171,6 @@ fn out_writes_the_file_and_prints_a_summary() {
 }
 
 #[test]
-#[ignore = "implemented by T098"]
 fn out_into_a_missing_directory_is_an_io_error_and_writes_nothing() {
     let fix = sealed(project20());
     let target = tempfile::TempDir::new().unwrap();
@@ -192,7 +186,6 @@ fn out_into_a_missing_directory_is_an_io_error_and_writes_nothing() {
 }
 
 #[test]
-#[ignore = "implemented by T098"]
 fn an_empty_store_exports_an_empty_file_and_exits_0() {
     let fix = sealed(Fixture::new());
     let output = run_in(export(None, false, None), &fake().env, Some(fix.dir.path())).unwrap();
@@ -200,7 +193,6 @@ fn an_empty_store_exports_an_empty_file_and_exits_0() {
 }
 
 #[test]
-#[ignore = "implemented by T098"]
 fn the_binary_prints_jsonl_with_and_without_json_and_never_refreshes() {
     let fix = sealed(project20());
     for args in [
