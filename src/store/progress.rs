@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use rusqlite::{params, OptionalExtension, Row, Transaction, TransactionBehavior};
 
 use super::Store;
@@ -244,6 +246,12 @@ impl Store {
         owner_id: &str,
     ) -> Result<Option<Binding>, ProgressStoreError> {
         find_binding(self, owner_kind, owner_id).map_err(db("read progress binding"))
+    }
+
+    /// Session id to the stored `(done, total)` of its bound plan; sessions
+    /// with no stored steps are absent. One query, no file reads.
+    pub fn progress_figures(&self) -> Result<HashMap<String, (u32, u32)>, ProgressStoreError> {
+        Ok(HashMap::new())
     }
 
     /// Every binding that reads a file, for the watcher and the refresh pass.

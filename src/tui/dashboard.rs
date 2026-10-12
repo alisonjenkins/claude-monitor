@@ -257,6 +257,7 @@ fn perform(effect: &Effect, env: &Env, store: &Store, restore_tx: &mpsc::Sender<
             Done::Answer(Msg::RestorePreview(preview_restore(store, env, ids)))
         }
         Effect::StartRestore { ids } => start_restore(env, store, ids.clone(), restore_tx),
+        Effect::LoadDetail { .. } => Done::Ok,
         Effect::JumpToPane { pane } => match tmux::switch_to_pane(pane) {
             Ok(()) => Done::Ok,
             Err(e) => Done::Failed(format!("switch failed: {e:#}")),

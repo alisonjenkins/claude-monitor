@@ -6,7 +6,9 @@ use std::path::Path;
 
 use crossterm::event::{KeyCode, KeyModifiers};
 
+use super::detail::DetailView;
 use super::restore::{PreviewRow, RestoreResult, RestoreView, Step};
+use crate::cli::detail::SessionDetail;
 use crate::model::State;
 use crate::store::queries::{Overview, OverviewEntry, OverviewQuery, Section, SectionName};
 use crate::store::Store;
@@ -18,6 +20,8 @@ pub struct Snapshot {
     pub overview: Overview,
     /// Session id to the tmux pane it last reported.
     pub panes: HashMap<String, String>,
+    /// Session id to the stored `(done, total)` of its bound plan.
+    pub figures: HashMap<String, (u32, u32)>,
     pub now: String,
 }
 
@@ -34,9 +38,11 @@ impl Snapshot {
             .into_iter()
             .filter_map(|session| session.tmux_pane.map(|pane| (session.id, pane)))
             .collect();
+        let figures = store.progress_figures().map_err(|e| e.to_string())?;
         Ok(Self {
             overview,
             panes,
+            figures,
             now: now.to_owned(),
         })
     }
@@ -52,6 +58,8 @@ pub enum Msg {
     RestorePreview(Vec<PreviewRow>),
     /// One session of a confirmed restore started or was refused.
     RestoreResult(RestoreResult),
+    /// The answer to [`Effect::LoadDetail`].
+    Detail(SessionDetail),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -63,6 +71,10 @@ pub enum Effect {
     /// Start these sessions and answer with a [`Msg::RestoreResult`] each.
     StartRestore {
         ids: Vec<String>,
+    },
+    /// Read this session's detail and answer with [`Msg::Detail`].
+    LoadDetail {
+        id: String,
     },
     JumpToPane {
         pane: String,
@@ -87,6 +99,8 @@ pub struct App {
     unseen_expanded: bool,
     /// Open with `R`; takes over the keys until closed.
     restore: Option<RestoreView>,
+    /// Open with `i`; takes over the keys until closed.
+    detail: Option<DetailView>,
 }
 
 impl App {
@@ -99,7 +113,12 @@ impl App {
             status: None,
             unseen_expanded: false,
             restore: None,
+            detail: None,
         }
+    }
+
+    pub fn detail(&self) -> Option<&DetailView> {
+        self.detail.as_ref()
     }
 
     pub fn restore(&self) -> Option<&RestoreView> {
@@ -358,6 +377,7 @@ pub fn update(mut app: App, msg: Msg) -> (App, Vec<Effect>) {
             }
             Vec::new()
         }
+        Msg::Detail(_) => Vec::new(),
     };
     (app, effects)
 }

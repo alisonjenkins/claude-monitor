@@ -74,6 +74,7 @@ fn snapshot(overview: Overview, panes: &[(&str, &str)]) -> Snapshot {
             .iter()
             .map(|(id, pane)| ((*id).to_owned(), (*pane).to_owned()))
             .collect(),
+        figures: std::collections::HashMap::new(),
         now: NOW.to_owned(),
     }
 }
