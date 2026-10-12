@@ -453,6 +453,15 @@ impl App {
         }
     }
 
+    fn open_group(&mut self) {
+        if let Some(id) = self.selected_entry().map(|entry| entry.id.clone()) {
+            self.prompt = Some(Prompt::Group {
+                id,
+                text: String::new(),
+            });
+        }
+    }
+
     fn on_prompt_key(&mut self, code: KeyCode) -> Vec<Effect> {
         let Some(prompt) = self.prompt.clone() else {
             return Vec::new();
@@ -491,6 +500,25 @@ impl App {
                 }
             }
             (Prompt::Note { .. }, KeyCode::Esc) => self.prompt = None,
+            (Prompt::Group { id, mut text }, KeyCode::Char(c)) => {
+                text.push(c);
+                self.prompt = Some(Prompt::Group { id, text });
+            }
+            (Prompt::Group { id, mut text }, KeyCode::Backspace) => {
+                text.pop();
+                self.prompt = Some(Prompt::Group { id, text });
+            }
+            (Prompt::Group { id, text }, KeyCode::Enter) => {
+                self.prompt = None;
+                let project = text.trim();
+                if !project.is_empty() {
+                    return vec![Effect::Organise(Organise::Group {
+                        id,
+                        project: project.to_owned(),
+                    })];
+                }
+            }
+            (Prompt::Group { .. }, KeyCode::Esc) => self.prompt = None,
             _ => {}
         }
         Vec::new()
@@ -571,6 +599,7 @@ impl App {
             Action::Dismiss => return self.organise_selected(Mark::Dismiss),
             Action::Note => self.open_note(),
             Action::TogglePark => return self.toggle_park(),
+            Action::Group => self.open_group(),
             Action::Detail => return self.open_detail(),
             Action::Links => return self.open_detail_and_check_links(),
             Action::Restore => self.open_restore(),

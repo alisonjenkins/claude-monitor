@@ -20,7 +20,7 @@ use claude_monitor::env::Env;
 use claude_monitor::model::{OwnerKind, Session, State};
 use claude_monitor::progress::binding::{view, ProgressView};
 use claude_monitor::store::queries::{Flag, Overview, OverviewEntry, Section, SectionName};
-use claude_monitor::store::{Store, StoreOptions};
+use claude_monitor::store::{legacy, Store, StoreOptions};
 use claude_monitor::summary::{MODEL_VAR, URL_VAR};
 use claude_monitor::testing::FakeEnv;
 use claude_monitor::tui::app::{update, App, Effect, Msg, Prompt, Snapshot};
@@ -131,7 +131,6 @@ mod group {
     }
 
     #[test]
-    #[ignore = "I1: dashboard actions"]
     fn g_opens_a_project_prompt_on_the_selected_row() {
         let app = keys(single("s1", vec![]), "g");
 
@@ -145,7 +144,6 @@ mod group {
     }
 
     #[test]
-    #[ignore = "I1: dashboard actions"]
     fn enter_groups_the_session_into_the_typed_project() {
         let (app, effects) = press(typing(" alpha "), KeyCode::Enter);
 
@@ -160,7 +158,6 @@ mod group {
     }
 
     #[test]
-    #[ignore = "I1: dashboard actions"]
     fn a_dash_takes_the_session_out_of_its_project() {
         let (_, effects) = press(typing("-"), KeyCode::Enter);
 
@@ -174,7 +171,6 @@ mod group {
     }
 
     #[test]
-    #[ignore = "I1: dashboard actions"]
     fn an_empty_name_or_esc_changes_nothing() {
         let (app, effects) = press(typing("  "), KeyCode::Enter);
         assert!(effects.is_empty(), "{effects:?}");
@@ -456,6 +452,8 @@ fn rig() -> Rig {
     let fake = FakeEnv::new();
     fake.vars.set("USER", "ali");
     let store = Store::open_in_dir(state.path(), &StoreOptions::viewer()).unwrap();
+    let empty = TempDir::new().unwrap();
+    legacy::migrate(&store, empty.path(), fake.env.clock.as_ref()).unwrap();
     Rig {
         _state: state,
         fake,
@@ -509,7 +507,6 @@ mod with_a_real_store {
     }
 
     #[test]
-    #[ignore = "I1: dashboard actions"]
     fn g_groups_into_a_new_project_and_a_dash_ungroups() {
         let rig = rig();
         rig.session("act", "/work");
