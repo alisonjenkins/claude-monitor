@@ -7,7 +7,7 @@ use rusqlite::{Transaction, TransactionBehavior};
 use serde_json::{json, Value};
 
 use crate::agents::{self, AgentKind, ParseError, ParsedHook};
-use crate::env::{Clock, Env};
+use crate::env::{Clock, Env, EnvError};
 use crate::model::{Author, Event, Session, StartSource};
 use crate::store::events::{EventsError, NewEvent};
 use crate::store::sessions::SessionsError;
@@ -112,6 +112,8 @@ enum HookError {
     Sessions(#[from] SessionsError),
     #[error("{0}")]
     Events(#[from] EventsError),
+    #[error("cannot probe the agent process: {0}")]
+    Probe(EnvError),
     #[error("cannot begin write transaction: {0}")]
     Begin(rusqlite::Error),
     #[error("cannot commit write transaction: {0}")]
@@ -198,6 +200,9 @@ fn apply(
             session.tmux_pane = Some(pane.to_owned());
         }
     }
+    if !matches!(hook.event, Event::SessionEnd { .. }) {
+        capture_liveness(ctx, &mut session);
+    }
     match ctx.git.probe(&session.cwd) {
         Some(git) => {
             session.repo_root = Some(git.root);
@@ -224,6 +229,42 @@ fn apply(
     store.upsert_session(&session)?;
     append_events(ctx, store, before.as_ref(), &session, now)?;
     tx.commit().map_err(HookError::Commit)
+}
+
+/// Records the agent pid, its start time and the boot id, overwriting values
+/// left by an earlier run of a resumed session. A probe failure is logged and
+/// never fails the hook.
+fn capture_liveness(ctx: &HookContext<'_>, session: &mut Session) {
+    let Some(env) = ctx.env else {
+        return;
+    };
+    match env.boot_id.current() {
+        Ok(boot_id) => session.boot_id = Some(boot_id),
+        Err(e) => log_failure(ctx, "probe", &HookError::Probe(e)),
+    }
+    let Some(pid) = ctx.agent_pid else {
+        return;
+    };
+    match env.processes.start_time(pid) {
+        Ok(Some(start)) => {
+            session.pid = Some(pid);
+            session.pid_start = Some(start);
+        }
+        Ok(None) => clear_stale_pid(session, pid),
+        Err(e) => {
+            log_failure(ctx, "probe", &HookError::Probe(e));
+            clear_stale_pid(session, pid);
+        }
+    }
+}
+
+/// A pid with no readable start time cannot be checked against reuse, and the
+/// start time recorded for a different pid would wrongly mark this one dead.
+fn clear_stale_pid(session: &mut Session, pid: u32) {
+    if session.pid != Some(pid) {
+        session.pid = None;
+        session.pid_start = None;
+    }
 }
 
 fn new_session(
@@ -433,8 +474,9 @@ pub fn run(agent: Option<&str>, state_dir: Option<&Path>, env: &Env) {
         tmux_pane: tmux_pane.as_deref(),
         clock: env.clock.as_ref(),
         git: &FsGit,
-        agent_pid: None,
-        env: None,
+        // The agent runs the hook as a direct child, so its parent is the agent.
+        agent_pid: Some(std::os::unix::process::parent_id()),
+        env: Some(env),
     };
 
     let mut input = String::new();

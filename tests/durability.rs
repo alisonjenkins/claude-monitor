@@ -92,7 +92,6 @@ fn section_ids(overview: &Overview, name: SectionName) -> Vec<String> {
 }
 
 #[test]
-#[ignore = "T051"]
 fn hook_records_pid_start_time_and_boot_id() {
     let h = Harness::new();
     h.fake.processes.spawn(AGENT_PID, PID_START);
@@ -107,6 +106,45 @@ fn hook_records_pid_start_time_and_boot_id() {
     assert_eq!(s.pid, Some(AGENT_PID));
     assert_eq!(s.pid_start, Some(PID_START));
     assert_eq!(s.boot_id.as_deref(), Some("boot-1"));
+}
+
+#[test]
+fn later_hook_overwrites_the_pid_of_an_earlier_run() {
+    let h = Harness::new();
+    h.fake.processes.spawn(AGENT_PID, PID_START);
+    h.feed(
+        Some("%1"),
+        Some(AGENT_PID),
+        &payload("SessionStart-startup", "s1"),
+    );
+    h.fake.processes.spawn(777, 31);
+    h.fake.boot_id.set("boot-2");
+
+    h.feed(Some("%1"), Some(777), &payload("SessionStart-resume", "s1"));
+
+    let s = h.session("s1");
+    assert_eq!(
+        (s.pid, s.pid_start, s.boot_id.as_deref()),
+        (Some(777), Some(31), Some("boot-2"))
+    );
+}
+
+#[test]
+fn failing_probes_are_logged_and_never_fail_the_hook() {
+    let h = Harness::new();
+    h.fake.boot_id.fail("no /proc");
+
+    h.feed(
+        Some("%1"),
+        Some(AGENT_PID),
+        &payload("SessionStart-startup", "s1"),
+    );
+
+    let s = h.session("s1");
+    assert_eq!(s.state, State::Idle);
+    assert_eq!((s.pid, s.pid_start, s.boot_id), (None, None, None));
+    let log = std::fs::read_to_string(h.state_dir.join("hook.log")).unwrap();
+    assert!(log.contains("read boot id: no /proc"), "{log}");
 }
 
 #[test]
