@@ -106,7 +106,6 @@ fn bound_rig() -> Rig {
 }
 
 #[test]
-#[ignore = "T093: show detail not built yet"]
 fn json_has_the_bound_progress_exactly_as_the_progress_command_emits_it() {
     let rig = bound_rig();
     let shown = rig.show_json("s1");
@@ -131,7 +130,6 @@ fn json_has_the_bound_progress_exactly_as_the_progress_command_emits_it() {
 }
 
 #[test]
-#[ignore = "T093: show detail not built yet"]
 fn json_keeps_verbatim_and_generated_summaries_apart() {
     let rig = bound_rig();
     rig.store()
@@ -149,7 +147,6 @@ fn json_keeps_verbatim_and_generated_summaries_apart() {
 }
 
 #[test]
-#[ignore = "T093: show detail not built yet"]
 fn json_without_a_plan_omits_progress_and_has_empty_generated() {
     let rig = rig();
     rig.session("s2", "main");
@@ -160,7 +157,6 @@ fn json_without_a_plan_omits_progress_and_has_empty_generated() {
 }
 
 #[test]
-#[ignore = "T093: show detail not built yet"]
 fn json_with_several_plans_lists_the_candidates_and_no_figure() {
     let rig = rig();
     rig.session("s3", "main");
@@ -173,7 +169,6 @@ fn json_with_several_plans_lists_the_candidates_and_no_figure() {
 }
 
 #[test]
-#[ignore = "T093: show detail not built yet"]
 fn text_shows_the_figure_source_current_item_and_phase_counts() {
     let rig = bound_rig();
     let text = rig.show_text("s1");
@@ -187,7 +182,6 @@ fn text_shows_the_figure_source_current_item_and_phase_counts() {
 }
 
 #[test]
-#[ignore = "T093: show detail not built yet"]
 fn text_marks_a_figure_whose_source_cannot_be_read() {
     let rig = bound_rig();
     fs::remove_file(rig.tree.path().join("specs/001-x/tasks.md")).unwrap();
@@ -197,7 +191,6 @@ fn text_marks_a_figure_whose_source_cannot_be_read() {
 }
 
 #[test]
-#[ignore = "T093: show detail not built yet"]
 fn text_labels_generated_summaries_with_model_and_keeps_verbatim_text_unlabelled() {
     let rig = bound_rig();
     rig.store()
@@ -212,7 +205,6 @@ fn text_labels_generated_summaries_with_model_and_keeps_verbatim_text_unlabelled
 }
 
 #[test]
-#[ignore = "T093: show detail not built yet"]
 fn text_with_several_plans_hints_at_progress_bind() {
     let rig = rig();
     rig.session("s3", "main");
@@ -225,7 +217,6 @@ fn text_with_several_plans_hints_at_progress_bind() {
 }
 
 #[test]
-#[ignore = "T093: show detail not built yet"]
 fn text_without_a_plan_shows_no_progress_line() {
     let rig = rig();
     rig.session("s2", "main");

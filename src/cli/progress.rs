@@ -91,7 +91,7 @@ pub fn run(
     })
 }
 
-fn current_text(item: &Item) -> String {
+pub(crate) fn current_text(item: &Item) -> String {
     match &item.external_id {
         Some(id) if *id != item.text => format!("{id} {}", item.text),
         _ => item.text.clone(),
@@ -158,7 +158,7 @@ pub(crate) fn json_value(session_id: &str, view: &ProgressView) -> Value {
     Value::Object(map)
 }
 
-fn candidate_line(root: &Path, candidate: &Candidate) -> String {
+pub(crate) fn candidate_line(root: &Path, candidate: &Candidate) -> String {
     let kind = match candidate.kind {
         SourceKind::SpeckitTasks => "spec-kit tasks",
         SourceKind::MarkdownChecklist => "Markdown checklist",

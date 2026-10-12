@@ -4,6 +4,7 @@ use std::path::Path;
 
 use serde_json::{json, Value};
 
+use super::detail::SessionDetail;
 use super::list::age;
 use super::migrate::{open_viewer_store, store_error_message};
 use super::output::strip_control;
@@ -87,7 +88,7 @@ pub fn run(env: &Env, state_dir: Option<&Path>, id: &str) -> Result<Output, Erro
         .as_ref()
         .map(|s| (s.resumed_from.clone(), s.forked_from.clone()))
         .unwrap_or_default();
-    let text = detail_text(
+    let mut text = detail_text(
         &entry,
         resumed_from.as_deref(),
         forked_from.as_deref(),
@@ -95,6 +96,22 @@ pub fn run(env: &Env, state_dir: Option<&Path>, id: &str) -> Result<Output, Erro
         &notes,
         &env.clock.now(),
     );
+    // A row that cannot be decoded has no plan or summaries to add.
+    if let Some(session) = &session {
+        let detail = SessionDetail::load(&store, env, session)
+            .map_err(|e| store_error_message("show session progress", Some(store.path()), &e))?;
+        if let Value::Object(map) = &mut json {
+            map.extend(detail.json_fields());
+        }
+        for extra in detail
+            .progress_lines()
+            .into_iter()
+            .chain(detail.generated_lines())
+        {
+            text.push('\n');
+            text.push_str(&extra);
+        }
+    }
     Ok(Output::Dual { text, json })
 }
 

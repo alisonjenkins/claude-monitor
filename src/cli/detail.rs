@@ -5,13 +5,18 @@
 
 use std::path::PathBuf;
 
-use serde_json::{Map, Value};
+use serde_json::{json, Map, Value};
 
+use super::progress::{candidate_line, current_text, json_value};
 use crate::env::Env;
 use crate::model::Session;
-use crate::progress::binding::ProgressView;
-use crate::store::summaries::Summary;
+use crate::progress::binding::{self, session_root, ProgressView};
+use crate::store::summaries::{Summary, GENERATED_LABEL};
 use crate::store::Store;
+
+const OWNER_KIND: &str = "session";
+const LABEL_WIDTH: usize = 14;
+const UNKNOWN_MODEL: &str = "unknown model";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SessionDetail {
@@ -23,33 +28,121 @@ pub struct SessionDetail {
     pub root: PathBuf,
 }
 
+fn line(label: &str, value: &str) -> String {
+    format!("{label:<LABEL_WIDTH$}{value}")
+}
+
 impl SessionDetail {
     /// Reads the progress view (stat only, no writes) and the stored summaries.
     pub fn load(store: &Store, env: &Env, session: &Session) -> Result<Self, String> {
-        let _ = (store, env);
+        let progress = binding::view(store, env, session).map_err(|e| e.to_string())?;
+        let generated = store
+            .list_summaries(OWNER_KIND, &session.id)
+            .map_err(|e| e.to_string())?
+            .into_iter()
+            .filter(|summary| summary.model_written)
+            .collect();
         Ok(Self {
             id: session.id.clone(),
-            progress: ProgressView::None,
-            task_description: None,
-            left_off: None,
-            generated: Vec::new(),
-            root: PathBuf::new(),
+            progress,
+            task_description: session.task_description.clone(),
+            left_off: session.left_off.clone(),
+            generated,
+            root: session_root(session),
         })
     }
 
     /// The `show --json` additions: `progress_status`, `progress` (bound only),
     /// `candidates` (pick-one only) and `summaries`.
     pub fn json_fields(&self) -> Map<String, Value> {
-        Map::new()
+        let mut fields = Map::new();
+        if let Value::Object(mut view) = json_value(&self.id, &self.progress) {
+            if let Some(status) = view.remove("status") {
+                fields.insert("progress_status".to_owned(), status);
+            }
+            for key in ["progress", "candidates"] {
+                if let Some(value) = view.remove(key) {
+                    fields.insert(key.to_owned(), value);
+                }
+            }
+        }
+        let generated: Vec<Value> = self
+            .generated
+            .iter()
+            .map(|summary| {
+                json!({
+                    "text": summary.body,
+                    "model": summary.model,
+                    "created_at": summary.created_at,
+                    "label": summary.label().unwrap_or(GENERATED_LABEL),
+                })
+            })
+            .collect();
+        fields.insert(
+            "summaries".to_owned(),
+            json!({
+                "task_description": self.task_description,
+                "left_off": self.left_off,
+                "generated": generated,
+            }),
+        );
+        fields
     }
 
     /// Plain lines for the progress block; empty when there is nothing to say.
     pub fn progress_lines(&self) -> Vec<String> {
-        Vec::new()
+        match &self.progress {
+            ProgressView::None => Vec::new(),
+            ProgressView::PickOne(candidates) => {
+                let mut lines = vec![
+                    line("progress", "none: several plans could be this session's"),
+                    line(
+                        "",
+                        &format!(
+                            "choose one with `claude-monitor progress bind {} <path>`",
+                            self.id
+                        ),
+                    ),
+                ];
+                lines.extend(candidates.iter().map(|c| candidate_line(&self.root, c)));
+                lines
+            }
+            ProgressView::Bound(bound) => {
+                let Some(progress) = &bound.progress else {
+                    return Vec::new();
+                };
+                let mut head = format!("{}  {}", progress.label(), progress.source_label());
+                if bound.stale {
+                    head.push_str("  (stale: source unreadable, figure may be out of date)");
+                }
+                let mut lines = vec![line("progress", &head)];
+                if let Some(current) = &progress.current {
+                    lines.push(line("current", &current_text(current)));
+                }
+                if !progress.phases.is_empty() {
+                    let phases: Vec<String> = progress
+                        .phases
+                        .iter()
+                        .map(|p| format!("{} {}/{}", p.name, p.done, p.total))
+                        .collect();
+                    lines.push(line("phases", &phases.join(", ")));
+                }
+                lines
+            }
+        }
     }
 
     /// Plain lines for the model-written summaries, each labelled.
     pub fn generated_lines(&self) -> Vec<String> {
-        Vec::new()
+        self.generated
+            .iter()
+            .map(|summary| {
+                let model = summary.model.as_deref().unwrap_or(UNKNOWN_MODEL);
+                format!(
+                    "{GENERATED_LABEL} ({model}, {}): {}",
+                    summary.created_at, summary.body
+                )
+            })
+            .collect()
     }
 }
