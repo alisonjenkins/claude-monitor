@@ -95,7 +95,6 @@ fn payload() -> String {
 }
 
 #[test]
-#[ignore = "T051a: registry cross-check not implemented"]
 fn a_live_registry_entry_with_another_pid_wins_over_ppid() {
     let h = Harness::new();
     h.fake.processes.spawn(REGISTRY_PID, REGISTRY_START);

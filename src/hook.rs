@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use rusqlite::{Transaction, TransactionBehavior};
 use serde_json::{json, Value};
 
+use crate::agents::claude_registry::{self, RegistryError};
 use crate::agents::{self, AgentKind, ParseError, ParsedHook};
 use crate::env::{Clock, Env, EnvError};
 use crate::model::{Author, Event, Session, StartSource};
@@ -114,6 +115,8 @@ enum HookError {
     Events(#[from] EventsError),
     #[error("cannot probe the agent process: {0}")]
     Probe(EnvError),
+    #[error("cannot read the Claude session registry: {0}")]
+    Registry(RegistryError),
     #[error("cannot begin write transaction: {0}")]
     Begin(rusqlite::Error),
     #[error("cannot commit write transaction: {0}")]
@@ -242,9 +245,10 @@ fn capture_liveness(ctx: &HookContext<'_>, session: &mut Session) {
         Ok(boot_id) => session.boot_id = Some(boot_id),
         Err(e) => log_failure(ctx, "probe", &HookError::Probe(e)),
     }
-    let Some(pid) = ctx.agent_pid else {
+    let Some(ppid) = ctx.agent_pid else {
         return;
     };
+    let pid = registry_pid(ctx, env, session).unwrap_or(ppid);
     match env.processes.start_time(pid) {
         Ok(Some(start)) => {
             session.pid = Some(pid);
@@ -254,6 +258,23 @@ fn capture_liveness(ctx: &HookContext<'_>, session: &mut Session) {
         Err(e) => {
             log_failure(ctx, "probe", &HookError::Probe(e));
             clear_stale_pid(session, pid);
+        }
+    }
+}
+
+/// The pid Claude's own session registry gives for this session, which stays
+/// right when a wrapper process sits between the agent and the hook. `None`
+/// keeps the caller's `$PPID`; a registry error is logged, never fatal.
+fn registry_pid(ctx: &HookContext<'_>, env: &Env, session: &Session) -> Option<u32> {
+    if session.agent_kind != DEFAULT_AGENT {
+        return None;
+    }
+    match claude_registry::live_pid_for_session(env, &session.agent_session_id) {
+        Ok(pid) => pid,
+        Err(RegistryError::NoConfigDir) => None,
+        Err(e) => {
+            log_failure(ctx, "probe", &HookError::Registry(e));
+            None
         }
     }
 }

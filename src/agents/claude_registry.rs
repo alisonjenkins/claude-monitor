@@ -142,6 +142,14 @@ pub fn scan(env: &Env) -> Result<RegistryReport, RegistryError> {
     Ok(report)
 }
 
+/// The pid of the live registry entry for `session_id`, if there is one.
+pub fn live_pid_for_session(env: &Env, session_id: &str) -> Result<Option<u32>, RegistryError> {
+    let report = scan(env)?;
+    Ok(live_by_session_id(&report)
+        .get(session_id)
+        .map(|entry| entry.pid))
+}
+
 /// The pid of a `<pid>.json` file name; `None` for anything else, which
 /// includes every `.key` file.
 fn entry_pid(path: &Path) -> Option<u32> {
