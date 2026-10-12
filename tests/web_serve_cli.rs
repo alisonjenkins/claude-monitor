@@ -42,6 +42,59 @@ fn a_dropped_guard_kills_and_reaps_its_child() {
     assert!(is_gone(pid));
 }
 
+const HELPER_ENV: &str = "CM_PDEATHSIG_HELPER";
+
+/// Runs only as the child of `a_killed_test_runner_does_not_orphan_its_child`:
+/// spawns a guarded `sleep`, prints its pid, then waits to be SIGKILLed.
+#[test]
+fn pdeathsig_helper() {
+    if std::env::var_os(HELPER_ENV).is_none() {
+        return;
+    }
+    let child = KillOnDrop::spawn(Process::new("sleep").arg("60")).unwrap();
+    println!("pid={}", child.id());
+    std::thread::sleep(std::time::Duration::from_secs(60));
+}
+
+#[test]
+fn a_killed_test_runner_does_not_orphan_its_child() {
+    let mut runner = Process::new(std::env::current_exe().unwrap())
+        .args(["--exact", "pdeathsig_helper", "--nocapture"])
+        .env(HELPER_ENV, "1")
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut reader = BufReader::new(runner.stdout.take().unwrap());
+    let pid = loop {
+        let mut line = String::new();
+        assert_ne!(
+            reader.read_line(&mut line).unwrap(),
+            0,
+            "helper exited early"
+        );
+        if let Some(pid) = line.trim().strip_prefix("pid=") {
+            break pid.parse::<u32>().unwrap();
+        }
+    };
+    assert!(!is_gone(pid));
+
+    runner.kill().unwrap();
+    runner.wait().unwrap();
+
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    while !is_gone(pid) && std::time::Instant::now() < deadline {
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    let gone = is_gone(pid);
+    if !gone {
+        let _ = rustix::process::kill_process(
+            rustix::process::Pid::from_raw(i32::try_from(pid).unwrap()).unwrap(),
+            rustix::process::Signal::KILL,
+        );
+    }
+    assert!(gone, "child {pid} outlived its killed parent");
+}
+
 #[test]
 fn a_panicking_test_does_not_leave_its_child_running() {
     let pid = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));

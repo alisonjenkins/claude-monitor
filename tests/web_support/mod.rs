@@ -33,6 +33,20 @@ pub struct KillOnDrop(Child);
 
 impl KillOnDrop {
     pub fn spawn(command: &mut Process) -> std::io::Result<Self> {
+        use std::os::unix::process::CommandExt;
+
+        // SAFETY: the hook runs between fork and exec and only makes one
+        // async-signal-safe prctl call, with no allocation or locking.
+        // The signal means a SIGKILLed test runner (which skips Drop) still
+        // takes its server with it.
+        unsafe {
+            command.pre_exec(|| {
+                rustix::process::set_parent_process_death_signal(Some(
+                    rustix::process::Signal::KILL,
+                ))
+                .map_err(std::io::Error::from)
+            });
+        }
         command.spawn().map(Self)
     }
 }
