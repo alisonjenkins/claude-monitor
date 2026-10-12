@@ -17,6 +17,7 @@ use ratatui::prelude::*;
 
 use super::app::{update, App, Effect, Msg, Snapshot};
 use super::links::spawn_check;
+use super::organise;
 use super::restore::{preview_restore, run_restore, RestoreResult};
 use super::view::{state_label, view};
 use crate::cli::detail::SessionDetail;
@@ -273,6 +274,7 @@ fn perform(effect: &Effect, env: &Env, store: &Store, restore_tx: &mpsc::Sender<
         }
         Effect::StartRestore { ids } => start_restore(env, store, ids.clone(), restore_tx),
         Effect::LoadDetail { id } => load_detail(env, store, id),
+        Effect::Organise(action) => Done::Answer(organise::run(env, store, action)),
         Effect::CheckLinks { id } => {
             match spawn_check(env, store.path(), id, LOOKUP_TIMEOUT, restore_tx.clone()) {
                 Ok(()) => Done::Ok,

@@ -8,6 +8,7 @@ use crossterm::event::{KeyCode, KeyModifiers};
 
 use super::detail::DetailView;
 use super::filter::Filter;
+use super::organise::Organise;
 use super::projects::{flat, grouped, Part};
 use super::restore::{PreviewRow, RestoreResult, RestoreView, Step};
 use crate::cli::detail::SessionDetail;
@@ -91,6 +92,8 @@ pub enum Effect {
     CheckLinks {
         id: String,
     },
+    /// Change the store as the person asked, then reload.
+    Organise(Organise),
     JumpToPane {
         pane: String,
     },
