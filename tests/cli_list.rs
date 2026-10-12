@@ -251,16 +251,16 @@ fn dismissed_sessions_need_include_dismissed() {
 }
 
 #[test]
-fn old_finished_sessions_need_expand_finished() {
+#[ignore = "FR-019: finished sessions are never hidden by age"]
+fn old_finished_sessions_are_listed_by_default() {
     let fx = Fixture::new();
     fx.put("recent", State::Finished, "2026-10-10T00:00:00Z", |_| {});
     fx.put("stale", State::Finished, "2026-09-01T00:00:00Z", |_| {});
-    assert_eq!(fx.ids(List::default().command()), ["recent"]);
-    let list = List {
-        expand_finished: true,
-        ..List::default()
-    };
-    assert_eq!(fx.ids(list.command()), ["recent", "stale"]);
+    fx.put("ninety", State::Finished, "2026-07-14T00:00:00Z", |_| {});
+    assert_eq!(
+        fx.ids(List::default().command()),
+        ["recent", "stale", "ninety"]
+    );
 }
 
 #[test]

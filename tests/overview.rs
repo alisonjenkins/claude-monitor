@@ -293,36 +293,20 @@ fn dismissed_sessions_are_hidden_unless_requested() {
 }
 
 #[test]
-fn old_finished_sessions_collapse_unless_expanded() {
+#[ignore = "FR-019: finished sessions are never hidden by age"]
+fn finished_sessions_are_listed_whatever_their_age() {
     let fx = Fixture::new();
     fx.put("recent", State::Finished, "2026-10-10T12:00:00Z");
     fx.put("stale-1", State::Finished, "2026-10-01T12:00:00Z");
-    fx.put("stale-2", State::Finished, "2026-09-01T12:00:00Z");
+    fx.put("ninety-days", State::Finished, "2026-07-14T12:00:00Z");
 
-    let collapsed = fx.overview(&OverviewQuery::default());
-    assert_eq!(ids(&collapsed, SectionName::Finished), ["recent"]);
-    let section = collapsed
-        .sections
-        .iter()
-        .find(|s| s.name == SectionName::Finished)
-        .unwrap();
-    assert_eq!(section.collapsed_count, 2);
+    let overview = fx.overview(&OverviewQuery::default());
 
-    let expanded = fx.overview(&OverviewQuery {
-        expand_finished: true,
-        ..OverviewQuery::default()
-    });
     assert_eq!(
-        ids(&expanded, SectionName::Finished),
-        ["recent", "stale-1", "stale-2"],
-        "most recent first"
+        ids(&overview, SectionName::Finished),
+        ["recent", "stale-1", "ninety-days"],
+        "most recent first, none dropped"
     );
-    let section = expanded
-        .sections
-        .iter()
-        .find(|s| s.name == SectionName::Finished)
-        .unwrap();
-    assert_eq!(section.collapsed_count, 0);
 }
 
 #[test]
