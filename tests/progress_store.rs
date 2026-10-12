@@ -36,7 +36,6 @@ fn item(ordinal: u32, text: &str, status: StepStatus) -> Item {
 }
 
 #[test]
-#[ignore = "implemented by T088"]
 fn no_binding_until_one_is_made() {
     let (_dir, store) = store();
 
@@ -49,7 +48,6 @@ fn no_binding_until_one_is_made() {
 }
 
 #[test]
-#[ignore = "implemented by T088"]
 fn a_binding_round_trips() {
     let (_dir, store) = store();
 
@@ -75,7 +73,6 @@ fn a_binding_round_trips() {
 }
 
 #[test]
-#[ignore = "implemented by T088"]
 fn rebinding_replaces_the_one_binding_and_drops_old_steps() {
     let (_dir, store) = store();
     let first = store
@@ -108,7 +105,6 @@ fn rebinding_replaces_the_one_binding_and_drops_old_steps() {
 }
 
 #[test]
-#[ignore = "implemented by T088"]
 fn rebinding_the_same_source_keeps_its_steps() {
     let (_dir, store) = store();
     let first = store
@@ -139,7 +135,6 @@ fn rebinding_the_same_source_keeps_its_steps() {
 }
 
 #[test]
-#[ignore = "implemented by T088"]
 fn bindings_are_per_owner() {
     let (_dir, store) = store();
     store
@@ -163,7 +158,6 @@ fn bindings_are_per_owner() {
 }
 
 #[test]
-#[ignore = "implemented by T088"]
 fn unbinding_removes_the_binding_and_its_steps() {
     let (_dir, store) = store();
     let binding = store
@@ -190,7 +184,6 @@ fn unbinding_removes_the_binding_and_its_steps() {
 }
 
 #[test]
-#[ignore = "implemented by T088"]
 fn steps_round_trip_in_order() {
     let (_dir, store) = store();
     let binding = store
@@ -218,7 +211,6 @@ fn steps_round_trip_in_order() {
 }
 
 #[test]
-#[ignore = "implemented by T088"]
 fn replacing_steps_is_idempotent() {
     let (_dir, store) = store();
     let binding = store
@@ -241,7 +233,6 @@ fn replacing_steps_is_idempotent() {
 }
 
 #[test]
-#[ignore = "implemented by T088"]
 fn shrinking_a_plan_removes_the_extra_steps() {
     let (_dir, store) = store();
     let binding = store
@@ -271,7 +262,6 @@ fn shrinking_a_plan_removes_the_extra_steps() {
 }
 
 #[test]
-#[ignore = "implemented by T088"]
 fn touching_a_binding_moves_its_read_time() {
     let (_dir, store) = store();
     let binding = store
@@ -294,7 +284,6 @@ fn touching_a_binding_moves_its_read_time() {
 }
 
 #[test]
-#[ignore = "implemented by T088"]
 fn a_binding_survives_reopening_the_store() {
     let dir = TempDir::new().unwrap();
     {
