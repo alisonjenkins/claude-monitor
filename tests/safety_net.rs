@@ -27,13 +27,11 @@ fn ms(n: u64) -> Duration {
 }
 
 #[test]
-#[ignore = "until the safety net source lands"]
 fn the_default_interval_is_sixty_seconds() {
     assert_eq!(SAFETY_NET_INTERVAL, Duration::from_secs(60));
 }
 
 #[test]
-#[ignore = "until the safety net source lands"]
 fn it_does_not_fire_before_the_interval() {
     let clock = ManualClock::new();
     let mut net = SafetyNetSource::new(INTERVAL, clock.clone());
@@ -46,7 +44,6 @@ fn it_does_not_fire_before_the_interval() {
 }
 
 #[test]
-#[ignore = "until the safety net source lands"]
 fn it_fires_once_at_the_interval() {
     let clock = ManualClock::new();
     let mut net = SafetyNetSource::new(INTERVAL, clock.clone());
@@ -58,7 +55,6 @@ fn it_fires_once_at_the_interval() {
 }
 
 #[test]
-#[ignore = "until the safety net source lands"]
 fn it_fires_again_every_interval() {
     let clock = ManualClock::new();
     let mut net = SafetyNetSource::new(INTERVAL, clock.clone());
@@ -72,7 +68,6 @@ fn it_fires_again_every_interval() {
 }
 
 #[test]
-#[ignore = "until the safety net source lands"]
 fn a_long_gap_fires_once_without_catching_up() {
     let clock = ManualClock::new();
     let mut net = SafetyNetSource::new(INTERVAL, clock.clone());
@@ -86,7 +81,6 @@ fn a_long_gap_fires_once_without_catching_up() {
 }
 
 #[test]
-#[ignore = "until the safety net source lands"]
 fn due_takes_the_time_as_an_argument() {
     let clock = ManualClock::new();
     let start = clock.now();
@@ -99,7 +93,6 @@ fn due_takes_the_time_as_an_argument() {
 }
 
 #[test]
-#[ignore = "until the safety net source lands"]
 fn a_blocking_wait_fires_when_the_interval_elapses() {
     let mut net = SafetyNetSource::new(ms(50), SystemMonotonic);
     let started = Instant::now();
@@ -112,7 +105,6 @@ fn a_blocking_wait_fires_when_the_interval_elapses() {
 }
 
 #[test]
-#[ignore = "until the safety net source lands"]
 fn a_dropped_event_is_repaired_by_the_next_safety_net_fire() {
     let dir = TempDir::new().unwrap();
     let path = dir.path().join("state.db");
