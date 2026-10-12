@@ -160,9 +160,9 @@ enum Commands {
         #[arg(long)]
         banner: bool,
     },
-    /// Ask a model on this machine for a short summary of one session; never automatic
+    /// Ask a model on this machine for a short summary of one session or project; never automatic
     Summarize {
-        /// Session id, or the start of one
+        /// Session id (or the start of one), or a project name
         target: String,
     },
     /// Serve the web view on loopback; prints the URL that opens it

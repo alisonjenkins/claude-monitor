@@ -724,7 +724,6 @@ mod summarize_cli {
     }
 
     #[test]
-    #[ignore = "I3: summarize accepts a project"]
     fn a_project_is_summarized_from_its_note_and_its_sessions_verbatim_text() {
         let (h, id, project_id) = project_seeded(Some(PROJECT_NOTE));
         let (addr, server) = fake_server(completion("Parity work is on track."));
@@ -750,7 +749,6 @@ mod summarize_cli {
     }
 
     #[test]
-    #[ignore = "I3: summarize accepts a project"]
     fn a_project_with_no_text_at_all_has_nothing_to_summarize() {
         let h = Harness::new();
         let fake = FakeEnv::new();
@@ -773,7 +771,6 @@ mod summarize_cli {
     }
 
     #[test]
-    #[ignore = "I3: summarize accepts a project"]
     fn a_long_project_note_is_cut_before_it_is_sent() {
         let long = "x".repeat(20_000);
         let (h, _id, _project_id) = project_seeded(Some(&long));

@@ -246,14 +246,27 @@ impl ModelClient {
         task: Option<&str>,
         left_off: Option<&str>,
     ) -> Result<String, ModelError> {
+        self.complete(SYSTEM_PROMPT, &user_prompt(task, left_off))
+    }
+
+    /// One chat completion over a project's notes and its sessions' lines.
+    pub fn summarize_project(
+        &self,
+        notes: Option<&str>,
+        sessions: &[String],
+    ) -> Result<String, ModelError> {
+        self.complete(PROJECT_SYSTEM_PROMPT, &project_prompt(notes, sessions))
+    }
+
+    fn complete(&self, system: &str, user: &str) -> Result<String, ModelError> {
         let body = json!({
             "model": self.model,
             "stream": false,
             "temperature": SUMMARY_TEMPERATURE,
             "max_tokens": SUMMARY_MAX_TOKENS,
             "messages": [
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": user_prompt(task, left_off)},
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
             ],
         })
         .to_string();
@@ -300,6 +313,44 @@ const MAX_PROMPT_FIELD_CHARS: usize = 4000;
 const SYSTEM_PROMPT: &str = "You summarise a coding-agent session for the person who ran it. \
 Reply in at most three plain sentences: what the session set out to do and where it stopped. \
 Use only the text given; do not invent details.";
+
+const PROJECT_SYSTEM_PROMPT: &str = "You summarise a project, a group of coding-agent sessions, \
+for the person who runs it. Reply in at most three plain sentences: what the project is for and \
+where its sessions stand. Use only the text given; do not invent details.";
+
+/// Sessions listed in a project prompt; the newest come first.
+pub const MAX_PROJECT_PROMPT_SESSIONS: usize = 20;
+
+/// Characters of each session's task or left-off line in a project prompt.
+const MAX_PROJECT_LINE_CHARS: usize = 400;
+
+fn project_prompt(notes: Option<&str>, sessions: &[String]) -> String {
+    let notes: String = notes
+        .map(|t| t.chars().take(MAX_PROMPT_FIELD_CHARS).collect())
+        .unwrap_or_default();
+    let notes = if notes.is_empty() { "(none)" } else { &notes };
+    let listed: Vec<&str> = sessions
+        .iter()
+        .take(MAX_PROJECT_PROMPT_SESSIONS)
+        .map(String::as_str)
+        .collect();
+    let sessions = if listed.is_empty() {
+        "(none)".to_owned()
+    } else {
+        listed.join("\n")
+    };
+    format!("Project notes:\n{notes}\n\nSessions:\n{sessions}")
+}
+
+/// One session's verbatim lines for a project prompt, each cut to size.
+pub fn project_session_line(task: Option<&str>, left_off: Option<&str>) -> Option<String> {
+    let cut = |text: &str| -> String { text.chars().take(MAX_PROJECT_LINE_CHARS).collect() };
+    let parts: Vec<String> = [("task", task), ("left off", left_off)]
+        .into_iter()
+        .filter_map(|(label, text)| text.map(|t| format!("{label}: {}", cut(t))))
+        .collect();
+    (!parts.is_empty()).then(|| format!("- {}", parts.join("; ")))
+}
 
 fn user_prompt(task: Option<&str>, left_off: Option<&str>) -> String {
     let field = |label: &str, text: Option<&str>| {
