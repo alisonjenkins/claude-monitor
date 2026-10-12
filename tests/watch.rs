@@ -35,7 +35,6 @@ fn session(id: &str, state: State) -> Session {
 }
 
 #[test]
-#[ignore = "watch not implemented"]
 fn the_first_pass_reports_only_active_sessions() {
     let mut seen = BTreeMap::new();
     let sessions = [
@@ -53,7 +52,6 @@ fn the_first_pass_reports_only_active_sessions() {
 }
 
 #[test]
-#[ignore = "watch not implemented"]
 fn a_change_is_one_line_naming_the_old_state() {
     let mut seen = BTreeMap::new();
     state_changes(
@@ -81,7 +79,6 @@ fn an_unchanged_session_is_silent() {
 }
 
 #[test]
-#[ignore = "watch not implemented"]
 fn a_session_that_appears_later_is_reported_in_any_state() {
     let mut seen = BTreeMap::new();
     state_changes(&mut seen, &[], AT, true);
@@ -192,7 +189,6 @@ fn live_fake() -> FakeEnv {
 }
 
 #[test]
-#[ignore = "watch not implemented"]
 fn a_status_change_in_the_registry_is_logged() {
     let (dir, fake) = (TempDir::new().unwrap(), live_fake());
     let running = start(&dir, &fake, Vec::new());
@@ -216,7 +212,6 @@ fn a_status_change_in_the_registry_is_logged() {
 }
 
 #[test]
-#[ignore = "watch not implemented"]
 fn a_dead_process_is_logged_as_interrupted() {
     let (dir, fake) = (TempDir::new().unwrap(), live_fake());
     let running = start(&dir, &fake, Vec::new());
@@ -236,9 +231,10 @@ fn a_dead_process_is_logged_as_interrupted() {
 }
 
 #[test]
-#[ignore = "watch not implemented"]
 fn warnings_go_to_the_error_stream_once() {
     let (dir, fake) = (TempDir::new().unwrap(), FakeEnv::new());
+    fake.vars.set("CLAUDE_CONFIG_DIR", "/cfg");
+    fake.vars.set("COPILOT_HOME", "/cop");
     let running = start(
         &dir,
         &fake,
