@@ -317,6 +317,119 @@ pub fn execute(store: &Store, env: &Env, plan: &Plan, tmux_session: &str, now: &
     })
 }
 
+/// Why a spawn that was planned did not happen or finish.
+pub const SPAWN_FAILED: &str = "spawn_failed";
+
+/// Each session of a batch with its plan or the reason it has none.
+pub type Planned = Vec<(Session, Result<Plan, Refusal>)>;
+
+/// The flags that shape every plan in a batch.
+#[derive(Debug, Clone, Default)]
+pub struct PlanFlags {
+    pub fresh: bool,
+    pub in_dir: Option<PathBuf>,
+    pub recreate_worktree: bool,
+}
+
+/// A session of a batch that could not be read at all, which fails the whole
+/// batch (a refusal, by contrast, is data).
+#[derive(Debug, thiserror::Error)]
+pub enum PlanBatchError {
+    #[error("cannot read session {id}: {detail}")]
+    ReadSession { id: String, detail: String },
+    #[error("no session has id {id:?}")]
+    UnknownSession { id: String },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StartedItem {
+    pub started: Started,
+    pub plan: Plan,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RefusedItem {
+    pub session_id: String,
+    pub code: &'static str,
+    pub message: String,
+    pub alternatives: Vec<Alternative>,
+}
+
+/// What became of one session of a batch.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Item {
+    Started(Box<StartedItem>),
+    Refused(RefusedItem),
+}
+
+/// Plan each session id with `flags`, in order. Plans only; nothing starts.
+pub fn plan_batch(
+    store: &Store,
+    env: &Env,
+    ids: &[String],
+    flags: &PlanFlags,
+) -> Result<Planned, PlanBatchError> {
+    ids.iter()
+        .map(|id| {
+            let session = store
+                .get_session(id)
+                .map_err(|e| PlanBatchError::ReadSession {
+                    id: id.clone(),
+                    detail: e.to_string(),
+                })?
+                .ok_or_else(|| PlanBatchError::UnknownSession { id: id.clone() })?;
+            let options = Options {
+                recreate_worktree: flags.recreate_worktree,
+                fresh: flags.fresh,
+                in_dir: flags.in_dir.clone(),
+                launcher: launcher_for(env, &session.agent_kind),
+            };
+            let plan = plan_respawn(&session, env, &options);
+            Ok((session, plan))
+        })
+        .collect()
+}
+
+/// Start one planned session, or report its refusal. A failure to start is a
+/// [`SPAWN_FAILED`] refusal rather than an error so a batch carries on.
+pub fn start_one(
+    store: &Store,
+    env: &Env,
+    session: &Session,
+    plan: Result<Plan, Refusal>,
+    tmux_session: &str,
+    now: &str,
+) -> Item {
+    match plan {
+        Err(refusal) => Item::Refused(RefusedItem {
+            session_id: session.id.clone(),
+            code: refusal.code.as_str(),
+            message: refusal.message,
+            alternatives: refusal.alternatives,
+        }),
+        Ok(plan) => match execute(store, env, &plan, tmux_session, now) {
+            Ok(started) => Item::Started(Box::new(StartedItem { started, plan })),
+            Err(error) => Item::Refused(RefusedItem {
+                session_id: session.id.clone(),
+                code: SPAWN_FAILED,
+                message: error.to_string(),
+                alternatives: Vec::new(),
+            }),
+        },
+    }
+}
+
+/// Execute every plan that exists, in order. A failure to start one does not
+/// stop the others.
+pub fn start_batch(store: &Store, env: &Env, planned: Planned) -> Vec<Item> {
+    let tmux_session = tmux_session_for(env);
+    let now = env.clock.now();
+    planned
+        .into_iter()
+        .map(|(session, plan)| start_one(store, env, &session, plan, &tmux_session, &now))
+        .collect()
+}
+
 const ENTITY_SESSION: &str = "session";
 
 /// The words tmux runs. tmux has no environment option for a new window, so

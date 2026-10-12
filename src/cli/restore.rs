@@ -10,7 +10,7 @@ use serde_json::json;
 
 use super::migrate::{open_viewer_store, store_error_message};
 use super::respawn::{
-    finish, plan_all, start_all, tmux_session, usage_error, would_refuse_json, would_start_json,
+    finish, plan_all, start_batch, tmux_session, usage_error, would_refuse_json, would_start_json,
     PlanFlags,
 };
 use super::show::resolve;
@@ -74,7 +74,7 @@ pub fn run(env: &Env, state_dir: Option<&Path>, args: RestoreArgs) -> Result<Out
             }),
         });
     }
-    let items = start_all(&store, env, planned);
+    let items = start_batch(&store, env, planned);
     finish("restore", &items, &skipped)
 }
 

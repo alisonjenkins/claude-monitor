@@ -2,7 +2,7 @@
 //! and the batch machinery `restore` shares: plan every session, start the
 //! ones that can start, report the ones that cannot.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use serde_json::{json, Value};
 
@@ -13,42 +13,11 @@ use crate::env::Env;
 use crate::error::Error;
 use crate::model::Session;
 use crate::respawn::{
-    execute, launcher_for, plan_respawn, tmux_session_for, Alternative, Options, Plan, Refusal,
-    RefusalCode, Started,
+    plan_batch, Item, Plan, PlanBatchError, Planned, Refusal, RefusalCode, RefusedItem,
+    SPAWN_FAILED,
 };
+pub(super) use crate::respawn::{start_batch, tmux_session_for as tmux_session, PlanFlags};
 use crate::store::Store;
-
-/// Why a spawn that was planned did not happen or finish.
-const SPAWN_FAILED: &str = "spawn_failed";
-
-/// Each session of a batch with its plan or the reason it has none.
-pub(super) type Planned = Vec<(Session, Result<Plan, Refusal>)>;
-
-/// The flags that shape every plan in a batch.
-#[derive(Debug, Clone, Default)]
-pub(super) struct PlanFlags {
-    pub fresh: bool,
-    pub in_dir: Option<PathBuf>,
-    pub recreate_worktree: bool,
-}
-
-pub(super) struct StartedItem {
-    started: Started,
-    plan: Plan,
-}
-
-pub(super) struct RefusedItem {
-    session_id: String,
-    code: &'static str,
-    message: String,
-    alternatives: Vec<Alternative>,
-}
-
-/// What became of one session of a batch.
-pub(super) enum Item {
-    Started(Box<StartedItem>),
-    Refused(RefusedItem),
-}
 
 pub fn run(
     env: &Env,
@@ -73,7 +42,7 @@ pub fn run(
     if let Some(error) = usage_error(&planned) {
         return Err(error);
     }
-    let items = start_all(&store, env, planned);
+    let items = start_batch(&store, env, planned);
     finish("respawn", &items, &[])
 }
 
@@ -85,25 +54,15 @@ pub(super) fn plan_all(
     ids: &[String],
     flags: &PlanFlags,
 ) -> Result<Planned, Error> {
-    ids.iter()
-        .map(|id| {
-            let session = store
-                .get_session(id)
-                .map_err(|e| store_error_message("read session", Some(store.path()), &e))?
-                .ok_or_else(|| Error::Refused {
-                    code: "unknown_session",
-                    message: format!("no session has id {id:?}"),
-                })?;
-            let options = Options {
-                recreate_worktree: flags.recreate_worktree,
-                fresh: flags.fresh,
-                in_dir: flags.in_dir.clone(),
-                launcher: launcher_for(env, &session.agent_kind),
-            };
-            let plan = plan_respawn(&session, env, &options);
-            Ok((session, plan))
-        })
-        .collect()
+    plan_batch(store, env, ids, flags).map_err(|e| match e {
+        PlanBatchError::ReadSession { detail, .. } => {
+            store_error_message("read session", Some(store.path()), &detail)
+        }
+        PlanBatchError::UnknownSession { id } => Error::Refused {
+            code: "unknown_session",
+            message: format!("no session has id {id:?}"),
+        },
+    })
 }
 
 /// Contradictory flags are a usage error (exit 1), not a refusal of one session.
@@ -114,41 +73,6 @@ pub(super) fn usage_error(planned: &[(Session, Result<Plan, Refusal>)]) -> Optio
         }
         _ => None,
     })
-}
-
-pub(super) fn tmux_session(env: &Env) -> String {
-    tmux_session_for(env)
-}
-
-/// Execute every plan that exists, in order. A failure to start one does not
-/// stop the others.
-pub(super) fn start_all(
-    store: &Store,
-    env: &Env,
-    planned: Vec<(Session, Result<Plan, Refusal>)>,
-) -> Vec<Item> {
-    let tmux_session = tmux_session(env);
-    let now = env.clock.now();
-    planned
-        .into_iter()
-        .map(|(session, plan)| match plan {
-            Err(refusal) => Item::Refused(RefusedItem {
-                session_id: session.id,
-                code: refusal.code.as_str(),
-                message: refusal.message,
-                alternatives: refusal.alternatives,
-            }),
-            Ok(plan) => match execute(store, env, &plan, &tmux_session, &now) {
-                Ok(started) => Item::Started(Box::new(StartedItem { started, plan })),
-                Err(error) => Item::Refused(RefusedItem {
-                    session_id: session.id,
-                    code: SPAWN_FAILED,
-                    message: error.to_string(),
-                    alternatives: Vec::new(),
-                }),
-            },
-        })
-        .collect()
 }
 
 /// Exit 0 when everything started, 2 when nothing did, 3 for a mix.
