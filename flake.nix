@@ -171,9 +171,10 @@
                   tmuxHooks,
                   watch ? false,
                   bootCheck ? false,
+                  hostSystem ? system,
                 }:
                 home-manager.lib.homeManagerConfiguration {
-                  pkgs = hmPkgs;
+                  pkgs = if hostSystem == system then hmPkgs else import home-manager.inputs.nixpkgs { system = hostSystem; };
                   modules = [
                     self.homeManagerModules.default
                     {
@@ -334,6 +335,38 @@
                     bootCheckOn.Install.WantedBy != [ "default.target" ]
                   ) "boot-check unit is not wanted by default.target"
                 );
+              # launchd agent: evaluated against a darwin host from any system
+              # (nothing is built); it must run the store-path `boot-check`
+              # once at load and must not appear on Linux.
+              bootCheckDarwin =
+                (mkHmConfigWith {
+                  copilot = false;
+                  tmuxHooks = false;
+                  bootCheck = true;
+                  hostSystem = "aarch64-darwin";
+                }).config.launchd.agents.${bootCheckServiceName};
+              darwinArgs = map builtins.unsafeDiscardStringContext bootCheckDarwin.config.ProgramArguments;
+              launchdProblems =
+                pkgs.lib.optional (
+                  !(
+                    builtins.length darwinArgs == 2
+                    && pkgs.lib.hasPrefix "/nix/store/" (builtins.elemAt darwinArgs 0)
+                    && pkgs.lib.hasSuffix "/bin/claude-monitor" (builtins.elemAt darwinArgs 0)
+                    && builtins.elemAt darwinArgs 1 == "boot-check"
+                  )
+                ) "boot-check launchd agent does not run the store-path `claude-monitor boot-check`"
+                ++ pkgs.lib.optional (
+                  bootCheckDarwin.config.RunAtLoad != true
+                ) "boot-check launchd agent is not RunAtLoad"
+                ++ pkgs.lib.optional (
+                  pkgs.stdenv.hostPlatform.isLinux
+                  && builtins.hasAttr bootCheckServiceName
+                    (mkHmConfigWith {
+                      copilot = false;
+                      tmuxHooks = false;
+                      bootCheck = true;
+                    }).config.launchd.agents
+                ) "boot-check launchd agent generated on Linux";
               expectedEvents = [
                 "SessionStart"
                 "UserPromptSubmit"
@@ -356,6 +389,8 @@
               throw "claude-monitor hm-module: ${builtins.concatStringsSep "; " watchProblems}"
             else if bootCheckProblems != [ ] then
               throw "claude-monitor hm-module: ${builtins.concatStringsSep "; " bootCheckProblems}"
+            else if launchdProblems != [ ] then
+              throw "claude-monitor hm-module: ${builtins.concatStringsSep "; " launchdProblems}"
             else
               hmPkgs.runCommand "claude-monitor-hm-module-check" { } "touch $out";
         }
