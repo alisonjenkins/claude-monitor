@@ -139,6 +139,14 @@
             command = "cargo test --offline --locked";
           };
 
+          # Runs the private-tmux-server tests with tmux on PATH; the env var
+          # turns "tmux missing" from a silent skip into a failure.
+          tmux-harness = mkCargoCheck {
+            name = "tmux-harness";
+            extraNativeBuildInputs = [ pkgs.tmux ];
+            command = "CLAUDE_MONITOR_REQUIRE_TMUX=1 cargo test --offline --locked --test tmux_harness";
+          };
+
           clippy = mkCargoCheck {
             name = "clippy";
             extraNativeBuildInputs = [ pkgs.clippy ];
