@@ -11,7 +11,8 @@
 //!
 //! Rule: the task that implements a command removes that command's
 //! `#[ignore]` (its reason names the task) and makes `implemented` pass.
-//! `hook` and `dashboard` already exist and are not ignored.
+//! `hook`, `dashboard` and `migrate` already exist and are not ignored;
+//! `migrate` has its own test because it writes a store.
 
 // Panicking with a message on a failed check is the failure mode of a test.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
@@ -123,7 +124,6 @@ command_tests! {
     link => "link", "implemented by T100";
     export_cortexiphan => "export-cortexiphan", "implemented by T098";
     links_check => "links-check", "implemented by T101";
-    migrate => "migrate", "implemented by T020";
     delete => "delete", "implemented by unscheduled (no task in tasks.md)";
 }
 
@@ -149,6 +149,26 @@ mod hook {
     fn is_not_a_tui_action() {
         let info = Command::Hook { agent: None }.info().unwrap();
         assert!(!info.is_interactive());
+    }
+}
+
+mod migrate {
+    use super::*;
+    use claude_monitor::cli::run_in;
+
+    /// Runs against a temporary state directory so the test never touches
+    /// the real store; the legacy files are only read.
+    #[test]
+    fn implemented() {
+        let state = tempfile::tempdir().unwrap();
+        let info = Command::Migrate.info().unwrap();
+        let fake = FakeEnv::new();
+        let result = run_in((info.example)(), &fake.env, Some(state.path()));
+        assert!(
+            !matches!(result, Err(Error::NotImplemented(_))),
+            "migrate is still NotImplemented"
+        );
+        assert_contract("migrate", &result);
     }
 }
 
@@ -178,7 +198,7 @@ mod dashboard {
 fn every_command_has_generated_tests_with_the_right_task() {
     for info in Command::all() {
         match info.name {
-            "hook" | "dashboard" => {}
+            "hook" | "dashboard" | "migrate" => {}
             name => {
                 let reason = GENERATED
                     .iter()
@@ -193,7 +213,7 @@ fn every_command_has_generated_tests_with_the_right_task() {
             }
         }
     }
-    assert_eq!(GENERATED.len() + 2, Command::all().len());
+    assert_eq!(GENERATED.len() + 3, Command::all().len());
 }
 
 #[test]

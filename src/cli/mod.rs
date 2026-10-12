@@ -5,6 +5,8 @@ use clap::{Parser, Subcommand};
 use crate::env::Env;
 use crate::error::Error;
 use crate::hook;
+use crate::session;
+use crate::store::{resolve_state_dir, StateDirEnv};
 
 mod command;
 pub mod migrate;
@@ -66,21 +68,27 @@ pub fn run(cmd: Command, env: &Env) -> Result<Output, Error> {
 }
 
 /// Run one command; `state_dir` is the `--state-dir` override. `Hook` and
-/// `Dashboard` are implemented; every other command reports `NotImplemented`
-/// until its task lands.
+/// `Dashboard` and `Migrate` are implemented; every other command reports
+/// `NotImplemented` until its task lands.
 pub fn run_in(cmd: Command, env: &Env, state_dir: Option<&Path>) -> Result<Output, Error> {
     match cmd {
         Command::Hook { agent } => {
             hook::run(agent.as_deref(), state_dir, env);
             Ok(Output::empty())
         }
-        Command::Dashboard => run_dashboard(),
+        Command::Dashboard => run_dashboard(env, state_dir),
+        Command::Migrate => {
+            let dir = resolve_state_dir(state_dir, &StateDirEnv::from_process())
+                .map_err(|e| migrate::store_error(&e))?;
+            migrate::run(&dir, &session::status_dir(), env)
+        }
         other => Err(Error::NotImplemented(other.name().to_owned())),
     }
 }
 
 #[cfg(feature = "tui")]
-fn run_dashboard() -> Result<Output, Error> {
+fn run_dashboard(env: &Env, state_dir: Option<&Path>) -> Result<Output, Error> {
+    migrate::auto_migrate(state_dir, env);
     crate::tui::dashboard::run().map_err(|e| Error::Io {
         operation: "run dashboard".to_owned(),
         path: None,
@@ -90,7 +98,7 @@ fn run_dashboard() -> Result<Output, Error> {
 }
 
 #[cfg(not(feature = "tui"))]
-fn run_dashboard() -> Result<Output, Error> {
+fn run_dashboard(_env: &Env, _state_dir: Option<&Path>) -> Result<Output, Error> {
     Err(Error::Usage(
         "the dashboard needs the `tui` feature; rebuild with `--features tui` \
          or use a subcommand (see --help)"

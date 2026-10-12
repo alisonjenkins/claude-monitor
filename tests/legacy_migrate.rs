@@ -100,7 +100,6 @@ fn markers(store: &Store) -> Vec<EventRow> {
 }
 
 #[test]
-#[ignore = "T020"]
 fn imports_one_session_per_file_with_mapped_state_and_times() {
     let h = Harness::new();
     h.write_three_states();
@@ -130,7 +129,6 @@ fn imports_one_session_per_file_with_mapped_state_and_times() {
 }
 
 #[test]
-#[ignore = "T020"]
 fn imported_sessions_are_flagged_in_their_created_event() {
     let h = Harness::new();
     h.write_legacy("sess-w", "working", SINCE_WORKING, None);
@@ -156,7 +154,6 @@ fn imported_sessions_are_flagged_in_their_created_event() {
 }
 
 #[test]
-#[ignore = "T020"]
 fn second_run_imports_nothing_and_appends_no_second_marker() {
     let h = Harness::new();
     h.write_three_states();
@@ -187,7 +184,6 @@ fn second_run_imports_nothing_and_appends_no_second_marker() {
 }
 
 #[test]
-#[ignore = "T020"]
 fn marker_event_records_the_import() {
     let h = Harness::new();
     h.write_three_states();
@@ -210,7 +206,6 @@ fn marker_event_records_the_import() {
 }
 
 #[test]
-#[ignore = "T020"]
 fn migrate_if_needed_runs_once_then_does_nothing() {
     let h = Harness::new();
     h.write_three_states();
@@ -231,7 +226,6 @@ fn migrate_if_needed_runs_once_then_does_nothing() {
 }
 
 #[test]
-#[ignore = "T020"]
 fn an_existing_session_with_the_same_agent_id_is_not_overwritten() {
     let h = Harness::new();
     h.write_legacy("sess-w", "working", SINCE_WORKING, Some("%1"));
@@ -255,7 +249,6 @@ fn an_existing_session_with_the_same_agent_id_is_not_overwritten() {
 }
 
 #[test]
-#[ignore = "T020"]
 fn corrupt_and_unsafe_files_are_skipped_counted_and_named() {
     let h = Harness::new();
     h.write_legacy("sess-ok", "idle", SINCE_IDLE, None);
@@ -305,7 +298,6 @@ fn legacy_body_with_state(session_id: &str, state: &str) -> String {
 }
 
 #[test]
-#[ignore = "T020"]
 fn legacy_files_are_never_deleted() {
     let h = Harness::new();
     h.write_three_states();
@@ -319,7 +311,6 @@ fn legacy_files_are_never_deleted() {
 }
 
 #[test]
-#[ignore = "T020"]
 fn empty_legacy_dir_is_a_clean_no_op_that_records_the_marker() {
     let h = Harness::new();
     let store = h.store();
@@ -332,7 +323,6 @@ fn empty_legacy_dir_is_a_clean_no_op_that_records_the_marker() {
 }
 
 #[test]
-#[ignore = "T020"]
 fn missing_legacy_dir_is_a_clean_no_op_that_records_the_marker() {
     let h = Harness::new();
     fs::remove_dir_all(&h.runtime_dir).unwrap();
@@ -345,7 +335,6 @@ fn missing_legacy_dir_is_a_clean_no_op_that_records_the_marker() {
 }
 
 #[test]
-#[ignore = "T020"]
 fn the_hook_path_never_triggers_migration() {
     let h = Harness::new();
     h.write_legacy("sess-old", "working", SINCE_WORKING, None);
@@ -389,7 +378,6 @@ fn run_json(h: &Harness) -> Value {
 }
 
 #[test]
-#[ignore = "T020"]
 fn json_output_has_the_documented_shape() {
     let h = Harness::new();
     h.write_three_states();
@@ -398,18 +386,34 @@ fn json_output_has_the_documented_shape() {
     let first = run_json(&h);
     assert_eq!(
         first,
-        json!({"ok": true, "imported": 3, "skipped_existing": 0, "skipped_corrupt": 1})
+        json!({
+            "ok": true, "imported": 3, "skipped_existing": 0, "skipped_corrupt": 1,
+            "corrupt_files": ["broken.json"],
+        })
     );
 
     let second = run_json(&h);
     assert_eq!(
         second,
-        json!({"ok": true, "imported": 0, "skipped_existing": 3, "skipped_corrupt": 1})
+        json!({
+            "ok": true, "imported": 0, "skipped_existing": 3, "skipped_corrupt": 1,
+            "corrupt_files": ["broken.json"],
+        })
     );
 }
 
 #[test]
-#[ignore = "T020"]
+fn json_output_without_failures_has_exactly_the_four_counters() {
+    let h = Harness::new();
+    h.write_three_states();
+
+    assert_eq!(
+        run_json(&h),
+        json!({"ok": true, "imported": 3, "skipped_existing": 0, "skipped_corrupt": 0})
+    );
+}
+
+#[test]
 fn exit_code_is_3_only_when_every_candidate_failed() {
     let h = Harness::new();
     h.write_raw("broken.json", "{ not json");
