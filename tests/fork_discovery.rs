@@ -90,7 +90,6 @@ fn fork_of(parent: &[String], shared: usize, own: &str) -> Vec<String> {
 }
 
 #[test]
-#[ignore = "T072: detect forks at discovery"]
 fn a_new_transcript_sharing_leading_uuids_is_recorded_as_a_fork() {
     let fx = Fx::new();
     let parent = uuids("p", 8);
@@ -119,7 +118,6 @@ fn a_new_transcript_sharing_leading_uuids_is_recorded_as_a_fork() {
 }
 
 #[test]
-#[ignore = "T072: detect forks at discovery"]
 fn rediscovery_records_nothing_more() {
     let fx = Fx::new();
     let parent = uuids("p", 8);
@@ -135,7 +133,6 @@ fn rediscovery_records_nothing_more() {
 }
 
 #[test]
-#[ignore = "T072: detect forks at discovery"]
 fn the_older_transcript_is_the_parent_when_both_are_new() {
     let fx = Fx::new();
     let parent = uuids("p", 8);
@@ -188,7 +185,6 @@ fn identical_start_times_with_both_new_is_ambiguous_so_independent() {
 }
 
 #[test]
-#[ignore = "T072: detect forks at discovery"]
 fn a_fork_deep_in_a_huge_transcript_is_found_from_the_head_only() {
     let fx = Fx::new();
     let parent = uuids("p", 8);
