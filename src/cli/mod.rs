@@ -301,6 +301,15 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "implemented by T075"]
+    fn boot_check_subcommand_maps_to_boot_check() {
+        let cli = Cli::try_parse_from(["claude-monitor", "boot-check"]).unwrap();
+        assert_eq!(cli.command(), Command::BootCheck { banner: false });
+        let cli = Cli::try_parse_from(["claude-monitor", "boot-check", "--banner"]).unwrap();
+        assert_eq!(cli.command(), Command::BootCheck { banner: true });
+    }
+
+    #[test]
     fn hook_subcommand_maps_to_hook() {
         let cli = Cli::try_parse_from(["claude-monitor", "hook"]).unwrap();
         assert_eq!(
