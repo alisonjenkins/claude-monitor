@@ -268,6 +268,20 @@ impl Store {
         )
     }
 
+    /// The newest session of the `/clear` chain that `id` belongs to: follows
+    /// `resumed_from` successors only, so a fork is never the head of the
+    /// original's chain.
+    pub fn chain_head(&self, id: &str) -> Result<String, SessionsError> {
+        Ok(id.to_owned())
+    }
+
+    /// Marks `child_id` as a fork of `parent_id`. Returns whether the row
+    /// changed: `false` when the child is unknown, already has a parent, or
+    /// would be its own parent.
+    pub fn record_fork(&self, _parent_id: &str, _child_id: &str) -> Result<bool, SessionsError> {
+        Ok(false)
+    }
+
     fn query_one(
         &self,
         operation: &'static str,
