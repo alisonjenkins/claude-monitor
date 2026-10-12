@@ -30,12 +30,16 @@ TMP=$(mktemp -d)
 SOCK=$TMP/sock
 SERVE_PID=""
 cleanup() {
-  [ -n "$SERVE_PID" ] && kill "$SERVE_PID" 2>/dev/null || true
+  if [ -n "$SERVE_PID" ]; then
+    kill "$SERVE_PID" 2>/dev/null || true
+    wait "$SERVE_PID" 2>/dev/null || true
+  fi
   pkill -f "$TMP/holder" 2>/dev/null || true
   tmux -S "$SOCK" kill-server 2>/dev/null || true
   rm -rf "$TMP"
 }
 trap cleanup EXIT
+trap 'exit 130' INT TERM HUP
 
 export HOME=$TMP/home
 export XDG_CONFIG_HOME=$HOME/.config
@@ -119,7 +123,9 @@ payload 1 Notification-permission_prompt
 
 mon list --include-dismissed --expand-finished >"$E2E_OUT/seed-list.json"
 
-mon serve --port 0 >"$TMP/serve.out" 2>"$TMP/serve.err" &
+# Not through `mon`: backgrounding a function forks a subshell, `$!` is then
+# the subshell and `kill` leaves the server running.
+"$BIN" --json serve --port 0 >"$TMP/serve.out" 2>"$TMP/serve.err" &
 SERVE_PID=$!
 for _ in $(seq 1 50); do
   grep -q 'token=' "$TMP/serve.out" 2>/dev/null && break
