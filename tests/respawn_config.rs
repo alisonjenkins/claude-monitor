@@ -19,7 +19,6 @@ fn env_with_config(contents: &str) -> FakeEnv {
 }
 
 #[test]
-#[ignore = "T074 config wiring"]
 fn launcher_falls_back_to_config_json() {
     let fake = env_with_config(FULL);
     let launcher = launcher_for(&fake.env, "claude");
@@ -31,7 +30,6 @@ fn launcher_falls_back_to_config_json() {
 }
 
 #[test]
-#[ignore = "T074 config wiring"]
 fn launcher_env_var_beats_config_json() {
     let fake = env_with_config(FULL);
     fake.vars.set("CLAUDE_MONITOR_LAUNCHER_CLAUDE", "sleep 30");
@@ -48,7 +46,6 @@ fn launcher_is_none_without_env_or_config() {
 }
 
 #[test]
-#[ignore = "T074 config wiring"]
 fn tmux_session_falls_back_to_config_json() {
     let fake = env_with_config(FULL);
     assert_eq!(tmux_session_for(&fake.env), "work");
@@ -60,7 +57,6 @@ fn tmux_session_defaults_without_env_or_config() {
 }
 
 #[test]
-#[ignore = "T074 config wiring"]
 fn tmux_session_env_var_beats_config_json() {
     let fake = env_with_config(FULL);
     fake.vars.set("CLAUDE_MONITOR_TMUX_SESSION", "override");

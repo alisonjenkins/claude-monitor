@@ -13,8 +13,8 @@ use crate::env::Env;
 use crate::error::Error;
 use crate::model::Session;
 use crate::respawn::{
-    execute, launcher_from_env, plan_respawn, Alternative, Options, Plan, Refusal, RefusalCode,
-    Started, DEFAULT_TMUX_SESSION, TMUX_SESSION_VAR,
+    execute, launcher_for, plan_respawn, tmux_session_for, Alternative, Options, Plan, Refusal,
+    RefusalCode, Started,
 };
 use crate::store::Store;
 
@@ -98,7 +98,7 @@ pub(super) fn plan_all(
                 recreate_worktree: flags.recreate_worktree,
                 fresh: flags.fresh,
                 in_dir: flags.in_dir.clone(),
-                launcher: launcher_from_env(env.vars.as_ref(), &session.agent_kind),
+                launcher: launcher_for(env, &session.agent_kind),
             };
             let plan = plan_respawn(&session, env, &options);
             Ok((session, plan))
@@ -117,9 +117,7 @@ pub(super) fn usage_error(planned: &[(Session, Result<Plan, Refusal>)]) -> Optio
 }
 
 pub(super) fn tmux_session(env: &Env) -> String {
-    env.vars
-        .var(TMUX_SESSION_VAR)
-        .unwrap_or_else(|| DEFAULT_TMUX_SESSION.to_owned())
+    tmux_session_for(env)
 }
 
 /// Execute every plan that exists, in order. A failure to start one does not
