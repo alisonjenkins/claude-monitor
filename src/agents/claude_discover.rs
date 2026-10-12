@@ -122,14 +122,14 @@ fn push_stub(stubs: &mut Vec<SessionStub>, stub: SessionStub) {
     }
 }
 
-fn objects(bytes: &[u8]) -> impl Iterator<Item = Value> + '_ {
+pub(super) fn objects(bytes: &[u8]) -> impl Iterator<Item = Value> + '_ {
     bytes
         .split(|b| *b == b'\n')
         .filter_map(|line| serde_json::from_slice::<Value>(line).ok())
         .filter(Value::is_object)
 }
 
-fn str_field<'a>(line: &'a Value, field: &str) -> Option<&'a str> {
+pub(super) fn str_field<'a>(line: &'a Value, field: &str) -> Option<&'a str> {
     line.get(field).and_then(Value::as_str)
 }
 

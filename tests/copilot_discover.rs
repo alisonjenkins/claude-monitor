@@ -163,7 +163,6 @@ impl Fx {
 }
 
 #[test]
-#[ignore = "T040"]
 fn a_session_directory_becomes_a_stub() {
     let fx = Fx::new();
     fx.write(
@@ -188,7 +187,6 @@ fn a_session_directory_becomes_a_stub() {
 }
 
 #[test]
-#[ignore = "T040"]
 fn the_yaml_reader_tolerates_quotes_empty_values_and_crlf() {
     let fx = Fx::new();
     let yaml = format!(
@@ -209,7 +207,6 @@ fn the_yaml_reader_tolerates_quotes_empty_values_and_crlf() {
 }
 
 #[test]
-#[ignore = "T040"]
 fn a_long_prompt_is_truncated_to_the_character_limit() {
     let fx = Fx::new();
     let long = "é".repeat(MAX_PROMPT_CHARS + 100);
@@ -227,7 +224,6 @@ fn a_long_prompt_is_truncated_to_the_character_limit() {
 }
 
 #[test]
-#[ignore = "T040"]
 fn no_assistant_or_tool_text_reaches_a_stub_or_a_stored_row() {
     let fx = Fx::new();
     fx.write(
@@ -246,7 +242,6 @@ fn no_assistant_or_tool_text_reaches_a_stub_or_a_stored_row() {
 }
 
 #[test]
-#[ignore = "T040"]
 fn discovery_stores_an_unknown_session_and_a_system_event_once() {
     let fx = Fx::new();
     fx.write(
@@ -285,7 +280,6 @@ fn discovery_stores_an_unknown_session_and_a_system_event_once() {
 }
 
 #[test]
-#[ignore = "T040"]
 fn an_empty_directory_is_skipped_and_counted_degraded() {
     let fx = Fx::new();
     fx.write(
@@ -302,7 +296,6 @@ fn an_empty_directory_is_skipped_and_counted_degraded() {
 }
 
 #[test]
-#[ignore = "T040"]
 fn a_missing_workspace_yaml_is_degraded() {
     let fx = Fx::new();
     let dir = fx.session_dir(SESSION);
@@ -319,7 +312,6 @@ fn a_missing_workspace_yaml_is_degraded() {
 }
 
 #[test]
-#[ignore = "T040"]
 fn unparsable_yaml_is_degraded_and_does_not_fail_the_scan() {
     let fx = Fx::new();
     fx.write(
@@ -342,7 +334,6 @@ fn unparsable_yaml_is_degraded_and_does_not_fail_the_scan() {
 }
 
 #[test]
-#[ignore = "T040"]
 fn a_missing_events_file_gives_a_stub_without_a_prompt() {
     let fx = Fx::new();
     let dir = fx.session_dir(SESSION);
@@ -357,7 +348,6 @@ fn a_missing_events_file_gives_a_stub_without_a_prompt() {
 }
 
 #[test]
-#[ignore = "T040"]
 fn a_huge_events_file_is_read_within_the_byte_bound() {
     let mut fx = Fx::new();
     let dir = fx.session_dir(SESSION);
@@ -406,7 +396,6 @@ fn a_huge_events_file_is_read_within_the_byte_bound() {
 }
 
 #[test]
-#[ignore = "T040"]
 fn non_directories_in_session_state_are_skipped_and_counted_degraded() {
     let fx = Fx::new();
     fx.write(
@@ -424,7 +413,6 @@ fn non_directories_in_session_state_are_skipped_and_counted_degraded() {
 }
 
 #[test]
-#[ignore = "T040"]
 fn ids_with_path_traversal_characters_are_rejected() {
     let fx = Fx::new();
     for (dir_name, id) in [
@@ -445,7 +433,6 @@ fn ids_with_path_traversal_characters_are_rejected() {
 }
 
 #[test]
-#[ignore = "T040"]
 fn discovery_never_downgrades_a_session_a_hook_reported() {
     let fx = Fx::new();
     let store = fx.store();
@@ -482,7 +469,6 @@ fn discovery_never_downgrades_a_session_a_hook_reported() {
 }
 
 #[test]
-#[ignore = "T040"]
 fn a_later_hook_upgrades_a_discovered_session_in_place() {
     let fx = Fx::new();
     fx.write(
@@ -511,7 +497,6 @@ fn a_later_hook_upgrades_a_discovered_session_in_place() {
 }
 
 #[test]
-#[ignore = "T040"]
 fn an_absent_session_state_directory_is_an_empty_result() {
     let fx = Fx::new();
     let store = fx.store();
@@ -527,7 +512,6 @@ fn an_absent_session_state_directory_is_an_empty_result() {
 }
 
 #[test]
-#[ignore = "T040"]
 fn the_root_is_copilot_home_then_home_dot_copilot_and_errors_without_either() {
     let fx = Fx::new();
     fx.write(
