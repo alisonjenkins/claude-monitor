@@ -635,6 +635,7 @@ impl App {
             Action::TogglePark => return self.toggle_park(),
             Action::Group => self.open_group(),
             Action::Link => self.open_link(),
+            Action::Summarize => return self.summarize_selected(),
             Action::Detail => return self.open_detail(),
             Action::Links => return self.open_detail_and_check_links(),
             Action::Restore => self.open_restore(),
@@ -710,6 +711,31 @@ impl App {
             });
         }
         effects
+    }
+
+    /// Opens the detail page, where the generated text lands, and asks for
+    /// the summary. Only this key ever does.
+    fn summarize_selected(&mut self) -> Vec<Effect> {
+        let mut effects = self.open_detail();
+        if let Some(open) = &self.detail {
+            effects.push(Effect::Summarize {
+                id: open.id().to_owned(),
+            });
+        }
+        effects
+    }
+
+    fn on_summarized(&mut self, id: &str, result: Result<(), String>) -> Vec<Effect> {
+        match result {
+            Ok(()) if self.detail.as_ref().is_some_and(|open| open.id() == id) => {
+                vec![Effect::LoadDetail { id: id.to_owned() }]
+            }
+            Ok(()) => Vec::new(),
+            Err(message) => {
+                self.status = Some(message);
+                Vec::new()
+            }
+        }
     }
 
     fn on_detail_key(&mut self, code: KeyCode) -> Vec<Effect> {
@@ -806,7 +832,8 @@ pub fn update(mut app: App, msg: Msg) -> (App, Vec<Effect>) {
             app.on_links_checked(&id, result);
             Vec::new()
         }
-        Msg::Candidates { .. } | Msg::Summarized { .. } => Vec::new(),
+        Msg::Summarized { id, result } => app.on_summarized(&id, result),
+        Msg::Candidates { .. } => Vec::new(),
     };
     (app, effects)
 }

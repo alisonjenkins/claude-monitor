@@ -360,7 +360,6 @@ mod summarize_key {
     use super::*;
 
     #[test]
-    #[ignore = "I1: dashboard actions"]
     fn s_opens_the_detail_page_and_asks_for_a_summary() {
         let (app, effects) = press(single("s1", vec![]), KeyCode::Char('s'));
 
@@ -403,7 +402,6 @@ mod summarize_key {
     }
 
     #[test]
-    #[ignore = "I1: dashboard actions"]
     fn a_stored_summary_reloads_the_open_detail() {
         let (app, _) = press(single("s1", vec![]), KeyCode::Char('s'));
 
@@ -419,7 +417,6 @@ mod summarize_key {
     }
 
     #[test]
-    #[ignore = "I1: dashboard actions"]
     fn a_refusal_is_shown_in_the_footer() {
         let (app, _) = press(single("s1", vec![]), KeyCode::Char('s'));
 
@@ -621,7 +618,6 @@ mod with_a_real_store {
     }
 
     #[test]
-    #[ignore = "I1: dashboard actions"]
     fn summarize_without_an_endpoint_says_it_is_not_configured() {
         let rig = rig();
         rig.session("act", "/work");
@@ -645,7 +641,6 @@ mod with_a_real_store {
     }
 
     #[test]
-    #[ignore = "I1: dashboard actions"]
     fn a_summary_shows_labelled_generated_on_the_detail_page() {
         let rig = rig();
         let session = rig.session("act", "/work");
