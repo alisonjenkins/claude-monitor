@@ -88,6 +88,14 @@ let
       set-hook -g pane-died 'run-shell -b "${bin} reconcile --pane #{hook_pane}"'
       set-hook -g window-unlinked 'run-shell -b "${bin} reconcile"'
     '';
+
+  # client-attached fires for each attaching client, so the banner shows in
+  # the terminal the user opens first after login. `run-shell -b` keeps tmux
+  # from waiting on the job; the store path avoids a PATH lookup, and the
+  # command has no shell expansions to quote.
+  bootCheckBannerSnippet = ''
+    set-hook -g client-attached 'run-shell -b "${cfg.package}/bin/claude-monitor boot-check --banner"'
+  '';
 in
 {
   options.programs.claude-monitor = {
@@ -123,6 +131,27 @@ in
           marker for the tmux banner. It never starts an agent: restoring
           sessions stays an explicit `claude-monitor restore`.
         '';
+      };
+
+      banner = {
+        enable = lib.mkEnableOption "a tmux hook that shows the boot-check banner" // {
+          description = ''
+            Run `claude-monitor boot-check --banner` when a tmux client
+            attaches, so the first terminal after login shows one line
+            about interrupted sessions. Appends to `programs.tmux.extraConfig`,
+            so it works only when tmux is managed by Home Manager; otherwise
+            include `programs.claude-monitor.bootCheck.banner.snippet`
+            yourself.
+          '';
+        };
+
+        snippet = lib.mkOption {
+          type = lib.types.str;
+          readOnly = true;
+          default = bootCheckBannerSnippet;
+          defaultText = lib.literalMD "the `set-hook` line, with the store path of `package`";
+          description = "The tmux `set-hook` line, always computed, for tmux configs not managed by Home Manager.";
+        };
       };
     };
 
@@ -185,7 +214,10 @@ in
       "${cfg.copilot.hooksDir}/claude-monitor.json".text = builtins.toJSON copilotHooksFile;
     };
 
-    programs.tmux.extraConfig = lib.mkIf cfg.tmuxHooks.enable cfg.tmuxHooks.snippet;
+    programs.tmux.extraConfig = lib.mkMerge [
+      (lib.mkIf cfg.tmuxHooks.enable cfg.tmuxHooks.snippet)
+      (lib.mkIf cfg.bootCheck.banner.enable cfg.bootCheck.banner.snippet)
+    ];
 
     systemd.user.services.claude-monitor-watch =
       lib.mkIf (cfg.watch.enable && pkgs.stdenv.hostPlatform.isLinux)
