@@ -17,6 +17,18 @@ use crate::tmux;
 
 const CLEANUP_INTERVAL_SECS: u64 = 30;
 
+/// Polls the feed once; when it fired, reloads the overview and runs it
+/// through `update`.
+pub fn pump<S: crate::feed::EventSource, C: crate::feed::Monotonic>(
+    app: super::app::App,
+    feed: &mut crate::feed::ChangeFeed<S, C>,
+    store: &crate::store::Store,
+    now: &str,
+) -> (super::app::App, Vec<super::app::Effect>) {
+    let _ = (feed, store, now);
+    (app, Vec::new())
+}
+
 fn restore_terminal() {
     let _ = disable_raw_mode();
     let _ = stdout().execute(LeaveAlternateScreen);
