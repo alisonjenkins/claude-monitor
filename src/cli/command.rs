@@ -1,6 +1,7 @@
 //! Every command in `contracts/cli.md` as data, so the CLI, the TUI, the web
 //! view and the conformance tests enumerate the same list.
 
+use std::net::IpAddr;
 use std::path::PathBuf;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -97,6 +98,8 @@ pub enum Command {
     },
     Serve {
         port: Option<u16>,
+        /// A loopback address; anything else is refused when parsing.
+        bind: Option<IpAddr>,
     },
     Link {
         owner: String,
@@ -318,7 +321,10 @@ const ALL: &[CommandInfo] = &[
         name: "serve",
         tui_action: None,
         implemented_by: "T117",
-        example: || Command::Serve { port: None },
+        example: || Command::Serve {
+            port: None,
+            bind: None,
+        },
     },
     CommandInfo {
         name: "link",

@@ -804,6 +804,40 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "implemented by T117"]
+    fn serve_flags_map_to_the_serve_command() {
+        let cli = Cli::try_parse_from(["claude-monitor", "serve"]).unwrap();
+        assert_eq!(
+            cli.command(),
+            Command::Serve {
+                port: None,
+                bind: None
+            }
+        );
+        let cli =
+            Cli::try_parse_from(["claude-monitor", "serve", "--port", "9000", "--bind", "::1"])
+                .unwrap();
+        assert_eq!(
+            cli.command(),
+            Command::Serve {
+                port: Some(9000),
+                bind: Some("::1".parse().unwrap())
+            }
+        );
+    }
+
+    #[test]
+    #[ignore = "implemented by T117"]
+    fn serve_refuses_a_non_loopback_bind_when_parsing() {
+        for bind in ["0.0.0.0", "::", "192.168.1.10", "example.com"] {
+            let parsed = Cli::try_parse_from(["claude-monitor", "serve", "--bind", bind]);
+            assert!(parsed.is_err(), "{bind} must be refused");
+        }
+        let loopback = Cli::try_parse_from(["claude-monitor", "serve", "--bind", "127.0.0.1"]);
+        assert!(loopback.is_ok());
+    }
+
+    #[test]
     fn hook_subcommand_maps_to_hook() {
         let cli = Cli::try_parse_from(["claude-monitor", "hook"]).unwrap();
         assert_eq!(
@@ -948,7 +982,14 @@ mod tests {
     #[test]
     fn unimplemented_commands_report_not_implemented_with_exit_1() {
         let fake = FakeEnv::new();
-        let err = run(Command::Serve { port: None }, &fake.env).unwrap_err();
+        let err = run(
+            Command::Serve {
+                port: None,
+                bind: None,
+            },
+            &fake.env,
+        )
+        .unwrap_err();
         assert!(matches!(&err, Error::NotImplemented(name) if name == "serve"));
         assert_eq!(err.exit_code(), 1);
     }
