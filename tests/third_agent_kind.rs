@@ -34,7 +34,6 @@ use tempfile::TempDir;
 
 const FAKE_ID: &str = "fake-agent";
 const T_HOOK: &str = "2026-10-11T23:00:00Z";
-const NOW: &str = "2026-10-12T00:00:00Z";
 
 /// A made-up agent whose payloads look nothing like Claude's or Copilot's:
 /// `{"fa_event": "begin|prompt|ask|done|end", "fa_sid": .., "fa_dir": .., "fa_text": ..}`.
@@ -231,7 +230,7 @@ fn an_unregistered_kind_is_still_refused_by_the_registry() {
 fn overview_lists_all_three_kinds_together() {
     let fx = Fixture::new();
     fx.seed();
-    let overview = fx.store.overview(&OverviewQuery::default(), NOW).unwrap();
+    let overview = fx.store.overview(&OverviewQuery::default()).unwrap();
     let mut seen: Vec<(String, String, &str)> = overview
         .sections
         .iter()

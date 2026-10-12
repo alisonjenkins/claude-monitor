@@ -184,7 +184,7 @@ fn body_lines(app: &App, width: usize) -> (Vec<Line<'static>>, usize) {
     let mut lines = Vec::new();
     let mut selected_line = 0;
     for (section, entries) in app.sections() {
-        if entries.is_empty() && section.collapsed_count == 0 {
+        if entries.is_empty() {
             continue;
         }
         lines.push(Line::from(Span::styled(
@@ -197,15 +197,6 @@ fn body_lines(app: &App, width: usize) -> (Vec<Line<'static>>, usize) {
                 selected_line = lines.len();
             }
             lines.push(row(entry, &snapshot.now, selected, width));
-        }
-        if section.collapsed_count > 0 {
-            lines.push(Line::from(Span::styled(
-                format!(
-                    "  {} older finished (list --expand-finished)",
-                    section.collapsed_count
-                ),
-                Style::default().fg(SUBTEXT0),
-            )));
         }
     }
     if lines.is_empty() {

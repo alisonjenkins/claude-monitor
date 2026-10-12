@@ -189,7 +189,7 @@ fn killed_agent_without_session_end_becomes_interrupted() {
     assert_eq!(event.payload["state"], "interrupted");
     assert_eq!(event.payload["reason"], "process_gone");
 
-    let overview = h.store().overview(&OverviewQuery::default(), T1).unwrap();
+    let overview = h.store().overview(&OverviewQuery::default()).unwrap();
     assert_eq!(
         section_ids(&overview, SectionName::Interrupted),
         std::slice::from_ref(&after.id)
@@ -352,7 +352,7 @@ fn clean_session_end_is_finished_and_listed_in_the_default_overview() {
 
     let s = h.session("s1");
     assert_eq!(s.state, State::Finished);
-    let overview = h.store().overview(&OverviewQuery::default(), T2).unwrap();
+    let overview = h.store().overview(&OverviewQuery::default()).unwrap();
     assert_eq!(
         section_ids(&overview, SectionName::Finished),
         std::slice::from_ref(&s.id)
@@ -362,7 +362,6 @@ fn clean_session_end_is_finished_and_listed_in_the_default_overview() {
 }
 
 #[test]
-#[ignore = "FR-019: finished sessions are never hidden by age"]
 fn old_finished_session_is_listed_never_dropped() {
     let h = Harness::new();
     h.fake.clock.set("2026-08-01T00:00:00Z");
@@ -370,7 +369,7 @@ fn old_finished_session_is_listed_never_dropped() {
     h.feed(None, None, &payload("SessionEnd-other", "s1"));
     let id = h.session("s1").id;
 
-    let overview = h.store().overview(&OverviewQuery::default(), T2).unwrap();
+    let overview = h.store().overview(&OverviewQuery::default()).unwrap();
 
     assert_eq!(
         section_ids(&overview, SectionName::Finished),
@@ -392,7 +391,7 @@ fn clear_ends_one_session_and_links_the_next_to_it() {
     assert_eq!(old.state, State::Finished);
     assert_eq!(old.end_reason.as_deref(), Some("clear"));
     assert_eq!(new.resumed_from.as_deref(), Some(old.id.as_str()));
-    let overview = h.store().overview(&OverviewQuery::default(), T2).unwrap();
+    let overview = h.store().overview(&OverviewQuery::default()).unwrap();
     assert_eq!(
         section_ids(&overview, SectionName::Finished),
         std::slice::from_ref(&old.id)

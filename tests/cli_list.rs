@@ -251,7 +251,6 @@ fn dismissed_sessions_need_include_dismissed() {
 }
 
 #[test]
-#[ignore = "FR-019: finished sessions are never hidden by age"]
 fn old_finished_sessions_are_listed_by_default() {
     let fx = Fixture::new();
     fx.put("recent", State::Finished, "2026-10-10T00:00:00Z", |_| {});

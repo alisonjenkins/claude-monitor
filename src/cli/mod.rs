@@ -70,7 +70,7 @@ enum Commands {
         /// Include dismissed sessions
         #[arg(long)]
         include_dismissed: bool,
-        /// Include finished sessions older than the recent window
+        /// Accepted for compatibility: finished sessions are never collapsed
         #[arg(long)]
         expand_finished: bool,
     },

@@ -21,11 +21,11 @@ pub struct Snapshot {
 }
 
 impl Snapshot {
-    /// Reads the default overview and the recorded panes; `now` dates the
-    /// finished-session collapse and the age column.
+    /// Reads the default overview and the recorded panes; `now` dates the age
+    /// column.
     pub fn load(store: &Store, now: &str) -> Result<Self, String> {
         let overview = store
-            .overview(&OverviewQuery::default(), now)
+            .overview(&OverviewQuery::default())
             .map_err(|e| e.to_string())?;
         let panes = store
             .list_sessions()

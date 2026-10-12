@@ -14,8 +14,6 @@ use claude_monitor::store::queries::{Flag, Overview, OverviewQuery, SectionName}
 use claude_monitor::store::{Store, StoreOptions};
 use tempfile::TempDir;
 
-const NOW: &str = "2026-10-12T12:00:00Z";
-
 struct Fixture {
     _dir: TempDir,
     store: Store,
@@ -54,7 +52,7 @@ impl Fixture {
     }
 
     fn overview(&self, query: &OverviewQuery) -> Overview {
-        self.store.overview(query, NOW).unwrap()
+        self.store.overview(query).unwrap()
     }
 }
 
@@ -293,7 +291,6 @@ fn dismissed_sessions_are_hidden_unless_requested() {
 }
 
 #[test]
-#[ignore = "FR-019: finished sessions are never hidden by age"]
 fn finished_sessions_are_listed_whatever_their_age() {
     let fx = Fixture::new();
     fx.put("recent", State::Finished, "2026-10-10T12:00:00Z");
@@ -357,10 +354,7 @@ fn five_hundred_sessions_build_an_overview() {
         fx.put(&format!("s{i}"), state, "2026-10-12T11:00:00Z");
     }
     let started = std::time::Instant::now();
-    let overview = fx.overview(&OverviewQuery {
-        expand_finished: true,
-        ..OverviewQuery::default()
-    });
+    let overview = fx.overview(&OverviewQuery::default());
     assert_eq!(all_ids(&overview).len(), 500);
     assert!(started.elapsed() < std::time::Duration::from_millis(250));
 }

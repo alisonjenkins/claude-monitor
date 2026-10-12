@@ -54,21 +54,17 @@ fn active(id: &str, state: State) -> OverviewEntry {
     entry(id, state, SectionName::Active)
 }
 
-fn overview(parts: Vec<(SectionName, Vec<OverviewEntry>, usize)>) -> Overview {
+fn overview(parts: Vec<(SectionName, Vec<OverviewEntry>)>) -> Overview {
     Overview {
         sections: parts
             .into_iter()
-            .map(|(name, sessions, collapsed_count)| Section {
-                name,
-                sessions,
-                collapsed_count,
-            })
+            .map(|(name, sessions)| Section { name, sessions })
             .collect(),
     }
 }
 
 fn active_only(entries: Vec<OverviewEntry>) -> Overview {
-    overview(vec![(SectionName::Active, entries, 0)])
+    overview(vec![(SectionName::Active, entries)])
 }
 
 fn snapshot(overview: Overview, panes: &[(&str, &str)]) -> Snapshot {
@@ -124,21 +120,18 @@ fn position(text: &str, needle: &str) -> usize {
 #[test]
 fn sections_render_in_order_with_headers() {
     let app = loaded(overview(vec![
-        (SectionName::Active, vec![active("a", State::Working)], 0),
+        (SectionName::Active, vec![active("a", State::Working)]),
         (
             SectionName::Interrupted,
             vec![entry("i", State::Interrupted, SectionName::Interrupted)],
-            0,
         ),
         (
             SectionName::Finished,
             vec![entry("f", State::Finished, SectionName::Finished)],
-            0,
         ),
         (
             SectionName::Done,
             vec![entry("d", State::Finished, SectionName::Done)],
-            0,
         ),
     ]));
 
@@ -174,17 +167,14 @@ fn every_state_has_its_own_label() {
         (
             SectionName::Active,
             vec![active("w", State::Working), active("u", State::Unknown)],
-            0,
         ),
         (
             SectionName::Interrupted,
             vec![entry("i", State::Interrupted, SectionName::Interrupted)],
-            0,
         ),
         (
             SectionName::Finished,
             vec![entry("f", State::Finished, SectionName::Finished)],
-            0,
         ),
     ]));
 
@@ -258,11 +248,10 @@ fn j_k_and_arrows_move_the_selection_and_clamp_at_both_ends() {
 #[test]
 fn selection_skips_section_headers() {
     let app = loaded(overview(vec![
-        (SectionName::Active, vec![active("a", State::Idle)], 0),
+        (SectionName::Active, vec![active("a", State::Idle)]),
         (
             SectionName::Finished,
             vec![entry("f", State::Finished, SectionName::Finished)],
-            0,
         ),
     ]));
 
@@ -368,31 +357,10 @@ fn control_or_alt_letters_do_not_act_as_plain_keys() {
 }
 
 #[test]
-fn collapsed_finished_sessions_render_a_hint_line() {
-    let app = loaded(overview(vec![(
-        SectionName::Finished,
-        vec![entry("f", State::Finished, SectionName::Finished)],
-        3,
-    )]));
-
-    assert!(wide(&app).contains("3 older finished"));
-}
-
-#[test]
-fn the_hint_shows_even_when_every_finished_session_is_collapsed() {
-    let app = loaded(overview(vec![
-        (SectionName::Active, vec![active("a", State::Idle)], 0),
-        (SectionName::Finished, Vec::new(), 2),
-    ]));
-
-    assert!(wide(&app).contains("2 older finished"));
-}
-
-#[test]
 fn an_empty_store_renders_an_empty_state_message() {
     let app = loaded(overview(vec![
-        (SectionName::Active, Vec::new(), 0),
-        (SectionName::Finished, Vec::new(), 0),
+        (SectionName::Active, Vec::new()),
+        (SectionName::Finished, Vec::new()),
     ]));
 
     let text = wide(&app);
@@ -516,8 +484,8 @@ fn a_40_column_terminal_truncates_rows_without_panicking() {
     e.task_description =
         Some("a task description that cannot possibly fit in forty columns".to_owned());
     let app = loaded(overview(vec![
-        (SectionName::Active, vec![e], 0),
-        (SectionName::Finished, Vec::new(), 12),
+        (SectionName::Active, vec![e]),
+        (SectionName::Finished, Vec::new()),
     ]));
 
     let text = render(&app, 40, 12);

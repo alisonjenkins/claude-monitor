@@ -70,7 +70,7 @@ impl Fixture {
 fn corrupt_row_is_a_degraded_entry_and_the_rest_of_the_list_works() {
     let fx = Fixture::new();
 
-    let overview = fx.store.overview(&OverviewQuery::default(), NOW).unwrap();
+    let overview = fx.store.overview(&OverviewQuery::default()).unwrap();
 
     let entries: Vec<_> = overview.sections.iter().flat_map(|s| &s.sessions).collect();
     assert_eq!(entries.len(), 2);

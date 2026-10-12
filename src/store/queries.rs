@@ -1,6 +1,5 @@
 use std::path::Path;
 
-use chrono::{DateTime, SecondsFormat, Utc};
 use rusqlite::types::Value;
 use rusqlite::{params_from_iter, Row};
 use serde::Serialize;
@@ -9,20 +8,12 @@ use super::sessions::parse_state;
 use super::Store;
 use crate::model::State;
 
-const DEFAULT_FINISHED_WINDOW_DAYS: u32 = 7;
-
 #[derive(Debug, thiserror::Error)]
 pub enum QueriesError {
     #[error("cannot {operation}: {source}")]
     Read {
         operation: &'static str,
         source: rusqlite::Error,
-    },
-    #[error("cannot {operation}: clock value {value:?} is not an RFC 3339 time: {source}")]
-    Clock {
-        operation: &'static str,
-        value: String,
-        source: chrono::ParseError,
     },
 }
 
@@ -46,7 +37,7 @@ pub enum Flag {
     Degraded,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct OverviewQuery {
     pub states: Vec<State>,
     pub agent: Option<String>,
@@ -54,25 +45,6 @@ pub struct OverviewQuery {
     pub project: Option<String>,
     pub text: Option<String>,
     pub include_dismissed: bool,
-    pub expand_finished: bool,
-    /// Finished sessions idle for longer than this collapse into
-    /// `Section::collapsed_count` unless `expand_finished` is set.
-    pub finished_window_days: u32,
-}
-
-impl Default for OverviewQuery {
-    fn default() -> Self {
-        Self {
-            states: Vec::new(),
-            agent: None,
-            repo: None,
-            project: None,
-            text: None,
-            include_dismissed: false,
-            expand_finished: false,
-            finished_window_days: DEFAULT_FINISHED_WINDOW_DAYS,
-        }
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -99,7 +71,6 @@ pub struct OverviewEntry {
 pub struct Section {
     pub name: SectionName,
     pub sessions: Vec<OverviewEntry>,
-    pub collapsed_count: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -290,30 +261,12 @@ fn filters(query: &OverviewQuery) -> (Vec<String>, Vec<Value>) {
     (clauses, values)
 }
 
-/// Finished sessions last active before this instant are "older".
-fn finished_cutoff(now: &str, window_days: u32) -> Result<Option<String>, QueriesError> {
-    let parsed = DateTime::parse_from_rfc3339(now).map_err(|source| QueriesError::Clock {
-        operation: "build overview",
-        value: now.to_owned(),
-        source,
-    })?;
-    Ok(parsed
-        .with_timezone(&Utc)
-        .checked_sub_signed(chrono::Duration::days(i64::from(window_days)))
-        .map(|cutoff| cutoff.to_rfc3339_opts(SecondsFormat::Secs, true)))
-}
-
 impl Store {
-    /// Sessions grouped into view sections, derived on every call. `now` is the
-    /// clock reading used to collapse old finished sessions.
-    pub fn overview(&self, query: &OverviewQuery, now: &str) -> Result<Overview, QueriesError> {
+    /// Sessions grouped into view sections, derived on every call. No session
+    /// is dropped by age: only the filters in `query` leave one out.
+    pub fn overview(&self, query: &OverviewQuery) -> Result<Overview, QueriesError> {
         let (clauses, values) = filters(query);
         let entries = self.fetch_entries(&clauses, values)?;
-        let cutoff = if query.expand_finished {
-            None
-        } else {
-            finished_cutoff(now, query.finished_window_days)?
-        };
 
         let mut names = vec![
             SectionName::Active,
@@ -329,20 +282,11 @@ impl Store {
             .map(|name| Section {
                 name,
                 sessions: Vec::new(),
-                collapsed_count: 0,
             })
             .collect();
         for entry in entries {
-            let collapse = entry.section == SectionName::Finished
-                && cutoff
-                    .as_deref()
-                    .is_some_and(|cutoff| entry.last_activity_at.as_str() < cutoff);
             if let Some(section) = sections.iter_mut().find(|s| s.name == entry.section) {
-                if collapse {
-                    section.collapsed_count = section.collapsed_count.saturating_add(1);
-                } else {
-                    section.sessions.push(entry);
-                }
+                section.sessions.push(entry);
             }
         }
         for section in &mut sections {

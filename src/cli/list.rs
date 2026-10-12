@@ -3,7 +3,7 @@
 use std::path::Path;
 
 use chrono::DateTime;
-use serde_json::{json, Value};
+use serde_json::json;
 
 use super::migrate::{open_viewer_store, store_error_message};
 use super::output::strip_control;
@@ -55,6 +55,8 @@ fn parse_section(value: Option<&str>) -> Result<Option<SectionName>, Error> {
 }
 
 pub fn run(env: &Env, state_dir: Option<&Path>, args: ListArgs) -> Result<Output, Error> {
+    // Compatibility only: finished sessions are never collapsed (FR-019).
+    let _ = args.expand_finished;
     let states = parse_states(&args.states)?;
     let section = parse_section(args.section.as_deref())?;
     let store = open_viewer_store(env, state_dir)?;
@@ -65,41 +67,24 @@ pub fn run(env: &Env, state_dir: Option<&Path>, args: ListArgs) -> Result<Output
         project: args.project,
         text: args.text,
         include_dismissed: args.include_dismissed || section == Some(SectionName::Dismissed),
-        expand_finished: args.expand_finished,
-        ..OverviewQuery::default()
     };
     let now = env.clock.now();
     let overview = store
-        .overview(&query, &now)
+        .overview(&query)
         .map_err(|e| store_error_message("list sessions", Some(store.path()), &e))?;
 
     let mut entries = Vec::new();
-    let mut collapsed = 0_usize;
     for part in overview.sections {
         if section.is_some_and(|wanted| wanted != part.name) {
             continue;
         }
-        collapsed = collapsed.saturating_add(part.collapsed_count);
         entries.extend(part.sessions);
     }
 
-    let mut lines: Vec<String> = entries.iter().map(|entry| line(entry, &now)).collect();
-    if collapsed > 0 {
-        lines.push(format!(
-            "({collapsed} older finished sessions hidden; use --expand-finished)"
-        ));
-    }
-    let mut body = serde_json::Map::new();
-    body.insert(
-        "sessions".to_owned(),
-        serde_json::to_value(&entries).unwrap_or(Value::Array(Vec::new())),
-    );
-    if collapsed > 0 {
-        body.insert("collapsed_finished".to_owned(), json!(collapsed));
-    }
+    let lines: Vec<String> = entries.iter().map(|entry| line(entry, &now)).collect();
     Ok(Output::Dual {
         text: lines.join("\n"),
-        json: Value::Object(body),
+        json: json!({ "sessions": entries }),
     })
 }
 
