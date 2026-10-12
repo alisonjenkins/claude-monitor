@@ -671,6 +671,121 @@ mod summarize_cli {
         );
     }
 
+    const PROJECT_NOTE: &str = "Ship the parity work before Friday";
+
+    fn project_seeded(note: Option<&str>) -> (Harness, String, String) {
+        let (h, id) = seeded();
+        let fake = FakeEnv::new();
+        let state = Some(h.state_dir.as_path());
+        run_in(
+            Command::Group {
+                project: "alpha".to_owned(),
+                sessions: vec![id.clone()],
+            },
+            &fake.env,
+            state,
+        )
+        .unwrap();
+        if let Some(text) = note {
+            run_in(
+                Command::Note {
+                    target: "alpha".to_owned(),
+                    text: text.to_owned(),
+                },
+                &fake.env,
+                state,
+            )
+            .unwrap();
+        }
+        let project_id = Store::open_in_dir(&h.state_dir, &StoreOptions::viewer())
+            .unwrap()
+            .project_by_name("alpha")
+            .unwrap()
+            .unwrap()
+            .id;
+        (h, id, project_id)
+    }
+
+    fn project_summaries(
+        h: &Harness,
+        project_id: &str,
+    ) -> Vec<claude_monitor::store::summaries::Summary> {
+        Store::open_in_dir(&h.state_dir, &StoreOptions::viewer())
+            .unwrap()
+            .list_summaries("project", project_id)
+            .unwrap()
+    }
+
+    fn configured(addr: std::net::SocketAddr) -> FakeEnv {
+        let fake = FakeEnv::new();
+        fake.vars.set(URL_VAR, &format!("http://{addr}"));
+        fake.vars.set(MODEL_VAR, "tiny-model");
+        fake
+    }
+
+    #[test]
+    #[ignore = "I3: summarize accepts a project"]
+    fn a_project_is_summarized_from_its_note_and_its_sessions_verbatim_text() {
+        let (h, id, project_id) = project_seeded(Some(PROJECT_NOTE));
+        let (addr, server) = fake_server(completion("Parity work is on track."));
+        let fake = configured(addr);
+
+        let Output::Dual { text, json } = summarize(&h, &fake, "alpha").unwrap() else {
+            panic!("expected dual output");
+        };
+
+        assert!(text.contains("Parity work is on track."), "{text}");
+        assert_eq!(json["project"], "alpha");
+        assert_eq!(json["label"], "generated");
+        assert_eq!(json["summary"], "Parity work is on track.");
+        let rows = project_summaries(&h, &project_id);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].body, "Parity work is on track.");
+        assert!(stored(&h, &id).is_empty(), "stored under the project only");
+        let request = server.join().unwrap().body.to_string();
+        for part in [PROJECT_NOTE, PROMPT, LEFT_OFF] {
+            assert!(request.contains(part), "{part} missing from {request}");
+        }
+        assert_eq!(h.session().task_description.as_deref(), Some(PROMPT));
+    }
+
+    #[test]
+    #[ignore = "I3: summarize accepts a project"]
+    fn a_project_with_no_text_at_all_has_nothing_to_summarize() {
+        let h = Harness::new();
+        let fake = FakeEnv::new();
+        run_in(
+            Command::Project {
+                action: claude_monitor::cli::ProjectAction::Add,
+                name: "empty".to_owned(),
+                value: None,
+            },
+            &fake.env,
+            Some(&h.state_dir),
+        )
+        .unwrap();
+        let fake = configured("127.0.0.1:9".parse().unwrap());
+
+        assert_eq!(
+            refused_code(summarize(&h, &fake, "empty")),
+            "nothing_to_summarize"
+        );
+    }
+
+    #[test]
+    #[ignore = "I3: summarize accepts a project"]
+    fn a_long_project_note_is_cut_before_it_is_sent() {
+        let long = "x".repeat(20_000);
+        let (h, _id, _project_id) = project_seeded(Some(&long));
+        let (addr, server) = fake_server(completion("ok"));
+        let fake = configured(addr);
+
+        summarize(&h, &fake, "alpha").unwrap();
+
+        let request = server.join().unwrap().body.to_string();
+        assert!(request.len() < 10_000, "{} bytes", request.len());
+    }
+
     #[test]
     fn an_unknown_session_is_refused() {
         let (h, _id) = seeded();
