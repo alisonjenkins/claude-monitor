@@ -21,3 +21,5 @@ pub mod tmux;
 #[cfg(feature = "tui")]
 pub mod tui;
 pub mod watch;
+#[cfg(feature = "web")]
+pub mod web;
