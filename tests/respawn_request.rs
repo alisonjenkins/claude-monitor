@@ -22,7 +22,6 @@ fn session(store: &Store, id: &str) -> Session {
 }
 
 #[test]
-#[ignore = "T071: respawn_request store API"]
 fn a_created_request_is_open_for_its_pane() {
     let (_dir, store) = store();
     let s = session(&store, "s1");
@@ -42,7 +41,6 @@ fn a_created_request_is_open_for_its_pane() {
 }
 
 #[test]
-#[ignore = "T071: respawn_request store API"]
 fn creating_the_same_request_twice_returns_the_open_one() {
     let (_dir, store) = store();
     let s = session(&store, "s1");
@@ -59,7 +57,6 @@ fn creating_the_same_request_twice_returns_the_open_one() {
 }
 
 #[test]
-#[ignore = "T071: respawn_request store API"]
 fn closing_a_request_records_the_new_session_and_ends_it() {
     let (_dir, store) = store();
     let old = session(&store, "s1");
@@ -81,7 +78,6 @@ fn closing_a_request_records_the_new_session_and_ends_it() {
 }
 
 #[test]
-#[ignore = "T071: respawn_request store API"]
 fn closing_an_unknown_request_is_an_error() {
     let (_dir, store) = store();
     let s = session(&store, "s1");
@@ -89,7 +85,6 @@ fn closing_an_unknown_request_is_an_error() {
 }
 
 #[test]
-#[ignore = "T071: respawn_request store API"]
 fn the_newest_open_request_for_a_pane_wins() {
     let (_dir, store) = store();
     let a = session(&store, "s1");
