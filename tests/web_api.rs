@@ -203,7 +203,6 @@ mod confirmation {
     }
 
     #[test]
-    #[ignore = "web confirmation is not implemented yet"]
     fn dismissing_a_session_without_confirm_is_a_409_and_changes_nothing() {
         let web = Plain::new();
         web.put("s-fin", State::Finished);
@@ -220,7 +219,6 @@ mod confirmation {
     }
 
     #[test]
-    #[ignore = "web confirmation is not implemented yet"]
     fn confirm_as_json_or_form_performs_the_dismissal() {
         let web = Plain::new();
         web.put("s-a", State::Finished);
@@ -239,7 +237,6 @@ mod confirmation {
     }
 
     #[test]
-    #[ignore = "web confirmation is not implemented yet"]
     fn dismissing_a_project_without_confirm_is_a_409_and_changes_nothing() {
         let web = Plain::new();
         let id = post(&web.rig, "/projects", &json!({"name": "alpha"})).json()["project"]["id"]
@@ -257,7 +254,6 @@ mod confirmation {
     }
 
     #[test]
-    #[ignore = "web confirmation is not implemented yet"]
     fn unlinking_without_confirm_is_a_409_and_keeps_the_link() {
         let web = Plain::new();
         web.put("s-fin", State::Finished);
@@ -295,7 +291,6 @@ mod confirmation {
     }
 
     #[test]
-    #[ignore = "web confirmation is not implemented yet"]
     fn a_get_describes_the_dismissal_as_json_and_changes_nothing() {
         let web = Plain::new();
         web.put("s-fin", State::Finished);
@@ -314,7 +309,6 @@ mod confirmation {
     }
 
     #[test]
-    #[ignore = "web confirmation is not implemented yet"]
     fn a_get_for_an_unknown_target_is_a_404() {
         let web = Plain::new();
 

@@ -49,7 +49,8 @@ pub fn question_for(
     }
 }
 
-fn with_yes(command: Command) -> Command {
+/// `command` with its confirmation given; the caller has already asked.
+pub fn confirmed(command: Command) -> Command {
     match command {
         Command::Dismiss { target, .. } => Command::Dismiss { target, yes: true },
         Command::Unlink { owner, cortex, .. } => Command::Unlink {
@@ -73,14 +74,14 @@ pub fn confirm_command(
     let Some(question) = question_for(&command, env, state_dir)? else {
         return Ok(command);
     };
-    let confirmed = with_yes(command);
+    let ready = confirmed(command);
     let Some(terminal) = terminal else {
         return Err(Error::Usage(format!(
             "{question}; nothing was changed. Pass --yes to proceed without being asked"
         )));
     };
     if ask(&question, terminal)? {
-        Ok(confirmed)
+        Ok(ready)
     } else {
         Err(Error::Usage(format!(
             "not confirmed; nothing was changed ({question})"

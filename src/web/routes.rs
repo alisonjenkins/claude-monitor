@@ -17,7 +17,9 @@ use axum::Router;
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
 
-use super::{pages, AppState};
+use super::pages::{self, seg};
+use super::AppState;
+use crate::cli::confirm::{self, Question};
 use crate::cli::migrate::open_viewer_store;
 use crate::cli::respawn::{plan_all, started_json, usage_error};
 use crate::cli::restore::candidates;
@@ -401,7 +403,7 @@ pub fn router() -> Router<AppState> {
         )
         .route(
             "/sessions/{id}/dismiss",
-            session(|target| Command::Dismiss { target, yes: true }),
+            get(session_dismiss_confirmation).post(session_dismiss),
         )
         .route(
             "/sessions/{id}/undismiss",
@@ -423,7 +425,10 @@ pub fn router() -> Router<AppState> {
         .route("/sessions/{id}/group", post(session_group))
         .route("/sessions/{id}/progress-source", post(progress_source))
         .route("/sessions/{id}/link", post(link))
-        .route("/sessions/{id}/unlink", post(unlink))
+        .route(
+            "/sessions/{id}/unlink",
+            get(unlink_confirmation).post(unlink),
+        )
         .route("/sessions/{id}/respawn", post(respawn_one))
         .route("/respawn", post(respawn_many))
         .route("/restore", get(restore))
@@ -440,7 +445,7 @@ pub fn router() -> Router<AppState> {
         )
         .route(
             "/projects/{id}/dismiss",
-            project(|target| Command::Dismiss { target, yes: true }),
+            get(project_dismiss_confirmation).post(project_dismiss),
         )
         .route(
             "/projects/{id}/undismiss",
@@ -649,15 +654,200 @@ async fn unlink(
     body: Payload,
 ) -> Result<Response, ApiError> {
     let cortex = blank(body.text("cortex")).unwrap_or_default();
-    act(
+    confirmed_act(
         &state,
         Command::Unlink {
             owner: id,
             cortex,
-            yes: true,
+            yes: false,
         },
+        &body,
     )
     .await
+}
+
+#[derive(Debug, Default, Deserialize)]
+pub struct UnlinkParams {
+    cortex: Option<String>,
+}
+
+async fn unlink_confirmation(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+    Query(params): Query<UnlinkParams>,
+) -> Response {
+    let cortex = blank(params.cortex).unwrap_or_default();
+    let base = format!("/sessions/{}", seg(&id));
+    let command = Command::Unlink {
+        owner: id,
+        cortex: cortex.clone(),
+        yes: false,
+    };
+    confirmation(
+        &state,
+        &headers,
+        command,
+        &format!("{base}/unlink"),
+        &[("cortex", cortex.as_str())],
+        &base,
+    )
+    .await
+}
+
+async fn session_dismiss(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    body: Payload,
+) -> Result<Response, ApiError> {
+    confirmed_act(
+        &state,
+        Command::Dismiss {
+            target: id,
+            yes: false,
+        },
+        &body,
+    )
+    .await
+}
+
+async fn session_dismiss_confirmation(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+) -> Response {
+    let base = format!("/sessions/{}", seg(&id));
+    let command = Command::Dismiss {
+        target: id,
+        yes: false,
+    };
+    confirmation(
+        &state,
+        &headers,
+        command,
+        &format!("{base}/dismiss"),
+        &[],
+        &base,
+    )
+    .await
+}
+
+async fn project_dismiss(
+    State(state): State<AppState>,
+    Path(key): Path<String>,
+    body: Payload,
+) -> Result<Response, ApiError> {
+    let project = project_named(&state, key).await?;
+    confirmed_act(
+        &state,
+        Command::Dismiss {
+            target: project.name,
+            yes: false,
+        },
+        &body,
+    )
+    .await
+}
+
+async fn project_dismiss_confirmation(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(key): Path<String>,
+) -> Response {
+    let json = wants_json(&headers);
+    let project = match project_named(&state, key).await {
+        Ok(project) => project,
+        Err(error) => return settle(&state, json, Err(error)),
+    };
+    let base = format!("/projects/{}", seg(&project.id));
+    let command = Command::Dismiss {
+        target: project.name,
+        yes: false,
+    };
+    confirmation(
+        &state,
+        &headers,
+        command,
+        &format!("{base}/dismiss"),
+        &[],
+        &base,
+    )
+    .await
+}
+
+/// What the confirmation asks, or the error for an unknown target.
+async fn question_of(state: &AppState, command: Command) -> Result<Question, ApiError> {
+    let (env, dir) = (state.env.clone(), state.state_dir.clone());
+    blocking(move || confirm::question_for(&command, &env, Some(&dir)))
+        .await?
+        .map_err(ApiError::from)?
+        .ok_or_else(|| ApiError::internal("confirm", "the command needs no confirmation"))
+}
+
+/// Runs a command that needs confirmation only when the body carries
+/// `confirm`; otherwise 409 `confirmation_required` and nothing changes. An
+/// unknown target is still a 404.
+async fn confirmed_act(
+    state: &AppState,
+    command: Command,
+    body: &Payload,
+) -> Result<Response, ApiError> {
+    if body.flag("confirm") {
+        return act(state, confirm::confirmed(command)).await;
+    }
+    let question = question_of(state, command).await?;
+    Err(ApiError::new(
+        StatusCode::CONFLICT,
+        "confirmation_required",
+        format!("{question}; send confirm=1 to proceed"),
+    ))
+}
+
+/// The confirmation a person sees before the change: JSON for scripts, a
+/// fragment for htmx (shown inline), a whole page otherwise. Changes nothing.
+async fn confirmation(
+    state: &AppState,
+    headers: &HeaderMap,
+    command: Command,
+    post_url: &str,
+    hidden: &[(&str, &str)],
+    cancel_url: &str,
+) -> Response {
+    let json = wants_json(headers);
+    let result = async {
+        let question = question_of(state, command).await?;
+        if json {
+            return Ok(json_response(
+                StatusCode::OK,
+                &json!({
+                    "ok": true,
+                    "confirmation_required": true,
+                    "action": question.action,
+                    "consequence": question.consequence,
+                    "confirm_with": { "method": "POST", "url": post_url, "confirm": 1 },
+                }),
+            ));
+        }
+        let panel = pages::Confirm {
+            action: &question.action,
+            consequence: &question.consequence,
+            post_url,
+            hidden,
+            cancel_url,
+        };
+        let page = if headers.contains_key("hx-request") {
+            pages::confirm_fragment(&panel)
+        } else {
+            let ctx = pages::Ctx {
+                csrf: state.auth.token().as_str(),
+                now: &state.env.clock.now(),
+            };
+            pages::confirm_page(&ctx, &panel)
+        };
+        Ok(html_response(StatusCode::OK, page))
+    }
+    .await;
+    settle(state, json, result)
 }
 
 #[derive(Debug, Deserialize)]

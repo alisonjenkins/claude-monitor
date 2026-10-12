@@ -63,7 +63,7 @@ fn list_of<'a>(value: &'a Value, key: &str) -> &'a [Value] {
 }
 
 /// A path segment safe to put in a URL.
-fn seg(text: &str) -> String {
+pub(super) fn seg(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     for byte in text.bytes() {
         if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'.' | b'_' | b'~') {
@@ -525,6 +525,64 @@ fn progress_panel(session_id: &str, detail: &Value) -> Markup {
     }
 }
 
+/// Asks `/…/dismiss` for the confirmation panel and shows it in the slot above
+/// the page; nothing changes until the panel's own Confirm is pressed.
+fn confirm_button(url: &str, label: &str) -> Markup {
+    html! {
+        button.btn.quiet type="button" hx-get=(url) hx-target="#confirm-slot" hx-swap="innerHTML" {
+            (label)
+        }
+    }
+}
+
+/// What the confirmation panel says and where its buttons go.
+pub struct Confirm<'a> {
+    /// "Dismiss session s1"; the panel asks it as a question.
+    pub action: &'a str,
+    pub consequence: &'a str,
+    /// The POST that performs the change once `confirm=1` is sent.
+    pub post_url: &'a str,
+    /// Form fields the POST needs besides `confirm`.
+    pub hidden: &'a [(&'a str, &'a str)],
+    /// Where Cancel goes without script.
+    pub cancel_url: &'a str,
+}
+
+/// A modest inline panel, not a modal: the script moves focus to Confirm,
+/// Escape and Cancel remove it.
+fn confirm_panel(confirm: &Confirm<'_>) -> Markup {
+    html! {
+        section.confirm data-confirm aria-labelledby="confirm-title" {
+            h2 #confirm-title { (confirm.action) "?" }
+            p { (confirm.consequence) }
+            form.inline hx-post=(confirm.post_url) hx-swap="none" data-confirm-form {
+                @for (name, value) in confirm.hidden {
+                    input type="hidden" name=(name) value=(value);
+                }
+                input type="hidden" name="confirm" value="1";
+                button.btn.solid type="submit" data-confirm-yes { "Confirm" }
+                a.cancel href=(confirm.cancel_url) data-confirm-cancel { "Cancel" }
+            }
+        }
+    }
+}
+
+pub fn confirm_fragment(confirm: &Confirm<'_>) -> String {
+    confirm_panel(confirm).into_string()
+}
+
+pub fn confirm_page(ctx: &Ctx<'_>, confirm: &Confirm<'_>) -> String {
+    let body = html! { div #content { (confirm_panel(confirm)) } };
+    layout(
+        ctx,
+        &format!("{} · claude-monitor", confirm.action),
+        0,
+        "content",
+        body,
+    )
+    .into_string()
+}
+
 fn post_button_with(url: &str, label: &str, vals: &str) -> Markup {
     html! {
         button.btn.quiet type="button" hx-post=(url) hx-vals=(vals) hx-swap="none" { (label) }
@@ -578,7 +636,7 @@ pub fn session(ctx: &Ctx<'_>, detail: &Value) -> String {
             @if dismissed {
                 (post_button(&format!("{base}/undismiss"), "Undismiss", false))
             } @else {
-                (post_button(&format!("{base}/dismiss"), "Dismiss", false))
+                (confirm_button(&format!("{base}/dismiss"), "Dismiss"))
             }
         }
         dl.facts {
@@ -629,7 +687,10 @@ pub fn session(ctx: &Ctx<'_>, detail: &Value) -> String {
             }
         }
     };
-    let body = live("content", &base, waiting, inner);
+    let body = html! {
+        div #confirm-slot {}
+        (live("content", &base, waiting, inner))
+    };
     layout(
         ctx,
         &format!("{} · claude-monitor", short(id)),

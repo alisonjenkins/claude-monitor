@@ -420,7 +420,6 @@ mod confirmation_panel {
     }
 
     #[test]
-    #[ignore = "web confirmation is not implemented yet"]
     fn the_session_page_asks_for_the_panel_instead_of_dismissing() {
         let web = Plain::new();
         web.put("s-new", State::Idle);
@@ -440,7 +439,6 @@ mod confirmation_panel {
     }
 
     #[test]
-    #[ignore = "web confirmation is not implemented yet"]
     fn the_htmx_fragment_names_the_target_and_consequence_with_confirm_and_cancel() {
         let web = Plain::new();
         web.put("s-fin", State::Finished);
@@ -471,7 +469,6 @@ mod confirmation_panel {
     }
 
     #[test]
-    #[ignore = "web confirmation is not implemented yet"]
     fn without_htmx_the_same_route_is_a_whole_page() {
         let web = Plain::new();
         web.put("s-fin", State::Finished);
@@ -488,7 +485,6 @@ mod confirmation_panel {
     }
 
     #[test]
-    #[ignore = "web confirmation is not implemented yet"]
     fn a_project_panel_says_it_is_archived_and_cancels_back_to_the_project() {
         let web = Plain::new();
         let id = post(&web.rig, "/projects", &json!({"name": "alpha"})).json()["project"]["id"]
@@ -508,7 +504,6 @@ mod confirmation_panel {
     }
 
     #[test]
-    #[ignore = "web confirmation is not implemented yet"]
     fn the_unlink_panel_names_the_node_and_carries_it_in_the_form() {
         let web = Plain::new();
         web.put("s-fin", State::Finished);
@@ -533,7 +528,6 @@ mod confirmation_panel {
     }
 
     #[test]
-    #[ignore = "web confirmation is not implemented yet"]
     fn the_script_focuses_the_confirm_button_and_escape_cancels() {
         let web = Plain::new();
 

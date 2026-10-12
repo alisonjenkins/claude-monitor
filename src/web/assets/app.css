@@ -125,6 +125,19 @@ textarea { width: 100%; min-height: 5rem; }
 @media (prefers-color-scheme: dark) { .btn.primary { color: #1a1205; } }
 .btn.primary:hover { filter: brightness(1.08); }
 .btn.quiet { border-color: var(--rule); color: var(--ink-2); font-weight: 400; }
+.btn.solid { background: var(--ink); border-color: var(--ink); color: var(--paper); }
+.btn.solid:hover { background: var(--ink); filter: brightness(1.15); }
+
+.confirm {
+  margin: 1rem 0;
+  padding: 0.25rem 1rem 1rem;
+  background: var(--paper-2);
+  border: 1px solid var(--rule);
+  border-left: 4px solid var(--ink);
+}
+.confirm h2 { margin-top: 0.75rem; }
+.confirm p { margin: 0.25rem 0 0.75rem; }
+.confirm .cancel { display: inline-flex; align-items: center; min-height: 2.75rem; padding: 0 0.5rem; }
 
 ul.rows { list-style: none; margin: 0; padding: 0; }
 
