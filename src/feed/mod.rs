@@ -5,7 +5,7 @@
 //! cursor, so the rows (not the wake) say exactly what changed.
 
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, Condvar, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
 use crate::store::events::{EventRow, EventsError};
@@ -14,14 +14,18 @@ use crate::store::Store;
 pub mod claude;
 pub mod copilot;
 pub mod fs;
+pub mod merge;
 pub mod proc_exit;
 pub mod registry;
+pub mod safety_net;
 
 pub use claude::{ClaudeProjectsSource, ClaudeSourceError};
 pub use copilot::{CopilotSessionsSource, CopilotSourceError};
 pub use fs::{FsSourceError, FsWatcherSource};
+pub use merge::MergedSource;
 pub use proc_exit::{ProcExitError, ProcExitHandle, ProcExitSource};
 pub use registry::{ClaudeRegistrySource, RegistrySourceError};
+pub use safety_net::{SafetyNetSource, SAFETY_NET_INTERVAL};
 
 /// Start-anchored: a fire comes this long after the first wake of a group. A
 /// trailing debounce starves under continuous writes (first fire after 1.1 to
@@ -178,7 +182,8 @@ impl Monotonic for ManualClock {
 
 #[derive(Debug, Default)]
 struct FakeState {
-    woken: AtomicBool,
+    woken: Mutex<bool>,
+    woke: Condvar,
     closed: AtomicBool,
 }
 
@@ -200,7 +205,8 @@ impl FakeSource {
 
 impl FakeHandle {
     pub fn wake(&self) {
-        self.0.woken.store(true, Ordering::SeqCst);
+        *self.0.woken.lock().unwrap_or_else(PoisonError::into_inner) = true;
+        self.0.woke.notify_all();
     }
 
     pub fn is_closed(&self) -> bool {
@@ -209,8 +215,15 @@ impl FakeHandle {
 }
 
 impl EventSource for FakeSource {
-    fn wait(&mut self, _timeout: Duration) -> bool {
-        self.0.woken.swap(false, Ordering::SeqCst)
+    /// Blocks like a real source, so a forwarding thread does not spin on it.
+    fn wait(&mut self, timeout: Duration) -> bool {
+        let woken = self.0.woken.lock().unwrap_or_else(PoisonError::into_inner);
+        let (mut woken, _) = self
+            .0
+            .woke
+            .wait_timeout_while(woken, timeout, |woken| !*woken)
+            .unwrap_or_else(PoisonError::into_inner);
+        std::mem::take(&mut *woken)
     }
 }
 
