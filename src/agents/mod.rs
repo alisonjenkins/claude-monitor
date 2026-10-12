@@ -9,7 +9,7 @@ use std::path::PathBuf;
 
 use thiserror::Error;
 
-use crate::env::Env;
+use crate::env::{Env, Vars};
 use crate::model::{Event, Session};
 
 pub mod claude;
@@ -164,7 +164,23 @@ pub trait AgentKind: Send + Sync {
 
 /// The agent kinds that exist, in registration order.
 pub fn kinds() -> Vec<Box<dyn AgentKind>> {
-    vec![Box::new(claude::ClaudeKind)]
+    vec![Box::new(claude::ClaudeKind), Box::new(copilot::CopilotKind)]
+}
+
+/// Environment variables Copilot CLI sets in the processes it spawns.
+const COPILOT_ENV_VARS: [&str; 2] = ["COPILOT_CLI", "COPILOT_HOME"];
+
+/// The agent a `hook` invocation belongs to: an explicit `--agent` always
+/// wins; without one, Copilot's environment marks a Copilot hook and anything
+/// else is Claude.
+pub fn resolve_agent<'a>(explicit: Option<&'a str>, vars: &dyn Vars) -> &'a str {
+    if let Some(agent) = explicit {
+        return agent;
+    }
+    if COPILOT_ENV_VARS.iter().any(|name| vars.var(name).is_some()) {
+        return copilot::CopilotKind.id();
+    }
+    crate::hook::DEFAULT_AGENT
 }
 
 #[cfg(test)]
@@ -180,6 +196,42 @@ mod tests {
         assert_eq!(ids.len(), unique.len());
         assert!(ids.iter().all(|id| !id.is_empty()));
         assert!(ids.contains(&"claude"));
+        assert!(ids.contains(&"copilot"));
+    }
+
+    fn resolved(explicit: Option<&str>, set: &[&str]) -> String {
+        let fake = crate::testing::FakeEnv::new();
+        for name in set {
+            fake.vars.set(name, "1");
+        }
+        resolve_agent(explicit, fake.env.vars.as_ref()).to_owned()
+    }
+
+    #[test]
+    fn no_agent_flag_and_no_copilot_env_is_claude() {
+        assert_eq!(resolved(None, &[]), "claude");
+        assert_eq!(resolved(None, &["COPILOT_UNRELATED"]), "claude");
+    }
+
+    #[test]
+    fn copilot_env_selects_copilot_when_no_flag_is_given() {
+        assert_eq!(resolved(None, &["COPILOT_CLI"]), "copilot");
+        assert_eq!(resolved(None, &["COPILOT_HOME"]), "copilot");
+        assert_eq!(resolved(None, &["COPILOT_CLI", "COPILOT_HOME"]), "copilot");
+    }
+
+    #[test]
+    fn explicit_agent_always_wins() {
+        assert_eq!(resolved(Some("claude"), &["COPILOT_CLI"]), "claude");
+        assert_eq!(resolved(Some("copilot"), &[]), "copilot");
+        assert_eq!(resolved(Some("nonesuch"), &["COPILOT_HOME"]), "nonesuch");
+    }
+
+    #[test]
+    fn empty_copilot_env_does_not_count() {
+        let fake = crate::testing::FakeEnv::new();
+        fake.vars.set("COPILOT_CLI", "");
+        assert_eq!(resolve_agent(None, fake.env.vars.as_ref()), "claude");
     }
 
     struct Bare;

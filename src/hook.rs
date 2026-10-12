@@ -443,7 +443,7 @@ fn append_log(state_dir: &Path, line: &str) -> std::io::Result<()> {
 /// mechanism. Always returns normally (exit 0) and never writes to stdout:
 /// Claude Code may interpret stdout for some events.
 pub fn run(agent: Option<&str>, state_dir: Option<&Path>, env: &Env) {
-    let agent = agent.unwrap_or(DEFAULT_AGENT);
+    let agent = agents::resolve_agent(agent, env.vars.as_ref());
     let state_dir: PathBuf = match resolve_state_dir(state_dir, &StateDirEnv::from_process()) {
         Ok(dir) => dir,
         Err(e) => return eprintln!("claude-monitor hook: {e}"),

@@ -42,13 +42,11 @@ fn notification(kind: &str) -> Value {
 }
 
 #[test]
-#[ignore = "T038"]
 fn kind_id_is_copilot() {
     assert_eq!(CopilotKind.id(), "copilot");
 }
 
 #[test]
-#[ignore = "T038"]
 fn session_start_new_is_startup() {
     let hook = one("native/sessionStart");
     assert_eq!(
@@ -63,7 +61,6 @@ fn session_start_new_is_startup() {
 }
 
 #[test]
-#[ignore = "T038"]
 fn session_start_startup_source_is_startup() {
     let mut raw = fixture("native/sessionStart");
     raw["source"] = json!("startup");
@@ -76,7 +73,6 @@ fn session_start_startup_source_is_startup() {
 }
 
 #[test]
-#[ignore = "T038"]
 fn session_start_resume_keeps_the_session_id() {
     for dir in ["native/resume-same", "native/resume-other"] {
         let start = one(&format!("{dir}/sessionStart"));
@@ -94,7 +90,6 @@ fn session_start_resume_keeps_the_session_id() {
 }
 
 #[test]
-#[ignore = "T038"]
 fn user_prompt_submitted_is_working_with_prompt_text() {
     let hook = one("native/userPromptSubmitted");
     assert_eq!(hook.event, Event::UserPromptSubmit);
@@ -106,7 +101,6 @@ fn user_prompt_submitted_is_working_with_prompt_text() {
 }
 
 #[test]
-#[ignore = "T038"]
 fn tool_events_are_working() {
     for (name, event) in [
         ("native/preToolUse", Event::PreToolUse),
@@ -120,7 +114,6 @@ fn tool_events_are_working() {
 }
 
 #[test]
-#[ignore = "T038"]
 fn permission_request_needs_permission() {
     let hook = one("native/permissionRequest");
     assert_eq!(hook.event, Event::PermissionRequest);
@@ -129,7 +122,6 @@ fn permission_request_needs_permission() {
 }
 
 #[test]
-#[ignore = "T038"]
 fn notification_permission_prompt_needs_permission() {
     let hook = one("native/notification");
     assert_eq!(
@@ -141,7 +133,6 @@ fn notification_permission_prompt_needs_permission() {
 }
 
 #[test]
-#[ignore = "T038"]
 fn notification_types_map_to_states() {
     for (kind, event, state) in [
         (
@@ -163,7 +154,6 @@ fn notification_types_map_to_states() {
 }
 
 #[test]
-#[ignore = "T038"]
 fn other_notification_types_are_ignored() {
     for kind in ["shell_completed", "shell_detached_completed", "brand_new"] {
         assert!(parse(&notification(kind)).is_empty(), "{kind}");
@@ -171,7 +161,6 @@ fn other_notification_types_are_ignored() {
 }
 
 #[test]
-#[ignore = "T038"]
 fn agent_stop_is_idle_without_left_off_text() {
     let hook = one("native/agentStop");
     assert_eq!(hook.event, Event::Stop);
@@ -180,7 +169,6 @@ fn agent_stop_is_idle_without_left_off_text() {
 }
 
 #[test]
-#[ignore = "T038"]
 fn normal_session_end_is_finished_with_raw_reason() {
     for (name, reason) in [
         ("native/resume-same/sessionEnd", "complete"),
@@ -199,7 +187,6 @@ fn normal_session_end_is_finished_with_raw_reason() {
 }
 
 #[test]
-#[ignore = "T038"]
 fn abnormal_session_end_is_interrupted_with_raw_reason() {
     for reason in ["error", "abort", "timeout"] {
         let mut raw = fixture("native/sessionEnd");
@@ -217,7 +204,6 @@ fn abnormal_session_end_is_interrupted_with_raw_reason() {
 }
 
 #[test]
-#[ignore = "T038"]
 fn session_end_without_reason_is_stored_as_unknown() {
     let bare = json!({"sessionId": SESSION_ID, "hook_event_name": "SessionEnd"});
     assert_eq!(
@@ -229,7 +215,6 @@ fn session_end_without_reason_is_stored_as_unknown() {
 }
 
 #[test]
-#[ignore = "T038"]
 fn claude_style_fixtures_parse_like_native_ones() {
     let start = one("claude-style/SessionStart");
     assert_eq!(
@@ -260,7 +245,6 @@ fn claude_style_fixtures_parse_like_native_ones() {
 }
 
 #[test]
-#[ignore = "T038"]
 fn claude_style_event_names_are_mapped() {
     let base = |name: &str| {
         json!({
@@ -314,7 +298,6 @@ fn claude_style_event_names_are_mapped() {
 }
 
 #[test]
-#[ignore = "T038"]
 fn event_for_a_session_without_a_prior_session_start_is_fine() {
     for name in [
         "native/userPromptSubmitted",
@@ -328,7 +311,6 @@ fn event_for_a_session_without_a_prior_session_start_is_fine() {
 }
 
 #[test]
-#[ignore = "T038"]
 fn unknown_extra_fields_are_ignored() {
     let mut raw = fixture("native/userPromptSubmitted");
     raw["brandNewField"] = json!({"nested": [1, 2, 3]});
@@ -336,7 +318,6 @@ fn unknown_extra_fields_are_ignored() {
 }
 
 #[test]
-#[ignore = "T038"]
 fn missing_session_id_or_event_is_a_silent_no_op() {
     for (name, id_field) in [
         ("native/agentStop", "sessionId"),
@@ -365,7 +346,6 @@ fn missing_session_id_or_event_is_a_silent_no_op() {
 }
 
 #[test]
-#[ignore = "T038"]
 fn unknown_event_name_is_ignored() {
     let mut raw = fixture("claude-style/Stop");
     raw["hook_event_name"] = json!("SomethingNew");
@@ -373,7 +353,6 @@ fn unknown_event_name_is_ignored() {
 }
 
 #[test]
-#[ignore = "T038"]
 fn wrong_types_name_the_field() {
     let cases: [(&str, &str, &str); 5] = [
         ("native/agentStop", "sessionId", "sessionId"),
