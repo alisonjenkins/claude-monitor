@@ -116,6 +116,7 @@ mod enabled {
             config.bind = bind;
         }
         config.handle_signals = true;
+        config.env = env.clone();
         let server = web::start(config, feed).map_err(|e| web_error("start the web server", e))?;
 
         let mut out = std::io::stdout().lock();

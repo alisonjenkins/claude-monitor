@@ -3,6 +3,7 @@
 //! The only async code in the crate: the runtime starts inside [`start`], so
 //! the CLI, the hook and the TUI never pay for it.
 
+use std::fmt;
 use std::io;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::path::PathBuf;
@@ -18,6 +19,7 @@ use tokio::net::TcpListener;
 use tokio::signal::unix::{signal, Signal, SignalKind};
 use tokio::sync::watch;
 
+use crate::env::Env;
 use crate::feed::{ChangeFeed, EventSource, SystemMonotonic};
 
 pub mod auth;
@@ -47,7 +49,7 @@ pub enum WebError {
     Thread(io::Error),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct WebConfig {
     pub bind: IpAddr,
     pub port: u16,
@@ -56,6 +58,20 @@ pub struct WebConfig {
     pub keepalive: Duration,
     /// Stop on SIGINT or SIGTERM; off for tests, which stop the server by hand.
     pub handle_signals: bool,
+    /// The providers every action runs against; tests swap in a private tmux.
+    pub env: Env,
+}
+
+impl fmt::Debug for WebConfig {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("WebConfig")
+            .field("bind", &self.bind)
+            .field("port", &self.port)
+            .field("store_path", &self.store_path)
+            .field("keepalive", &self.keepalive)
+            .field("handle_signals", &self.handle_signals)
+            .finish_non_exhaustive()
+    }
 }
 
 impl WebConfig {
@@ -67,15 +83,27 @@ impl WebConfig {
             store_path,
             keepalive: DEFAULT_KEEPALIVE,
             handle_signals: false,
+            env: Env::real(),
         }
     }
 }
 
 /// What every handler can reach.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct AppState {
     pub auth: Arc<auth::Auth>,
     pub events: events::Events,
+    pub env: Env,
+    /// The directory holding `state.db`, as `--state-dir` would name it.
+    pub state_dir: PathBuf,
+}
+
+impl fmt::Debug for AppState {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("AppState")
+            .field("state_dir", &self.state_dir)
+            .finish_non_exhaustive()
+    }
 }
 
 /// The routes behind the guard. Pages and actions are added here; the guard
@@ -167,10 +195,17 @@ pub fn start<S: EventSource + Send + 'static>(
     };
     let (closing, closing_rx) = watch::channel(false);
     let closing = Arc::new(closing);
+    let state_dir = config
+        .store_path
+        .parent()
+        .map(PathBuf::from)
+        .unwrap_or_default();
     let events = events::Events::new(config.store_path, config.keepalive, closing_rx);
     let state = AppState {
         auth: Arc::new(auth::Auth::new(config.token, addr.port())),
         events: events.clone(),
+        env: config.env,
+        state_dir,
     };
     let app = router(state);
     let feed_stop = Arc::new(AtomicBool::new(false));
