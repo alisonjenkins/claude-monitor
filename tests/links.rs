@@ -51,7 +51,6 @@ mod rows {
     use super::*;
 
     #[test]
-    #[ignore = "implemented by T100"]
     fn a_link_records_owner_node_kind_and_an_event_with_author_and_time() {
         let dir = TempDir::new().unwrap();
         let store = open(&dir);
@@ -79,7 +78,6 @@ mod rows {
     }
 
     #[test]
-    #[ignore = "implemented by T100"]
     fn linking_the_same_pair_again_changes_nothing_and_adds_no_event() {
         let dir = TempDir::new().unwrap();
         let store = open(&dir);
@@ -98,7 +96,6 @@ mod rows {
     }
 
     #[test]
-    #[ignore = "implemented by T100"]
     fn one_owner_can_have_several_nodes_and_one_node_several_owners() {
         let dir = TempDir::new().unwrap();
         let store = open(&dir);
@@ -118,7 +115,6 @@ mod rows {
     }
 
     #[test]
-    #[ignore = "implemented by T100"]
     fn unlink_removes_only_that_pair_and_records_an_event() {
         let dir = TempDir::new().unwrap();
         let store = open(&dir);
@@ -141,7 +137,6 @@ mod rows {
     }
 
     #[test]
-    #[ignore = "implemented by T100"]
     fn unlinking_a_pair_that_is_not_linked_is_a_quiet_no_op() {
         let dir = TempDir::new().unwrap();
         let store = open(&dir);
