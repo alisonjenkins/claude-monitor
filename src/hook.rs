@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use rusqlite::{Transaction, TransactionBehavior};
 use serde_json::{json, Value};
 
-use crate::agents::{self, ParseError, ParsedHook};
+use crate::agents::{self, AgentKind, ParseError, ParsedHook};
 use crate::env::{Clock, Env};
 use crate::model::{Author, Event, Session, StartSource};
 use crate::store::events::{EventsError, NewEvent};
@@ -116,6 +116,13 @@ enum HookError {
 /// Ingest one hook payload. Never fails and never prints to stdout: errors go
 /// to `<state-dir>/hook.log` and the update is dropped.
 pub fn ingest(ctx: &HookContext<'_>, input: &str) {
+    let registry = agents::kinds();
+    let kinds: Vec<&dyn AgentKind> = registry.iter().map(|kind| kind.as_ref()).collect();
+    ingest_with(ctx, &kinds, input);
+}
+
+/// [`ingest`] against an explicit registry instead of [`agents::kinds`].
+pub fn ingest_with(ctx: &HookContext<'_>, kinds: &[&dyn AgentKind], input: &str) {
     let raw: Value = match serde_json::from_str(input) {
         Ok(raw) => raw,
         Err(e) => return log_failure(ctx, NO_EVENT, &HookError::InvalidJson(e)),
@@ -124,13 +131,16 @@ pub fn ingest(ctx: &HookContext<'_>, input: &str) {
         .get("hook_event_name")
         .and_then(Value::as_str)
         .unwrap_or(NO_EVENT);
-    if let Err(e) = ingest_payload(ctx, &raw) {
+    if let Err(e) = ingest_payload(ctx, kinds, &raw) {
         log_failure(ctx, event_name, &e);
     }
 }
 
-fn ingest_payload(ctx: &HookContext<'_>, raw: &Value) -> Result<(), HookError> {
-    let kinds = agents::kinds();
+fn ingest_payload(
+    ctx: &HookContext<'_>,
+    kinds: &[&dyn AgentKind],
+    raw: &Value,
+) -> Result<(), HookError> {
     let kind = kinds
         .iter()
         .find(|kind| kind.id() == ctx.agent)
