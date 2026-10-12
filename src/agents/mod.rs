@@ -11,6 +11,8 @@ use thiserror::Error;
 
 use crate::model::{Event, Session};
 
+pub mod claude;
+
 /// A hook payload that is present but malformed.
 ///
 /// A payload that is merely incomplete (no session id, unknown event name) is
@@ -138,7 +140,7 @@ pub trait AgentKind: Send + Sync {
 
 /// The agent kinds that exist, in registration order.
 pub fn kinds() -> Vec<Box<dyn AgentKind>> {
-    Vec::new()
+    vec![Box::new(claude::ClaudeKind)]
 }
 
 #[cfg(test)]
@@ -153,6 +155,7 @@ mod tests {
         let unique: HashSet<&str> = ids.iter().copied().collect();
         assert_eq!(ids.len(), unique.len());
         assert!(ids.iter().all(|id| !id.is_empty()));
+        assert!(ids.contains(&"claude"));
     }
 
     struct Bare;
