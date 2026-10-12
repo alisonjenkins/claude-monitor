@@ -223,6 +223,26 @@ enum Commands {
         #[arg(required = true)]
         sessions: Vec<String>,
     },
+    /// Record that a session or project corresponds to a node in the external graph
+    Link {
+        /// Session id (or the start of one), or a project name
+        owner: String,
+        /// The node's id: a decimal number
+        node_id: String,
+        /// What the node is
+        #[arg(long, default_value = "task", value_parser = ["project", "task", "memory"])]
+        kind: String,
+        /// The node's shard (document) id: a decimal number
+        #[arg(long)]
+        doc: Option<String>,
+    },
+    /// Remove a link made by `link`
+    Unlink {
+        /// Session id (or the start of one), or a project name
+        owner: String,
+        /// The node's id
+        node_id: String,
+    },
     /// Write projects, steps, notes and sessions for another tool to import
     Export {
         #[command(subcommand)]
@@ -423,6 +443,21 @@ impl Cli {
             },
             Some(Commands::Undismiss { target }) => Command::Undismiss {
                 target: target.clone(),
+            },
+            Some(Commands::Link {
+                owner,
+                node_id,
+                kind,
+                doc,
+            }) => Command::Link {
+                owner: owner.clone(),
+                cortex: node_id.clone(),
+                kind: kind.clone(),
+                doc: doc.clone(),
+            },
+            Some(Commands::Unlink { owner, node_id }) => Command::Unlink {
+                owner: owner.clone(),
+                cortex: node_id.clone(),
             },
             Some(Commands::Export {
                 target:

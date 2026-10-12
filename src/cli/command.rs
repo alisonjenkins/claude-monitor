@@ -100,8 +100,15 @@ pub enum Command {
     },
     Link {
         owner: String,
+        /// The remote node's id.
         cortex: String,
         kind: String,
+        /// The remote node's shard id, when known.
+        doc: Option<String>,
+    },
+    Unlink {
+        owner: String,
+        cortex: String,
     },
     ExportCortexiphan {
         project: Option<String>,
@@ -319,8 +326,18 @@ const ALL: &[CommandInfo] = &[
         implemented_by: "T100",
         example: || Command::Link {
             owner: s("s1"),
-            cortex: s("node-1"),
+            cortex: s("1"),
             kind: s("task"),
+            doc: None,
+        },
+    },
+    CommandInfo {
+        name: "unlink",
+        tui_action: None,
+        implemented_by: "T100",
+        example: || Command::Unlink {
+            owner: s("s1"),
+            cortex: s("1"),
         },
     },
     CommandInfo {
@@ -382,6 +399,7 @@ impl Command {
             Self::Summarize { .. } => "summarize",
             Self::Serve { .. } => "serve",
             Self::Link { .. } => "link",
+            Self::Unlink { .. } => "unlink",
             Self::ExportCortexiphan { .. } => "export-cortexiphan",
             Self::LinksCheck => "links-check",
             Self::Migrate => "migrate",
@@ -432,8 +450,8 @@ mod tests {
                 "{name}"
             );
         }
-        // 25 contract commands plus the no-subcommand dashboard.
-        assert_eq!(names.len(), 26);
+        // 25 contract commands, `unlink`, and the no-subcommand dashboard.
+        assert_eq!(names.len(), 27);
     }
 
     #[test]

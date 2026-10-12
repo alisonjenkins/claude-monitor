@@ -9,9 +9,14 @@
     clippy::indexing_slicing
 )]
 
-use claude_monitor::model::{Author, OwnerKind};
+use clap::Parser;
+use claude_monitor::cli::{run_in, Cli, Command, Output, ProjectAction};
+use claude_monitor::error::Error;
+use claude_monitor::model::{Author, OwnerKind, Session};
 use claude_monitor::store::links::NewLink;
-use claude_monitor::store::{Store, StoreOptions};
+use claude_monitor::store::{legacy, Store, StoreOptions};
+use claude_monitor::testing::FakeEnv;
+use serde_json::Value;
 use tempfile::TempDir;
 
 const T0: &str = "2026-10-12T10:00:00Z";
@@ -146,5 +151,197 @@ mod rows {
             .unwrap());
 
         assert!(link_events(&store).is_empty());
+    }
+}
+
+struct Fixture {
+    state: TempDir,
+    fake: FakeEnv,
+    store: Store,
+}
+
+impl Fixture {
+    fn new() -> Self {
+        let state = TempDir::new().unwrap();
+        let fake = FakeEnv::new();
+        fake.vars.set("USER", "ali");
+        let store = Store::open_in_dir(state.path(), &StoreOptions::viewer()).unwrap();
+        let empty = TempDir::new().unwrap();
+        legacy::migrate(&store, empty.path(), fake.env.clock.as_ref()).unwrap();
+        let session = Session::new("s1", "claude", "agent-s1", "/work/s1", T0);
+        store.upsert_session(&session).unwrap();
+        let fixture = Self { state, fake, store };
+        fixture
+            .run(Command::Project {
+                action: ProjectAction::Add,
+                name: "p1".to_owned(),
+                value: None,
+            })
+            .unwrap();
+        fixture
+    }
+
+    fn run(&self, command: Command) -> Result<Output, Error> {
+        run_in(command, &self.fake.env, Some(self.state.path()))
+    }
+
+    fn link(&self, owner: &str, node: &str) -> Result<Output, Error> {
+        self.run(Command::Link {
+            owner: owner.to_owned(),
+            cortex: node.to_owned(),
+            kind: "task".to_owned(),
+            doc: Some("7".to_owned()),
+        })
+    }
+
+    fn unlink(&self, owner: &str, node: &str) -> Result<Output, Error> {
+        self.run(Command::Unlink {
+            owner: owner.to_owned(),
+            cortex: node.to_owned(),
+        })
+    }
+}
+
+fn json(output: &Output) -> Value {
+    serde_json::from_str(&output.render(true)).unwrap()
+}
+
+mod commands {
+    use super::*;
+
+    #[test]
+    fn link_and_unlink_parse_into_commands() {
+        let cli = Cli::try_parse_from(["claude-monitor", "link", "s1", "42"]).unwrap();
+        assert_eq!(
+            cli.command(),
+            Command::Link {
+                owner: "s1".to_owned(),
+                cortex: "42".to_owned(),
+                kind: "task".to_owned(),
+                doc: None,
+            }
+        );
+        let cli = Cli::try_parse_from([
+            "claude-monitor",
+            "link",
+            "p1",
+            "42",
+            "--kind",
+            "memory",
+            "--doc",
+            "7",
+        ])
+        .unwrap();
+        assert_eq!(
+            cli.command(),
+            Command::Link {
+                owner: "p1".to_owned(),
+                cortex: "42".to_owned(),
+                kind: "memory".to_owned(),
+                doc: Some("7".to_owned()),
+            }
+        );
+        let cli = Cli::try_parse_from(["claude-monitor", "unlink", "s1", "42"]).unwrap();
+        assert_eq!(
+            cli.command(),
+            Command::Unlink {
+                owner: "s1".to_owned(),
+                cortex: "42".to_owned(),
+            }
+        );
+        assert!(
+            Cli::try_parse_from(["claude-monitor", "link", "s1", "42", "--kind", "x"]).is_err()
+        );
+    }
+
+    #[test]
+    #[ignore = "implemented by T100"]
+    fn linking_a_session_stores_the_row_with_the_user_as_author() {
+        let fix = Fixture::new();
+
+        let output = fix.link("s1", "42").unwrap();
+
+        let value = json(&output);
+        assert_eq!(value["ok"], true);
+        assert_eq!(value["created"], true);
+        assert_eq!(value["link"]["owner"]["kind"], "session");
+        assert_eq!(value["link"]["owner"]["id"], "s1");
+        assert_eq!(value["link"]["node_id"], "42");
+        let links = fix.store.links_for(OwnerKind::Session, "s1").unwrap();
+        assert_eq!(links.len(), 1);
+        assert_eq!(links[0].cortex_doc_id.as_deref(), Some("7"));
+        assert_eq!(
+            link_events(&fix.store),
+            vec![(
+                "link.added".to_owned(),
+                "2026-10-12T00:00:00Z".to_owned(),
+                user()
+            )]
+        );
+    }
+
+    #[test]
+    #[ignore = "implemented by T100"]
+    fn linking_a_project_by_name_and_linking_twice_is_idempotent() {
+        let fix = Fixture::new();
+        fix.link("p1", "42").unwrap();
+
+        let again = fix.link("p1", "42").unwrap();
+
+        assert_eq!(json(&again)["created"], false);
+        let project = fix.store.project_by_name("p1").unwrap().unwrap();
+        assert_eq!(
+            fix.store
+                .links_for(OwnerKind::Project, &project.id)
+                .unwrap()
+                .len(),
+            1
+        );
+        assert_eq!(link_events(&fix.store).len(), 1);
+    }
+
+    #[test]
+    #[ignore = "implemented by T100"]
+    fn an_unknown_owner_is_refused_and_nothing_is_written() {
+        let fix = Fixture::new();
+
+        let err = fix.link("nobody", "42").unwrap_err();
+
+        assert!(matches!(err, Error::Refused { .. }), "{err:?}");
+        assert!(fix.store.all_links().unwrap().is_empty());
+    }
+
+    #[test]
+    #[ignore = "implemented by T100"]
+    fn a_node_id_that_is_not_a_number_is_a_usage_error() {
+        let fix = Fixture::new();
+
+        let err = fix.link("s1", "not-a-number").unwrap_err();
+
+        assert!(matches!(err, Error::Usage(_)), "{err:?}");
+        let err = fix
+            .run(Command::Link {
+                owner: "s1".to_owned(),
+                cortex: "42".to_owned(),
+                kind: "task".to_owned(),
+                doc: Some("x".to_owned()),
+            })
+            .unwrap_err();
+        assert!(matches!(err, Error::Usage(_)), "{err:?}");
+        assert!(fix.store.all_links().unwrap().is_empty());
+    }
+
+    #[test]
+    #[ignore = "implemented by T100"]
+    fn unlink_removes_the_row_and_a_second_unlink_reports_no_change() {
+        let fix = Fixture::new();
+        fix.link("s1", "42").unwrap();
+
+        let first = fix.unlink("s1", "42").unwrap();
+        let second = fix.unlink("s1", "42").unwrap();
+
+        assert_eq!(json(&first)["changed"], true);
+        assert_eq!(json(&second)["changed"], false);
+        assert!(fix.store.all_links().unwrap().is_empty());
     }
 }

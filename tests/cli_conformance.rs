@@ -388,7 +388,7 @@ fn every_command_has_generated_tests_with_the_right_task() {
             "hook" | "dashboard" | "migrate" | "list" | "show" | "reconcile" | "watch"
             | "boot-check" | "restore" | "respawn" | "summarize" | "progress-bind" | "project"
             | "group" | "note" | "park" | "unpark" | "dismiss" | "undismiss" | "done"
-            | "undone" | "export-cortexiphan" => {}
+            | "undone" | "export-cortexiphan" | "unlink" => {}
             name => {
                 let reason = GENERATED
                     .iter()
@@ -403,7 +403,7 @@ fn every_command_has_generated_tests_with_the_right_task() {
             }
         }
     }
-    assert_eq!(GENERATED.len() + 22, Command::all().len());
+    assert_eq!(GENERATED.len() + 23, Command::all().len());
 }
 
 #[test]
