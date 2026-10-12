@@ -141,8 +141,9 @@ pub fn plan_respawn_with(
     if let Some(dir) = &options.in_dir {
         target.cwd = dir.to_string_lossy().into_owned();
     }
+    let mut setup = Vec::new();
     if !env.fs.exists(Path::new(&target.cwd)) {
-        return Err(missing_directory(session, &target, env, options));
+        setup.push(recreate_or_refuse(session, &target, env, options)?);
     }
     if options.in_dir.is_some() {
         notices.push(format!(
@@ -180,7 +181,7 @@ pub fn plan_respawn_with(
         session_id: session.id.clone(),
         mode,
         launch,
-        setup: Vec::new(),
+        setup,
         notices,
     })
 }
@@ -227,28 +228,65 @@ fn missing_transcript(session: &Session, precondition: &Precondition) -> Refusal
     refusal
 }
 
-/// The refusal for a target directory that does not exist. When the missing
-/// path is the recorded worktree and its branch is also gone, that is the
-/// more useful thing to report.
-fn missing_directory(session: &Session, target: &Session, env: &Env, options: &Options) -> Refusal {
-    let recorded_worktree = options.in_dir.is_none();
-    if recorded_worktree {
-        if let (Some(repo), Some(branch)) = (&session.repo_root, &session.branch) {
-            if !branch_exists(env, Path::new(repo), branch) {
-                return refuse(
-                    RefusalCode::BranchGone,
-                    format!(
-                        "directory {} does not exist and branch `{branch}` no longer exists in {repo}",
-                        target.cwd
-                    ),
-                );
-            }
-        }
+/// The target directory does not exist. Returns the `git worktree add`
+/// command when the recorded worktree's branch still exists and the user
+/// asked for it; otherwise the refusal, with the alternatives that apply.
+/// A missing `--in` directory is never recreated.
+fn recreate_or_refuse(
+    session: &Session,
+    target: &Session,
+    env: &Env,
+    options: &Options,
+) -> Result<Launch, Refusal> {
+    let missing = format!("directory {} does not exist", target.cwd);
+    let (Some(repo), true) = (&session.repo_root, options.in_dir.is_none()) else {
+        return Err(refuse(RefusalCode::MissingDirectory, missing));
+    };
+    let fresh_in_repo = Alternative {
+        description: format!(
+            "start a new session in the main checkout {repo}; the previous conversation is not restored"
+        ),
+        command: format!("claude-monitor respawn {} --fresh --in {repo}", session.id),
+    };
+    let Some(branch) = &session.branch else {
+        return Err(Refusal {
+            code: RefusalCode::MissingDirectory,
+            message: missing,
+            alternatives: vec![fresh_in_repo],
+        });
+    };
+    if !branch_exists(env, Path::new(repo), branch) {
+        return Err(Refusal {
+            code: RefusalCode::BranchGone,
+            message: format!("{missing} and branch `{branch}` no longer exists in {repo}"),
+            alternatives: vec![fresh_in_repo],
+        });
     }
-    refuse(
-        RefusalCode::MissingDirectory,
-        format!("directory {} does not exist", target.cwd),
-    )
+    if options.recreate_worktree {
+        return Ok(Launch {
+            program: "git".to_owned(),
+            args: ["worktree", "add", &target.cwd, branch]
+                .map(str::to_owned)
+                .to_vec(),
+            cwd: PathBuf::from(repo),
+            env: Vec::new(),
+        });
+    }
+    Err(Refusal {
+        code: RefusalCode::MissingDirectory,
+        message: format!("{missing}, but branch `{branch}` still exists in {repo}"),
+        alternatives: vec![
+            Alternative {
+                description: format!("recreate the worktree from branch `{branch}`"),
+                command: format!("git -C {repo} worktree add {} {branch}", target.cwd),
+            },
+            Alternative {
+                description: "recreate the worktree and respawn".to_owned(),
+                command: format!("claude-monitor respawn {} --recreate-worktree", session.id),
+            },
+            fresh_in_repo,
+        ],
+    })
 }
 
 /// Whether `branch` is a local branch of the repository at `repo`, read from

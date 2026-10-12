@@ -50,7 +50,6 @@ fn recreate() -> Options {
 }
 
 #[test]
-#[ignore = "T069"]
 fn missing_worktree_with_its_branch_suggests_git_worktree_add() {
     let fake = worktree_missing();
     with_branch(&fake);
@@ -73,7 +72,6 @@ fn missing_worktree_with_its_branch_suggests_git_worktree_add() {
 }
 
 #[test]
-#[ignore = "T069"]
 fn branch_packed_into_packed_refs_still_counts_as_existing() {
     let fake = worktree_missing();
     fake.fs.add_file(
@@ -89,7 +87,6 @@ fn branch_packed_into_packed_refs_still_counts_as_existing() {
 }
 
 #[test]
-#[ignore = "T069"]
 fn recreate_worktree_adds_the_git_command_to_the_plan() {
     let fake = worktree_missing();
     with_branch(&fake);
@@ -129,7 +126,6 @@ fn recreate_worktree_cannot_help_when_the_branch_is_gone() {
 }
 
 #[test]
-#[ignore = "T069"]
 fn gone_branch_suggests_a_fresh_session_in_the_repository_root() {
     let fake = worktree_missing();
     let r = plan(&fake, &Options::default()).unwrap_err();
@@ -155,7 +151,6 @@ fn gone_branch_suggests_a_fresh_session_in_the_repository_root() {
 }
 
 #[test]
-#[ignore = "T069"]
 fn unrecorded_branch_with_a_known_repository_still_suggests_fresh_in_it() {
     let fake = worktree_missing();
     let mut s = session();
@@ -214,7 +209,6 @@ fn fresh_in_a_missing_directory_is_refused() {
 }
 
 #[test]
-#[ignore = "T069"]
 fn fresh_with_recreate_worktree_recreates_then_starts_fresh() {
     let fake = worktree_missing();
     with_branch(&fake);
