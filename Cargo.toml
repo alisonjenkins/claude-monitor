@@ -32,6 +32,11 @@ mac-notification-sys = "0.6"
 
 [dev-dependencies]
 tempfile = "3"
+rusqlite = { version = "0.37", features = ["bundled"] }
+
+[[test]]
+name = "wal_notify"
+path = "tests/spikes/wal_notify.rs"
 
 [lints.clippy]
 unwrap_used = "deny"
