@@ -5,7 +5,7 @@ use rusqlite::{Connection, TransactionBehavior};
 use super::schema;
 use super::StoreError;
 
-pub const SCHEMA_VERSION: u32 = 1;
+pub const SCHEMA_VERSION: u32 = 2;
 
 struct Migration {
     version: u32,
@@ -13,10 +13,16 @@ struct Migration {
 }
 
 // Append only: a released migration is never edited, and versions stay contiguous from 1.
-const MIGRATIONS: &[Migration] = &[Migration {
-    version: 1,
-    sql: schema::V1,
-}];
+const MIGRATIONS: &[Migration] = &[
+    Migration {
+        version: 1,
+        sql: schema::V1,
+    },
+    Migration {
+        version: 2,
+        sql: schema::V2,
+    },
+];
 
 pub(super) fn user_version(conn: &Connection) -> rusqlite::Result<u32> {
     conn.query_row("PRAGMA user_version", [], |row| row.get(0))

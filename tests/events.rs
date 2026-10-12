@@ -61,7 +61,6 @@ fn append_n(store: &Store, count: usize) -> Vec<i64> {
 }
 
 #[test]
-#[ignore = "T015"]
 fn append_returns_a_monotonically_increasing_seq() {
     let dir = TempDir::new().unwrap();
     let store = open(&dir);
@@ -74,7 +73,6 @@ fn append_returns_a_monotonically_increasing_seq() {
 }
 
 #[test]
-#[ignore = "T015"]
 fn last_seq_of_an_empty_table_is_zero() {
     let dir = TempDir::new().unwrap();
 
@@ -82,7 +80,6 @@ fn last_seq_of_an_empty_table_is_zero() {
 }
 
 #[test]
-#[ignore = "T015"]
 fn events_since_returns_only_newer_rows_in_order() {
     let dir = TempDir::new().unwrap();
     let store = open(&dir);
@@ -96,7 +93,6 @@ fn events_since_returns_only_newer_rows_in_order() {
 }
 
 #[test]
-#[ignore = "T015"]
 fn events_since_honours_the_limit_and_resumes_from_the_last_row() {
     let dir = TempDir::new().unwrap();
     let store = open(&dir);
@@ -117,7 +113,6 @@ fn events_since_honours_the_limit_and_resumes_from_the_last_row() {
 }
 
 #[test]
-#[ignore = "T015"]
 fn events_since_a_cursor_beyond_the_end_is_empty() {
     let dir = TempDir::new().unwrap();
     let store = open(&dir);
@@ -128,7 +123,6 @@ fn events_since_a_cursor_beyond_the_end_is_empty() {
 }
 
 #[test]
-#[ignore = "T015"]
 fn a_row_carries_every_column() {
     let dir = TempDir::new().unwrap();
     let store = open(&dir);
@@ -153,7 +147,6 @@ fn a_row_carries_every_column() {
 }
 
 #[test]
-#[ignore = "T015"]
 fn every_author_kind_round_trips() {
     let dir = TempDir::new().unwrap();
     let store = open(&dir);
@@ -188,7 +181,6 @@ fn every_author_kind_round_trips() {
 }
 
 #[test]
-#[ignore = "T015"]
 fn author_columns_hold_kind_and_name() {
     let dir = TempDir::new().unwrap();
     let store = open(&dir);
@@ -216,7 +208,6 @@ fn author_columns_hold_kind_and_name() {
 }
 
 #[test]
-#[ignore = "T015"]
 fn update_on_events_is_rejected() {
     let dir = TempDir::new().unwrap();
     let store = open(&dir);
@@ -236,7 +227,6 @@ fn update_on_events_is_rejected() {
 }
 
 #[test]
-#[ignore = "T015"]
 fn delete_on_events_is_rejected() {
     let dir = TempDir::new().unwrap();
     let store = open(&dir);
@@ -253,7 +243,6 @@ fn delete_on_events_is_rejected() {
 }
 
 #[test]
-#[ignore = "T015"]
 fn unchanged_payload_records_nothing() {
     let dir = TempDir::new().unwrap();
     let store = open(&dir);
@@ -279,7 +268,6 @@ fn unchanged_payload_records_nothing() {
 }
 
 #[test]
-#[ignore = "T015"]
 fn changed_payload_records_one_row() {
     let dir = TempDir::new().unwrap();
     let store = open(&dir);
@@ -308,7 +296,6 @@ fn changed_payload_records_one_row() {
 }
 
 #[test]
-#[ignore = "T015"]
 fn seq_survives_close_and_reopen() {
     let dir = TempDir::new().unwrap();
     let store = open(&dir);
@@ -324,7 +311,6 @@ fn seq_survives_close_and_reopen() {
 }
 
 #[test]
-#[ignore = "T015"]
 fn concurrent_writers_never_lose_or_duplicate_a_seq() {
     const THREADS: usize = 4;
     const PER_THREAD: usize = 50;

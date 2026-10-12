@@ -5,7 +5,9 @@ use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
-use claude_monitor::store::{resolve_state_dir, StateDirEnv, Store, StoreError, StoreOptions};
+use claude_monitor::store::{
+    resolve_state_dir, StateDirEnv, Store, StoreError, StoreOptions, SCHEMA_VERSION,
+};
 use rusqlite::Connection;
 use tempfile::TempDir;
 
@@ -80,7 +82,7 @@ fn creates_every_table_and_index_from_empty() {
     let dir = TempDir::new().unwrap();
     let store = open(&db_path(&dir));
 
-    assert_eq!(store.schema_version().unwrap(), 1);
+    assert_eq!(store.schema_version().unwrap(), SCHEMA_VERSION);
     let mut want_tables: Vec<String> = TABLES.iter().map(|t| (*t).to_owned()).collect();
     want_tables.sort();
     let mut tables = master_names(store.connection(), "table");
@@ -100,7 +102,7 @@ fn migrates_a_zero_version_database_file() {
 
     let store = open(&path);
 
-    assert_eq!(user_version(store.connection()), 1);
+    assert_eq!(user_version(store.connection()), SCHEMA_VERSION);
     assert_eq!(
         master_names(store.connection(), "table").len(),
         TABLES.len()
@@ -121,7 +123,7 @@ fn reopening_is_idempotent_and_keeps_rows() {
 
     assert_eq!(schema_snapshot(second.connection()), before);
     assert_eq!(schema_snapshot(third.connection()), before);
-    assert_eq!(second.schema_version().unwrap(), 1);
+    assert_eq!(second.schema_version().unwrap(), SCHEMA_VERSION);
     let rows: u32 = third
         .connection()
         .query_row("SELECT count(*) FROM sessions", [], |row| row.get(0))
@@ -130,18 +132,49 @@ fn reopening_is_idempotent_and_keeps_rows() {
 }
 
 #[test]
-fn recorded_v1_database_opens_without_change() {
+fn recorded_v1_database_migrates_to_v2_without_data_loss() {
     let dir = TempDir::new().unwrap();
     let path = db_path(&dir);
     let raw = Connection::open(&path).unwrap();
     raw.execute_batch(V1_FIXTURE).unwrap();
+    raw.execute(
+        "INSERT INTO events (at, entity_kind, entity_id, kind, author_kind, author_name) \
+         VALUES ('2026-10-12T14:03:22Z', 'session', 's-1', 'state_changed', 'system', 'hook')",
+        [],
+    )
+    .unwrap();
     let before = schema_snapshot(&raw);
+    assert_eq!(user_version(&raw), 1);
     drop(raw);
 
     let store = open(&path);
 
-    assert_eq!(schema_snapshot(store.connection()), before);
-    assert_eq!(user_version(store.connection()), 1);
+    let mut expected = before;
+    expected.extend(
+        ["events_no_delete", "events_no_update"]
+            .iter()
+            .map(|name| (String::from(*name), String::new())),
+    );
+    let after: Vec<String> = schema_snapshot(store.connection())
+        .into_iter()
+        .map(|(name, _)| name)
+        .collect();
+    let mut want: Vec<String> = expected.into_iter().map(|(name, _)| name).collect();
+    want.sort();
+    assert_eq!(after, want);
+    assert_eq!(user_version(store.connection()), 2);
+    let events = store.events_since(0, 10).unwrap();
+    assert_eq!(
+        events
+            .iter()
+            .map(|e| e.entity_id.as_str())
+            .collect::<Vec<_>>(),
+        ["s-1"]
+    );
+    assert!(store
+        .connection()
+        .execute("DELETE FROM events", [])
+        .is_err());
     let (name, state): (String, String) = store
         .connection()
         .query_row(
@@ -314,7 +347,7 @@ fn newer_schema_version_is_refused_and_left_untouched() {
         } => {
             assert_eq!(p, &path);
             assert_eq!(*found, 99);
-            assert_eq!(*supported, 1);
+            assert_eq!(*supported, SCHEMA_VERSION);
         }
         other => panic!("expected NewerSchema, got {other:?}"),
     }

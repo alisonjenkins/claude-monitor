@@ -1,3 +1,15 @@
+pub(super) const V2: &str = "
+CREATE TRIGGER events_no_update BEFORE UPDATE ON events
+BEGIN
+    SELECT RAISE(ABORT, 'events is append-only');
+END;
+
+CREATE TRIGGER events_no_delete BEFORE DELETE ON events
+BEGIN
+    SELECT RAISE(ABORT, 'events is append-only');
+END;
+";
+
 pub(super) const V1: &str = "
 CREATE TABLE progress_binding (
     id TEXT PRIMARY KEY,
