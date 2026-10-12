@@ -65,9 +65,55 @@ let
       }
     ]);
   };
+
+  # tmux hooks, verified on tmux 3.6a with a private server (research D12/R9):
+  # - pane-exited fires when a pane's process exits and the pane closes
+  #   (SIGTERM or SIGKILL), and exposes #{hook_pane}. It does not fire for
+  #   kill-pane or kill-window.
+  # - pane-died fires instead when remain-on-exit keeps the dead pane, with
+  #   #{hook_pane} as well.
+  # - window-unlinked fires when a window goes (including kill-pane/kill-window
+  #   of its last pane) but exposes only #{hook_window}, never the pane id, so
+  #   it runs the full reconcile instead of `--pane`.
+  # - None fire when the server itself dies; the login boot-check covers that.
+  # Hooks run with the server's environment, so the binary is a store path
+  # rather than a PATH lookup. `#{hook_pane}` is expanded by tmux before the
+  # shell sees it, so no extra quoting is needed for a `%N` id.
+  tmuxHooksSnippet =
+    let
+      bin = "${cfg.package}/bin/claude-monitor";
+    in
+    ''
+      set-hook -g pane-exited 'run-shell -b "${bin} reconcile --pane #{hook_pane}"'
+      set-hook -g pane-died 'run-shell -b "${bin} reconcile --pane #{hook_pane}"'
+      set-hook -g window-unlinked 'run-shell -b "${bin} reconcile"'
+    '';
 in
 {
   options.programs.claude-monitor = {
+    tmuxHooks = {
+      enable = lib.mkEnableOption "tmux hooks that run claude-monitor when a pane exits" // {
+        description = ''
+          Run `claude-monitor reconcile --pane` when a tmux pane exits, so a
+          session in a closed pane is marked interrupted even with no viewer
+          open.
+
+          This appends the hooks to `programs.tmux.extraConfig`, so it works
+          only when tmux is managed by Home Manager. If you manage `tmux.conf`
+          another way, leave this off and include
+          `programs.claude-monitor.tmuxHooks.snippet` yourself.
+        '';
+      };
+
+      snippet = lib.mkOption {
+        type = lib.types.str;
+        readOnly = true;
+        default = tmuxHooksSnippet;
+        defaultText = lib.literalMD "the `set-hook` lines, with the store path of `package`";
+        description = "The tmux `set-hook` lines, always computed, for tmux configs not managed by Home Manager.";
+      };
+    };
+
     copilot = {
       enable = lib.mkEnableOption "registering claude-monitor as a GitHub Copilot CLI hook handler" // {
         description = ''
@@ -115,6 +161,8 @@ in
     home.file = lib.mkIf cfg.copilot.enable {
       "${cfg.copilot.hooksDir}/claude-monitor.json".text = builtins.toJSON copilotHooksFile;
     };
+
+    programs.tmux.extraConfig = lib.mkIf cfg.tmuxHooks.enable cfg.tmuxHooks.snippet;
 
     # Merged into the upstream home-manager `programs.claude-code.settings`
     # option (JSON-value type: attrsOf recurses, listOf concatenates), so this

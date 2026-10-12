@@ -161,6 +161,15 @@
               hmPkgs = import home-manager.inputs.nixpkgs { inherit system; };
               mkHmConfig =
                 copilot:
+                mkHmConfigWith {
+                  inherit copilot;
+                  tmuxHooks = false;
+                };
+              mkHmConfigWith =
+                {
+                  copilot,
+                  tmuxHooks,
+                }:
                 home-manager.lib.homeManagerConfiguration {
                   pkgs = hmPkgs;
                   modules = [
@@ -171,6 +180,8 @@
                       home.stateVersion = "24.05";
                       programs.claude-monitor.enable = true;
                       programs.claude-monitor.copilot.enable = copilot;
+                      programs.claude-monitor.tmuxHooks.enable = tmuxHooks;
+                      programs.tmux.enable = true;
                     }
                   ];
                 };
@@ -219,6 +230,45 @@
                 ++ pkgs.lib.optional (
                   !builtins.all copilotHandlerOk (builtins.attrValues copilotParsed.hooks)
                 ) "a copilot handler is not a store-path `hook --agent copilot` command with timeoutSec 10";
+              # tmux hooks: absent by default; when enabled the generated
+              # tmux config must carry the three hooks, each running the
+              # store-path binary, and the pane-scoped ones pass the pane id.
+              tmuxConf = cfg: builtins.unsafeDiscardStringContext cfg.config.xdg.configFile."tmux/tmux.conf".text;
+              tmuxOn = tmuxConf (mkHmConfigWith {
+                copilot = false;
+                tmuxHooks = true;
+              });
+              tmuxOff = tmuxConf hmConfig;
+              hookLine =
+                conf: hook:
+                builtins.filter (l: pkgs.lib.hasPrefix "set-hook -g ${hook} " l) (pkgs.lib.splitString "\n" conf);
+              hookOk =
+                hook: needle:
+                let
+                  ls = hookLine tmuxOn hook;
+                in
+                builtins.length ls == 1
+                && pkgs.lib.hasInfix "/nix/store/" (builtins.head ls)
+                && pkgs.lib.hasInfix needle (builtins.head ls);
+              tmuxProblems =
+                builtins.concatMap (
+                  h:
+                  pkgs.lib.optional (hookLine tmuxOff h != [ ]) "tmux hook ${h} present with tmuxHooks.enable = false"
+                ) tmuxHookNames
+                ++ pkgs.lib.optional (
+                  !hookOk "pane-exited" "reconcile --pane #{hook_pane}"
+                ) "tmux pane-exited hook missing or not a store-path `reconcile --pane`"
+                ++ pkgs.lib.optional (
+                  !hookOk "pane-died" "reconcile --pane #{hook_pane}"
+                ) "tmux pane-died hook missing or not a store-path `reconcile --pane`"
+                ++ pkgs.lib.optional (
+                  !hookOk "window-unlinked" "claude-monitor reconcile\""
+                ) "tmux window-unlinked hook missing or not a store-path `reconcile`";
+              tmuxHookNames = [
+                "pane-exited"
+                "pane-died"
+                "window-unlinked"
+              ];
               expectedEvents = [
                 "SessionStart"
                 "UserPromptSubmit"
@@ -235,6 +285,8 @@
               throw "claude-monitor hm-module: missing hook events: ${toString missing}"
             else if copilotProblems != [ ] then
               throw "claude-monitor hm-module: ${builtins.concatStringsSep "; " copilotProblems}"
+            else if tmuxProblems != [ ] then
+              throw "claude-monitor hm-module: ${builtins.concatStringsSep "; " tmuxProblems}"
             else
               hmPkgs.runCommand "claude-monitor-hm-module-check" { } "touch $out";
         }
