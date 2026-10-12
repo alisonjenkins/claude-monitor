@@ -12,6 +12,7 @@ mod command;
 mod list;
 pub mod migrate;
 mod output;
+mod reconcile;
 mod show;
 
 pub use command::{Command, CommandInfo, ProjectAction};
@@ -77,6 +78,15 @@ enum Commands {
         #[arg(long, value_name = "KIND")]
         agent: Option<String>,
     },
+    /// Mark sessions whose process, tmux pane or boot is gone as interrupted
+    Reconcile {
+        /// Only the sessions in this tmux pane (for example %3)
+        #[arg(long, value_name = "%N", conflicts_with = "session")]
+        pane: Option<String>,
+        /// Only this session
+        #[arg(long, value_name = "ID")]
+        session: Option<String>,
+    },
 }
 
 impl Cli {
@@ -116,6 +126,10 @@ impl Cli {
             Some(Commands::Show { session }) => Command::Show {
                 session: session.clone(),
             },
+            Some(Commands::Reconcile { pane, session }) => Command::Reconcile {
+                pane: pane.clone(),
+                session: session.clone(),
+            },
         }
     }
 }
@@ -126,7 +140,7 @@ pub fn run(cmd: Command, env: &Env) -> Result<Output, Error> {
 }
 
 /// Run one command; `state_dir` is the `--state-dir` override. `Hook`,
-/// `Dashboard`, `Migrate`, `List` and `Show` are implemented; every other
+/// `Dashboard`, `Migrate`, `List`, `Show` and `Reconcile` are implemented; every other
 /// command reports `NotImplemented` until its task lands.
 pub fn run_in(cmd: Command, env: &Env, state_dir: Option<&Path>) -> Result<Output, Error> {
     match cmd {
@@ -154,6 +168,7 @@ pub fn run_in(cmd: Command, env: &Env, state_dir: Option<&Path>) -> Result<Outpu
             },
         ),
         Command::Show { session } => show::run(env, state_dir, &session),
+        Command::Reconcile { pane, session } => reconcile::run(env, state_dir, pane, session),
         Command::Hook { agent } => {
             hook::run(agent.as_deref(), state_dir, env);
             Ok(Output::empty())
@@ -265,6 +280,43 @@ mod tests {
                 session: "abc".to_owned()
             }
         );
+    }
+
+    #[test]
+    fn reconcile_takes_a_pane_or_a_session_but_not_both() {
+        let cli = Cli::try_parse_from(["claude-monitor", "reconcile"]).unwrap();
+        assert_eq!(
+            cli.command(),
+            Command::Reconcile {
+                pane: None,
+                session: None
+            }
+        );
+        let cli = Cli::try_parse_from(["claude-monitor", "reconcile", "--pane", "%3"]).unwrap();
+        assert_eq!(
+            cli.command(),
+            Command::Reconcile {
+                pane: Some("%3".to_owned()),
+                session: None
+            }
+        );
+        let cli = Cli::try_parse_from(["claude-monitor", "reconcile", "--session", "abc"]).unwrap();
+        assert_eq!(
+            cli.command(),
+            Command::Reconcile {
+                pane: None,
+                session: Some("abc".to_owned())
+            }
+        );
+        assert!(Cli::try_parse_from([
+            "claude-monitor",
+            "reconcile",
+            "--pane",
+            "%3",
+            "--session",
+            "abc"
+        ])
+        .is_err());
     }
 
     #[test]

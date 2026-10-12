@@ -30,6 +30,13 @@ pub enum SessionsError {
     },
 }
 
+/// One row of [`Store::list_sessions_lenient`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SessionRow {
+    Readable(Box<Session>),
+    Corrupt { id: String, error: String },
+}
+
 pub fn parse_state(value: &str) -> Option<State> {
     Some(match value {
         "working" => State::Working,
@@ -193,6 +200,36 @@ impl Store {
             .map_err(read)?;
         let rows = stmt
             .query_map([], session_from_row)
+            .map_err(read)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(read)?;
+        Ok(rows)
+    }
+
+    /// Every session, most recently active first, with an unreadable row
+    /// reported in place instead of failing the whole listing (FR-021).
+    pub fn list_sessions_lenient(&self) -> Result<Vec<SessionRow>, SessionsError> {
+        let read = |source| SessionsError::Read {
+            operation: "list sessions",
+            source,
+        };
+        let mut stmt = self
+            .connection()
+            .prepare_cached(&format!(
+                "SELECT {COLUMNS} FROM sessions ORDER BY last_activity_at DESC, rowid DESC"
+            ))
+            .map_err(read)?;
+        let rows = stmt
+            .query_map([], |row| {
+                let id: String = row.get(0)?;
+                Ok(match session_from_row(row) {
+                    Ok(session) => SessionRow::Readable(Box::new(session)),
+                    Err(error) => SessionRow::Corrupt {
+                        id,
+                        error: error.to_string(),
+                    },
+                })
+            })
             .map_err(read)?
             .collect::<Result<Vec<_>, _>>()
             .map_err(read)?;

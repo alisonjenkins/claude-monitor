@@ -36,6 +36,8 @@ impl Harness {
         let dir = TempDir::new().unwrap();
         let fake = FakeEnv::new();
         fake.clock.set(T0);
+        fake.fs.add_dir("/tmp/SCRATCH/r2/work");
+        fake.fs.add_dir("/work/passive");
         Self {
             state_dir: dir.path().join("state"),
             _dir: dir,
@@ -148,7 +150,6 @@ fn failing_probes_are_logged_and_never_fail_the_hook() {
 }
 
 #[test]
-#[ignore = "T052"]
 fn killed_agent_without_session_end_becomes_interrupted() {
     let h = Harness::new();
     h.fake.processes.spawn(AGENT_PID, PID_START);
@@ -197,7 +198,6 @@ fn killed_agent_without_session_end_becomes_interrupted() {
 }
 
 #[test]
-#[ignore = "T052"]
 fn second_reconcile_changes_and_appends_nothing() {
     let h = Harness::new();
     h.fake.processes.spawn(AGENT_PID, PID_START);
@@ -223,7 +223,6 @@ fn second_reconcile_changes_and_appends_nothing() {
 }
 
 #[test]
-#[ignore = "T052"]
 fn recycled_pid_counts_as_gone() {
     let h = Harness::new();
     h.fake.processes.spawn(AGENT_PID, PID_START);
@@ -241,7 +240,6 @@ fn recycled_pid_counts_as_gone() {
 }
 
 #[test]
-#[ignore = "T052"]
 fn changed_boot_id_interrupts_every_unfinished_session_in_one_pass() {
     let h = Harness::new();
     for (id, pane, pid, event) in [
@@ -287,7 +285,6 @@ fn changed_boot_id_interrupts_every_unfinished_session_in_one_pass() {
 }
 
 #[test]
-#[ignore = "T052"]
 fn reboot_reconcile_is_idempotent() {
     let h = Harness::new();
     h.fake.processes.spawn(AGENT_PID, PID_START);
@@ -312,7 +309,6 @@ fn reboot_reconcile_is_idempotent() {
 }
 
 #[test]
-#[ignore = "T052"]
 fn resumed_session_after_reboot_is_not_interrupted_again() {
     let h = Harness::new();
     h.fake.processes.spawn(AGENT_PID, PID_START);
@@ -420,4 +416,88 @@ fn clear_ends_one_session_and_links_the_next_to_it() {
         section_ids(&overview, SectionName::Active),
         std::slice::from_ref(&new.id)
     );
+}
+
+#[test]
+fn worktree_flag_follows_the_directory_and_appends_one_event_per_change() {
+    let h = Harness::new();
+    h.store()
+        .upsert_session(&Session::new("w", "claude", "agent-w", "/gone/tree", T0))
+        .unwrap();
+
+    let report = h.reconcile(Scope::All, T1);
+    assert_eq!(report.interrupted, 0);
+    assert!(!h.store().get_session("w").unwrap().unwrap().worktree_exists);
+    let kinds = |h: &Harness| {
+        h.store()
+            .events_since(0, 1000)
+            .unwrap()
+            .into_iter()
+            .map(|e| e.kind)
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(kinds(&h), ["session.worktree_changed"]);
+
+    h.reconcile(Scope::All, T2);
+    assert_eq!(kinds(&h).len(), 1);
+
+    h.fake.fs.add_dir("/gone/tree");
+    h.reconcile(Scope::All, T2);
+    assert!(h.store().get_session("w").unwrap().unwrap().worktree_exists);
+    assert_eq!(kinds(&h).len(), 2);
+}
+
+#[test]
+fn vanished_pane_interrupts_a_session_with_no_pid_only_when_tmux_answers() {
+    let h = Harness::new();
+    h.feed(Some("%9"), None, &payload("SessionStart-startup", "s1"));
+
+    h.fake.tmux.set_available(false);
+    assert_eq!(h.reconcile(Scope::All, T1).interrupted, 0);
+    assert_eq!(h.session("s1").state, State::Idle);
+
+    h.fake.tmux.set_available(true);
+    let report = h.reconcile(Scope::All, T2);
+    assert_eq!(report.interrupted, 1);
+    assert_eq!(h.session("s1").state, State::Interrupted);
+    let events = h.store().events_since(0, 1000).unwrap();
+    assert_eq!(events.last().unwrap().payload["reason"], "pane_gone");
+}
+
+#[test]
+fn a_live_pane_keeps_a_session_with_no_pid() {
+    let h = Harness::new();
+    h.feed(Some("%9"), None, &payload("SessionStart-startup", "s1"));
+    h.fake.tmux.add_pane(
+        "%9",
+        claude_monitor::tmux::PaneLocation {
+            session_name: "s".into(),
+            window_index: "0".into(),
+            pane_index: "0".into(),
+        },
+    );
+
+    assert_eq!(h.reconcile(Scope::All, T1).interrupted, 0);
+    assert_eq!(h.session("s1").state, State::Idle);
+}
+
+#[test]
+fn pane_and_session_scopes_only_touch_their_own_sessions() {
+    let h = Harness::new();
+    for (id, pane, pid) in [("a", "%1", 100), ("b", "%2", 101), ("c", "%3", 102)] {
+        h.fake.processes.spawn(pid, PID_START);
+        h.feed(Some(pane), Some(pid), &payload("SessionStart-startup", id));
+        h.fake.processes.kill(pid);
+    }
+
+    let by_pane = h.reconcile(Scope::Pane("%1".to_owned()), T1);
+    assert_eq!((by_pane.checked, by_pane.interrupted), (1, 1));
+    assert_eq!(h.session("a").state, State::Interrupted);
+    assert_eq!(h.session("b").state, State::Idle);
+
+    let id_b = h.session("b").id;
+    let by_session = h.reconcile(Scope::Session(id_b), T2);
+    assert_eq!((by_session.checked, by_session.interrupted), (1, 1));
+    assert_eq!(h.session("b").state, State::Interrupted);
+    assert_eq!(h.session("c").state, State::Idle);
 }

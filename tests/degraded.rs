@@ -31,6 +31,8 @@ impl Fixture {
         let dir = TempDir::new().unwrap();
         let store = Store::open_in_dir(dir.path(), &StoreOptions::viewer()).unwrap();
         let fake = FakeEnv::new();
+        fake.fs.add_dir("/work/good");
+        fake.fs.add_dir("/work/bad");
         for (id, last_activity_at) in [
             ("good", "2026-10-12T11:00:00Z"),
             ("bad", "2026-10-12T10:00:00Z"),
@@ -81,7 +83,6 @@ fn corrupt_row_is_a_degraded_entry_and_the_rest_of_the_list_works() {
 }
 
 #[test]
-#[ignore = "T052"]
 fn reconcile_skips_the_corrupt_row_reports_it_and_still_fixes_the_rest() {
     let fx = Fixture::new();
 

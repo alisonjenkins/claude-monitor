@@ -11,9 +11,9 @@
 //!
 //! Rule: the task that implements a command removes that command's
 //! `#[ignore]` (its reason names the task) and makes `implemented` pass.
-//! `hook`, `dashboard`, `migrate`, `list` and `show` exist and are not
-//! ignored; `migrate`, `list` and `show` have their own tests because they
-//! need a temporary store.
+//! `hook`, `dashboard`, `migrate`, `list`, `show` and `reconcile` exist and
+//! are not ignored; `migrate`, `list`, `show` and `reconcile` have their own
+//! tests because they need a temporary store.
 
 // Panicking with a message on a failed check is the failure mode of a test.
 #![allow(
@@ -108,7 +108,6 @@ macro_rules! command_tests {
 }
 
 command_tests! {
-    reconcile => "reconcile", "implemented by T052";
     watch => "watch", "implemented by T060";
     restore => "restore", "implemented by T073";
     respawn => "respawn", "implemented by T073";
@@ -176,6 +175,30 @@ mod migrate {
     }
 }
 
+mod reconcile {
+    use super::*;
+    use claude_monitor::cli::run_in;
+
+    /// Runs against a temporary state directory so the test never touches
+    /// the real store.
+    #[test]
+    fn implemented() {
+        let state = tempfile::tempdir().unwrap();
+        let info = Command::all()
+            .iter()
+            .find(|info| info.name == "reconcile")
+            .unwrap();
+        let fake = FakeEnv::new();
+        let result = run_in((info.example)(), &fake.env, Some(state.path()));
+        assert!(
+            !matches!(result, Err(Error::NotImplemented(_))),
+            "reconcile is still NotImplemented"
+        );
+        assert!(result.is_ok(), "{result:?}");
+        assert_contract("reconcile", &result);
+    }
+}
+
 /// `list` and `show` read the store, so they run against a temporary state
 /// directory with the legacy-import marker already recorded; the real
 /// runtime directory is then never read.
@@ -236,7 +259,7 @@ mod dashboard {
 fn every_command_has_generated_tests_with_the_right_task() {
     for info in Command::all() {
         match info.name {
-            "hook" | "dashboard" | "migrate" | "list" | "show" => {}
+            "hook" | "dashboard" | "migrate" | "list" | "show" | "reconcile" => {}
             name => {
                 let reason = GENERATED
                     .iter()
@@ -251,7 +274,7 @@ fn every_command_has_generated_tests_with_the_right_task() {
             }
         }
     }
-    assert_eq!(GENERATED.len() + 5, Command::all().len());
+    assert_eq!(GENERATED.len() + 6, Command::all().len());
 }
 
 #[test]
