@@ -1,0 +1,9 @@
+{
+  "cwd": "/tmp/SCRATCH/r3/repo2",
+  "hook_event_name": "Stop",
+  "session_id": "2fe49bea-0747-4424-87cb-13500abde88c",
+  "stop_hook_active": false,
+  "stop_reason": "end_turn",
+  "timestamp": "2026-10-12T10:52:20.602Z",
+  "transcript_path": "/tmp/SCRATCH/r3/home/session-state/2fe49bea-0747-4424-87cb-13500abde88c/events.jsonl"
+}

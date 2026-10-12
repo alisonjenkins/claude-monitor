@@ -1,0 +1,11 @@
+{
+  "cwd": "/tmp/SCRATCH/r3/repo1",
+  "hookName": "permissionRequest",
+  "permissionSuggestions": [],
+  "sessionId": "995f9c8a-62f5-4bc1-9802-e52ccb0c2cea",
+  "timestamp": 1791802153941,
+  "toolInput": {
+    "command": "touch y ."
+  },
+  "toolName": "bash"
+}
