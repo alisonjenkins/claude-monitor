@@ -565,6 +565,18 @@ mod confirmation_panel {
     }
 
     #[test]
+    #[ignore = "the button still inherits the live region's hx-select"]
+    fn the_dismiss_button_opts_out_of_the_live_region_hx_select() {
+        let web = Plain::new();
+        web.put("s-new", State::Idle);
+
+        let html = page(&web.rig, "/sessions/s-new").body;
+
+        let button = between(&html, "hx-get=\"/sessions/s-new/dismiss\"", ">");
+        assert!(button.contains("hx-select=\"unset\""), "{button}");
+    }
+
+    #[test]
     fn the_htmx_fragment_names_the_target_and_consequence_with_confirm_and_cancel() {
         let web = Plain::new();
         web.put("s-fin", State::Finished);
