@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
 use std::collections::HashMap;
+use std::path::Path;
 use std::process::Command;
 
 /// Information about a tmux pane's location.
@@ -47,7 +48,17 @@ pub fn parse_list_panes(output: &str) -> HashMap<String, PaneLocation> {
 /// failed (no server running); callers should treat that as "unknown", not
 /// as "no panes".
 pub fn list_panes() -> Result<Option<HashMap<String, PaneLocation>>> {
-    let output = Command::new("tmux")
+    list_panes_at(None)
+}
+
+/// `list_panes` against the server on `socket` (`tmux -S`), or the default
+/// server when `None`.
+pub fn list_panes_at(socket: Option<&Path>) -> Result<Option<HashMap<String, PaneLocation>>> {
+    let mut command = Command::new("tmux");
+    if let Some(socket) = socket {
+        command.arg("-S").arg(socket);
+    }
+    let output = command
         .args([
             "list-panes",
             "-a",

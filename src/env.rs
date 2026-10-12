@@ -110,7 +110,7 @@ impl Env {
             clock: Arc::new(SystemClock),
             boot_id: Arc::new(SystemBootId),
             processes: Arc::new(SystemProcesses),
-            tmux: Arc::new(SystemTmux),
+            tmux: Arc::new(SystemTmux::default()),
             notifier: Arc::new(SystemNotifier),
             fs: Arc::new(SystemFs),
             vars: Arc::new(SystemVars),
@@ -230,17 +230,38 @@ impl Processes for SystemProcesses {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-pub struct SystemTmux;
+/// The real tmux. With a socket it talks to that private server (`tmux -S`),
+/// otherwise to the default one.
+#[derive(Debug, Clone, Default)]
+pub struct SystemTmux {
+    socket: Option<PathBuf>,
+}
 
-fn tmux_output(operation: &'static str, args: &[&str]) -> Result<String, EnvError> {
-    let out = Command::new("tmux")
-        .args(args)
-        .output()
-        .map_err(|e| EnvError::Failed {
-            operation,
-            detail: format!("tmux {}: {e}", args.join(" ")),
-        })?;
+impl SystemTmux {
+    pub fn with_socket(socket: impl Into<PathBuf>) -> Self {
+        Self {
+            socket: Some(socket.into()),
+        }
+    }
+
+    fn output(&self, operation: &'static str, args: &[&str]) -> Result<String, EnvError> {
+        tmux_output(operation, self.socket.as_deref(), args)
+    }
+}
+
+fn tmux_output(
+    operation: &'static str,
+    socket: Option<&Path>,
+    args: &[&str],
+) -> Result<String, EnvError> {
+    let mut command = Command::new("tmux");
+    if let Some(socket) = socket {
+        command.arg("-S").arg(socket);
+    }
+    let out = command.args(args).output().map_err(|e| EnvError::Failed {
+        operation,
+        detail: format!("tmux {}: {e}", args.join(" ")),
+    })?;
     if !out.status.success() {
         return Err(EnvError::Failed {
             operation,
@@ -263,7 +284,7 @@ impl Tmux for SystemTmux {
     }
 
     fn list_panes(&self) -> Result<Option<HashMap<String, PaneLocation>>, EnvError> {
-        crate::tmux::list_panes().map_err(|e| EnvError::Failed {
+        crate::tmux::list_panes_at(self.socket.as_deref()).map_err(|e| EnvError::Failed {
             operation: "list tmux panes",
             detail: format!("{e:#}"),
         })
@@ -271,7 +292,7 @@ impl Tmux for SystemTmux {
 
     fn new_session(&self, name: &str, cwd: &Path, command: &str) -> Result<String, EnvError> {
         let cwd = cwd.to_string_lossy();
-        tmux_output(
+        self.output(
             "create tmux session",
             &[
                 "new-session",
@@ -290,7 +311,7 @@ impl Tmux for SystemTmux {
 
     fn new_window(&self, session: &str, cwd: &Path, command: &str) -> Result<String, EnvError> {
         let cwd = cwd.to_string_lossy();
-        tmux_output(
+        self.output(
             "create tmux window",
             &[
                 "new-window",
@@ -308,7 +329,8 @@ impl Tmux for SystemTmux {
     }
 
     fn display_message(&self, message: &str) -> Result<(), EnvError> {
-        tmux_output("tmux display-message", &["display-message", message]).map(|_| ())
+        self.output("tmux display-message", &["display-message", message])
+            .map(|_| ())
     }
 }
 
