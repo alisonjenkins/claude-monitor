@@ -211,7 +211,7 @@
                 "userPromptSubmitted"
               ];
               copilotHandlerOk =
-                handlers:
+                event: handlers:
                 builtins.length handlers == 1
                 && builtins.all (
                   h:
@@ -219,6 +219,7 @@
                   && h.timeoutSec == 10
                   && pkgs.lib.hasPrefix "/nix/store/" h.bash
                   && pkgs.lib.hasInfix "hook --agent copilot" h.bash
+                  && pkgs.lib.hasSuffix " --event ${event}" h.bash
                 ) handlers;
               copilotProblems =
                 pkgs.lib.optional (hasCopilotFile hmConfig) "copilot hooks file generated with copilot.enable = false"
@@ -230,8 +231,8 @@
                   builtins.sort builtins.lessThan (builtins.attrNames copilotParsed.hooks) != expectedCopilotEvents
                 ) "copilot hooks file events differ from the expected eight"
                 ++ pkgs.lib.optional (
-                  !builtins.all copilotHandlerOk (builtins.attrValues copilotParsed.hooks)
-                ) "a copilot handler is not a store-path `hook --agent copilot` command with timeoutSec 10";
+                  !builtins.all (e: copilotHandlerOk e copilotParsed.hooks.${e}) (builtins.attrNames copilotParsed.hooks)
+                ) "a copilot handler is not a store-path `hook --agent copilot --event <its event>` command with timeoutSec 10";
               # tmux hooks: absent by default; when enabled the generated
               # tmux config must carry the three hooks, each running the
               # store-path binary, and the pane-scoped ones pass the pane id.
