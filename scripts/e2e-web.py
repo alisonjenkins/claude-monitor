@@ -349,9 +349,15 @@ with sync_playwright() as pw:
           and page.locator(f"#n-{alpha_id} #s-{ID[2]}").count() == 1)
 
     node(alpha_id).locator("summary").first.click()
+    try:
+        page.wait_for_function(
+            "id => document.querySelector(`#n-${id} > summary`).getAttribute('aria-expanded') === 'false'",
+            arg=alpha_id, timeout=2000)
+    except Exception:  # noqa: BLE001
+        pass
     check("clicking a node's summary collapses it",
           node(alpha_id).get_attribute("open") is None
-          and node(alpha_id).locator("summary").get_attribute("aria-expanded") == "false")
+          and node(alpha_id).locator("summary").first.get_attribute("aria-expanded") == "false")
     row3 = page.locator(f"#s-{ID[3]}")
     row3.locator("[data-move-toggle]").click()
     row3.locator("[data-move-to]").select_option(label="New project…")
