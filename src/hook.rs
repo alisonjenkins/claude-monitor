@@ -1,6 +1,8 @@
 use serde::Deserialize;
 use std::io::Read;
+use std::path::Path;
 
+use crate::env::Clock;
 use crate::session::{self, Action};
 
 /// Partial structure of the hook stdin JSON. Fields Claude Code may omit on
@@ -13,6 +15,51 @@ struct HookInput {
     cwd: Option<String>,
     notification_type: Option<String>,
 }
+
+/// Git facts about a working directory.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GitInfo {
+    pub root: String,
+    pub branch: Option<String>,
+}
+
+pub trait GitProbe: Send + Sync {
+    /// `None` when `cwd` is not inside a git work tree.
+    fn probe(&self, cwd: &str) -> Option<GitInfo>;
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct NoGit;
+
+impl GitProbe for NoGit {
+    fn probe(&self, _cwd: &str) -> Option<GitInfo> {
+        None
+    }
+}
+
+/// Reads `.git/HEAD` directly, without spawning git.
+#[derive(Debug, Clone, Copy)]
+pub struct FsGit;
+
+impl GitProbe for FsGit {
+    fn probe(&self, _cwd: &str) -> Option<GitInfo> {
+        None
+    }
+}
+
+pub struct HookContext<'a> {
+    pub agent: &'a str,
+    pub state_dir: &'a Path,
+    /// Directory of the legacy per-session JSON files; `None` skips that write.
+    pub runtime_dir: Option<&'a Path>,
+    pub tmux_pane: Option<&'a str>,
+    pub clock: &'a dyn Clock,
+    pub git: &'a dyn GitProbe,
+}
+
+/// Ingest one hook payload. Never fails and never prints: errors go to
+/// `<state-dir>/hook.log`.
+pub fn ingest(_ctx: &HookContext<'_>, _input: &str) {}
 
 /// Entry point for `claude-monitor hook`, called by Claude Code's hook
 /// mechanism. Always exits 0 and never writes to stdout — Claude Code may

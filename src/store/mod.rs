@@ -9,6 +9,7 @@ use rusqlite::Connection;
 pub mod events;
 mod migrations;
 mod schema;
+pub mod sessions;
 
 pub use migrations::SCHEMA_VERSION;
 
