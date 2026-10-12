@@ -343,6 +343,64 @@ fn a_project_note_is_stored() {
     assert_eq!(page["notes"][0]["body"], "plan B");
 }
 
+fn project_status(rig: &Rig, id: &str) -> String {
+    get(rig, &format!("/projects/{id}")).json()["project"]["status"]
+        .as_str()
+        .unwrap()
+        .to_owned()
+}
+
+#[test]
+#[ignore = "I4: project marker and summarize routes"]
+fn a_project_is_parked_unparked_dismissed_and_undismissed() {
+    let web = Plain::new();
+    let id = post(&web.rig, "/projects", &json!({"name": "alpha"})).json()["project"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+
+    let parked = post(&web.rig, &format!("/projects/{id}/park"), &json!({}));
+    assert_eq!(parked.status, 200, "{}", parked.body);
+    assert_eq!(parked.json()["target"]["kind"], "project");
+    assert_eq!(project_status(&web.rig, &id), "parked");
+
+    post(&web.rig, &format!("/projects/{id}/unpark"), &json!({}));
+    assert_eq!(project_status(&web.rig, &id), "active");
+
+    post(&web.rig, &format!("/projects/{id}/dismiss"), &json!({}));
+    assert_eq!(project_status(&web.rig, &id), "archived");
+
+    post(&web.rig, &format!("/projects/{id}/undismiss"), &json!({}));
+    assert_eq!(project_status(&web.rig, &id), "active");
+}
+
+#[test]
+#[ignore = "I4: project marker and summarize routes"]
+fn a_project_marker_route_for_an_unknown_project_is_a_404() {
+    let web = Plain::new();
+
+    for action in ["park", "unpark", "dismiss", "undismiss", "summarize"] {
+        let response = post(&web.rig, &format!("/projects/nope/{action}"), &json!({}));
+        assert_eq!(response.status, 404, "{action}: {}", response.body);
+        assert_eq!(response.json()["code"], "unknown_project");
+    }
+}
+
+#[test]
+#[ignore = "I4: project marker and summarize routes"]
+fn summarizing_a_project_without_a_model_is_refused_like_a_session() {
+    let web = Plain::new();
+    let id = post(&web.rig, "/projects", &json!({"name": "alpha"})).json()["project"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+
+    let response = post(&web.rig, &format!("/projects/{id}/summarize"), &json!({}));
+
+    assert_eq!(response.status, 409);
+    assert_eq!(response.json()["code"], "summary_not_configured");
+}
+
 #[test]
 fn the_progress_source_can_be_set_to_none() {
     let web = Plain::new();
