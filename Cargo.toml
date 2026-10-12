@@ -8,7 +8,7 @@ license = "MIT OR Apache-2.0"
 [features]
 default = ["tui", "web"]
 tui = ["dep:ratatui", "dep:crossterm"]
-web = []
+web = ["dep:axum", "dep:tokio", "dep:futures-util", "dep:getrandom"]
 
 [lib]
 name = "claude_monitor"
@@ -31,6 +31,10 @@ libc = "0.2"
 rusqlite = { version = "0.40", features = ["bundled"] }
 thiserror = "2"
 uuid = { version = "1", features = ["v4"] }
+axum = { version = "0.8", default-features = false, features = ["http1", "tokio"], optional = true }
+tokio = { version = "1", features = ["rt", "net", "sync", "time", "signal", "macros"], optional = true }
+futures-util = { version = "0.3", default-features = false, optional = true }
+getrandom = { version = "0.3", optional = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 notify-rust = "4"
