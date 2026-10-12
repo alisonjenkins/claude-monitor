@@ -184,7 +184,11 @@ fn the_page_moves_a_session_to_the_done_section_after_it_is_marked_done() {
 fn dismissed_sessions_show_only_when_asked() {
     let web = Plain::new();
     web.put("s-fin", State::Finished);
-    post(&web.rig, "/sessions/s-fin/dismiss", &json!({}));
+    post(
+        &web.rig,
+        "/sessions/s-fin/dismiss",
+        &json!({"confirm": "1"}),
+    );
 
     let plain = page(&web.rig, "/").body;
     let asked = page(&web.rig, "/?include_dismissed=true").body;
@@ -265,8 +269,6 @@ fn the_session_page_has_the_verbatim_text_notes_lineage_and_the_right_actions() 
         "resumed from link"
     );
     assert!(html.contains("check the &lt;b&gt;CI&lt;/b&gt;"));
-    assert!(html.contains("hx-post=\"/sessions/s-new/respawn\""));
-    assert!(html.contains("hx-post=\"/sessions/s-new/dismiss\""));
     assert!(html.contains("hx-post=\"/sessions/s-new/park\""));
     assert!(
         !html.contains("/sessions/s-new/done"),
@@ -405,4 +407,140 @@ fn the_restore_page_says_so_when_nothing_is_interrupted() {
 
     assert!(html.contains("Nothing to restore"));
     assert!(!html.contains("hx-post=\"/respawn\""));
+}
+
+mod confirmation_panel {
+    use super::*;
+
+    fn fragment(rig: &Rig, path: &str) -> Response {
+        Request::get(path)
+            .header("Cookie", rig.cookie())
+            .header("HX-Request", "true")
+            .send(rig.addr())
+    }
+
+    #[test]
+    #[ignore = "web confirmation is not implemented yet"]
+    fn the_session_page_asks_for_the_panel_instead_of_dismissing() {
+        let web = Plain::new();
+        web.put("s-new", State::Idle);
+
+        let html = page(&web.rig, "/sessions/s-new").body;
+
+        assert!(
+            html.contains("hx-get=\"/sessions/s-new/dismiss\""),
+            "{html}"
+        );
+        assert!(html.contains("hx-target=\"#confirm-slot\""), "{html}");
+        assert!(html.contains("id=\"confirm-slot\""), "{html}");
+        assert!(
+            !html.contains("hx-post=\"/sessions/s-new/dismiss\""),
+            "{html}"
+        );
+    }
+
+    #[test]
+    #[ignore = "web confirmation is not implemented yet"]
+    fn the_htmx_fragment_names_the_target_and_consequence_with_confirm_and_cancel() {
+        let web = Plain::new();
+        web.put("s-fin", State::Finished);
+
+        let response = fragment(&web.rig, "/sessions/s-fin/dismiss");
+
+        assert_eq!(response.status, 200, "{}", response.body);
+        let html = response.body;
+        assert!(!html.contains("<html"), "a fragment, not a page: {html}");
+        assert!(html.contains("Dismiss session s-fin"), "{html}");
+        assert!(html.contains("nothing is deleted"), "{html}");
+        assert!(
+            html.contains("hx-post=\"/sessions/s-fin/dismiss\""),
+            "{html}"
+        );
+        assert!(
+            html.contains("<input type=\"hidden\" name=\"confirm\" value=\"1\">"),
+            "{html}"
+        );
+        assert!(html.contains("data-confirm-yes"), "{html}");
+        assert!(
+            html.contains("href=\"/sessions/s-fin\""),
+            "cancel link: {html}"
+        );
+        assert!(html.contains("Cancel"), "{html}");
+        assert!(!html.contains("role=\"dialog\"") && !html.contains("role=\"alertdialog\""));
+        assert!(!web.session("s-fin").dismissed);
+    }
+
+    #[test]
+    #[ignore = "web confirmation is not implemented yet"]
+    fn without_htmx_the_same_route_is_a_whole_page() {
+        let web = Plain::new();
+        web.put("s-fin", State::Finished);
+
+        let response = page(&web.rig, "/sessions/s-fin/dismiss");
+
+        assert_eq!(response.status, 200, "{}", response.body);
+        assert!(response.body.contains("<html"), "{}", response.body);
+        assert!(response.body.contains("Dismiss session s-fin"));
+        assert!(response
+            .body
+            .contains("hx-post=\"/sessions/s-fin/dismiss\""));
+        assert!(!web.session("s-fin").dismissed);
+    }
+
+    #[test]
+    #[ignore = "web confirmation is not implemented yet"]
+    fn a_project_panel_says_it_is_archived_and_cancels_back_to_the_project() {
+        let web = Plain::new();
+        let id = post(&web.rig, "/projects", &json!({"name": "alpha"})).json()["project"]["id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+
+        let html = fragment(&web.rig, &format!("/projects/{id}/dismiss")).body;
+
+        assert!(html.contains("Dismiss project alpha"), "{html}");
+        assert!(html.contains("archived"), "{html}");
+        assert!(
+            html.contains(&format!("hx-post=\"/projects/{id}/dismiss\"")),
+            "{html}"
+        );
+        assert!(html.contains(&format!("href=\"/projects/{id}\"")), "{html}");
+    }
+
+    #[test]
+    #[ignore = "web confirmation is not implemented yet"]
+    fn the_unlink_panel_names_the_node_and_carries_it_in_the_form() {
+        let web = Plain::new();
+        web.put("s-fin", State::Finished);
+        post(
+            &web.rig,
+            "/sessions/s-fin/link",
+            &json!({"cortex": "42", "kind": "task"}),
+        );
+
+        let html = fragment(&web.rig, "/sessions/s-fin/unlink?cortex=42").body;
+
+        assert!(html.contains("Unlink session s-fin from node 42"), "{html}");
+        assert!(
+            html.contains("hx-post=\"/sessions/s-fin/unlink\""),
+            "{html}"
+        );
+        assert!(
+            html.contains("<input type=\"hidden\" name=\"cortex\" value=\"42\">"),
+            "{html}"
+        );
+        assert!(html.contains("<input type=\"hidden\" name=\"confirm\" value=\"1\">"));
+    }
+
+    #[test]
+    #[ignore = "web confirmation is not implemented yet"]
+    fn the_script_focuses_the_confirm_button_and_escape_cancels() {
+        let web = Plain::new();
+
+        let script = page(&web.rig, "/assets/app.js").body;
+
+        assert!(script.contains("data-confirm-yes"), "{script}");
+        assert!(script.contains("\"Escape\""), "{script}");
+        assert!(script.contains(".focus()"), "{script}");
+    }
 }

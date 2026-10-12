@@ -33,6 +33,10 @@ fn post(rig: &Rig, path: &str, body: &Value) -> Response {
         .send(rig.addr())
 }
 
+fn confirmed() -> Value {
+    json!({"confirm": "1"})
+}
+
 fn list_command() -> Command {
     Command::List {
         states: vec![],
@@ -169,7 +173,7 @@ fn dismiss_hides_a_session_by_default_and_undismiss_brings_it_back() {
     web.put("s-fin", State::Finished);
 
     assert_eq!(
-        post(&web.rig, "/sessions/s-fin/dismiss", &json!({})).status,
+        post(&web.rig, "/sessions/s-fin/dismiss", &confirmed()).status,
         200
     );
     let hidden = get(&web.rig, "/sessions").json();
@@ -181,6 +185,156 @@ fn dismiss_hides_a_session_by_default_and_undismiss_brings_it_back() {
         200
     );
     assert_eq!(section_of(&web.rig, "s-fin"), "finished");
+}
+
+mod confirmation {
+    use super::*;
+
+    fn refusal(response: &Response) -> Value {
+        assert_eq!(response.status, 409, "{}", response.body);
+        let body = response.json();
+        assert_eq!(body["ok"], false);
+        assert_eq!(body["code"], "confirmation_required");
+        assert!(
+            body["error"].as_str().unwrap().contains("confirm"),
+            "{body}"
+        );
+        body
+    }
+
+    #[test]
+    #[ignore = "web confirmation is not implemented yet"]
+    fn dismissing_a_session_without_confirm_is_a_409_and_changes_nothing() {
+        let web = Plain::new();
+        web.put("s-fin", State::Finished);
+
+        for body in [
+            json!({}),
+            json!({"confirm": "0"}),
+            json!({"confirm": false}),
+        ] {
+            refusal(&post(&web.rig, "/sessions/s-fin/dismiss", &body));
+        }
+
+        assert_eq!(section_of(&web.rig, "s-fin"), "finished");
+    }
+
+    #[test]
+    #[ignore = "web confirmation is not implemented yet"]
+    fn confirm_as_json_or_form_performs_the_dismissal() {
+        let web = Plain::new();
+        web.put("s-a", State::Finished);
+        web.put("s-b", State::Finished);
+
+        let json_confirmed = post(&web.rig, "/sessions/s-a/dismiss", &json!({"confirm": true}));
+        let form_confirmed = Request::new("POST", "/sessions/s-b/dismiss")
+            .signed_in(&web.rig)
+            .form_body("confirm=1")
+            .send(web.rig.addr());
+
+        assert_eq!(json_confirmed.status, 200, "{}", json_confirmed.body);
+        assert_eq!(form_confirmed.status, 200, "{}", form_confirmed.body);
+        assert_eq!(section_of(&web.rig, "s-a"), "dismissed");
+        assert_eq!(section_of(&web.rig, "s-b"), "dismissed");
+    }
+
+    #[test]
+    #[ignore = "web confirmation is not implemented yet"]
+    fn dismissing_a_project_without_confirm_is_a_409_and_changes_nothing() {
+        let web = Plain::new();
+        let id = post(&web.rig, "/projects", &json!({"name": "alpha"})).json()["project"]["id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+
+        refusal(&post(
+            &web.rig,
+            &format!("/projects/{id}/dismiss"),
+            &json!({}),
+        ));
+
+        assert_eq!(project_status(&web.rig, &id), "active");
+    }
+
+    #[test]
+    #[ignore = "web confirmation is not implemented yet"]
+    fn unlinking_without_confirm_is_a_409_and_keeps_the_link() {
+        let web = Plain::new();
+        web.put("s-fin", State::Finished);
+        post(
+            &web.rig,
+            "/sessions/s-fin/link",
+            &json!({"cortex": "42", "kind": "task"}),
+        );
+
+        refusal(&post(
+            &web.rig,
+            "/sessions/s-fin/unlink",
+            &json!({"cortex": "42"}),
+        ));
+
+        assert_eq!(
+            get(&web.rig, "/links").json()["links"]
+                .as_array()
+                .unwrap()
+                .len(),
+            1
+        );
+    }
+
+    #[test]
+    fn an_unknown_target_is_a_404_whether_or_not_it_is_confirmed() {
+        let web = Plain::new();
+
+        for body in [json!({}), confirmed()] {
+            let session = post(&web.rig, "/sessions/nope/dismiss", &body);
+            assert_eq!(session.status, 404, "{}", session.body);
+            let project = post(&web.rig, "/projects/nope/dismiss", &body);
+            assert_eq!(project.status, 404, "{}", project.body);
+        }
+    }
+
+    #[test]
+    #[ignore = "web confirmation is not implemented yet"]
+    fn a_get_describes_the_dismissal_as_json_and_changes_nothing() {
+        let web = Plain::new();
+        web.put("s-fin", State::Finished);
+
+        let response = get(&web.rig, "/sessions/s-fin/dismiss");
+
+        assert_eq!(response.status, 200, "{}", response.body);
+        let body = response.json();
+        assert_eq!(body["confirmation_required"], true);
+        assert_eq!(body["action"], "Dismiss session s-fin");
+        assert!(body["consequence"]
+            .as_str()
+            .unwrap()
+            .contains("nothing is deleted"));
+        assert_eq!(section_of(&web.rig, "s-fin"), "finished");
+    }
+
+    #[test]
+    #[ignore = "web confirmation is not implemented yet"]
+    fn a_get_for_an_unknown_target_is_a_404() {
+        let web = Plain::new();
+
+        assert_eq!(get(&web.rig, "/sessions/nope/dismiss").status, 404);
+        assert_eq!(get(&web.rig, "/projects/nope/dismiss").status, 404);
+    }
+
+    #[test]
+    fn the_csrf_header_is_still_required_with_confirm() {
+        let web = Plain::new();
+        web.put("s-fin", State::Finished);
+
+        let response = Request::new("POST", "/sessions/s-fin/dismiss")
+            .header("Cookie", web.rig.cookie())
+            .json_body(&confirmed())
+            .send(web.rig.addr());
+
+        assert_eq!(response.status, 403);
+        assert_eq!(section_of(&web.rig, "s-fin"), "finished");
+    }
 }
 
 #[test]
@@ -366,7 +520,7 @@ fn a_project_is_parked_unparked_dismissed_and_undismissed() {
     post(&web.rig, &format!("/projects/{id}/unpark"), &json!({}));
     assert_eq!(project_status(&web.rig, &id), "active");
 
-    post(&web.rig, &format!("/projects/{id}/dismiss"), &json!({}));
+    post(&web.rig, &format!("/projects/{id}/dismiss"), &confirmed());
     assert_eq!(project_status(&web.rig, &id), "archived");
 
     post(&web.rig, &format!("/projects/{id}/undismiss"), &json!({}));
@@ -445,7 +599,11 @@ fn links_are_added_listed_and_removed() {
     );
     assert_eq!(bad.status, 400);
 
-    let removed = post(&web.rig, "/sessions/s-fin/unlink", &json!({"cortex": "42"}));
+    let removed = post(
+        &web.rig,
+        "/sessions/s-fin/unlink",
+        &json!({"cortex": "42", "confirm": "1"}),
+    );
     assert_eq!(removed.status, 200, "{}", removed.body);
     assert!(get(&web.rig, "/links").json()["links"]
         .as_array()
