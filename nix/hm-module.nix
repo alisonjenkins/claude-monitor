@@ -114,6 +114,18 @@ in
       };
     };
 
+    bootCheck = {
+      enable = lib.mkEnableOption "a login job that runs `claude-monitor boot-check`" // {
+        description = ''
+          Run `claude-monitor boot-check` once at login (a systemd user unit
+          on Linux, a launchd agent on macOS). If a reboot or crash left
+          sessions interrupted it sends one desktop notification and leaves a
+          marker for the tmux banner. It never starts an agent: restoring
+          sessions stays an explicit `claude-monitor restore`.
+        '';
+      };
+    };
+
     copilot = {
       enable = lib.mkEnableOption "registering claude-monitor as a GitHub Copilot CLI hook handler" // {
         description = ''
@@ -183,6 +195,17 @@ in
             ExecStart = "${cfg.package}/bin/claude-monitor watch";
             Restart = "on-failure";
             RestartSec = 5;
+          };
+          Install.WantedBy = [ "default.target" ];
+        };
+
+    systemd.user.services.claude-monitor-boot-check =
+      lib.mkIf (cfg.bootCheck.enable && pkgs.stdenv.hostPlatform.isLinux)
+        {
+          Unit.Description = "claude-monitor: report AI sessions interrupted by a reboot";
+          Service = {
+            Type = "oneshot";
+            ExecStart = "${cfg.package}/bin/claude-monitor boot-check";
           };
           Install.WantedBy = [ "default.target" ];
         };
