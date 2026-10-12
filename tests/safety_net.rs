@@ -7,15 +7,19 @@
     clippy::arithmetic_side_effects
 )]
 
+use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
 use claude_monitor::feed::{
     ChangeFeed, EventSource, ManualClock, Monotonic, SafetyNetSource, SystemMonotonic,
     SAFETY_NET_INTERVAL,
 };
-use claude_monitor::model::Author;
+use claude_monitor::live::spawn_live;
+use claude_monitor::model::{Author, Session, State};
 use claude_monitor::store::events::NewEvent;
 use claude_monitor::store::{Store, StoreOptions};
+use claude_monitor::testing::FakeEnv;
+use claude_monitor::tmux::PaneLocation;
 use serde_json::json;
 use tempfile::TempDir;
 
@@ -139,4 +143,47 @@ fn a_dropped_event_is_repaired_by_the_next_safety_net_fire() {
     let rows = feed.poll().unwrap();
 
     assert_eq!(rows.iter().map(|r| r.seq).collect::<Vec<_>>(), vec![seq]);
+}
+
+#[test]
+fn a_pane_that_vanished_without_a_tmux_hook_is_interrupted_by_the_next_tick() {
+    let dir = TempDir::new().unwrap();
+    let fake = FakeEnv::new();
+    fake.fs.add_dir("/w");
+    fake.tmux.add_pane(
+        "%7",
+        PaneLocation {
+            session_name: "main".to_owned(),
+            window_index: "1".to_owned(),
+            pane_index: "0".to_owned(),
+        },
+    );
+    let store = Store::open_in_dir(dir.path(), &StoreOptions::default()).unwrap();
+    let mut session = Session::new("id-1", "claude", "sess-1", "/w", "2026-10-12T09:00:00Z");
+    session.state = State::Working;
+    session.tmux_pane = Some("%7".to_owned());
+    store.upsert_session(&session).unwrap();
+    // The pane goes away; no tmux hook runs and nobody calls `reconcile --pane`.
+    fake.tmux.remove_pane("%7");
+    let (tx, rx) = mpsc::channel();
+
+    let live = spawn_live(
+        Store::open_in_dir(dir.path(), &StoreOptions::default()).unwrap(),
+        fake.env.clone(),
+        vec![Box::new(SafetyNetSource::new(ms(30), SystemMonotonic))],
+        None,
+        move |report| {
+            let _ = tx.send(report.changed());
+        },
+    )
+    .unwrap();
+
+    assert_eq!(rx.recv_timeout(Duration::from_secs(5)), Ok(true));
+    drop(live);
+    let state = store
+        .get_session_by_agent_id("claude", "sess-1")
+        .unwrap()
+        .unwrap()
+        .state;
+    assert_eq!(state, State::Interrupted);
 }
