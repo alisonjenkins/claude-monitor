@@ -48,7 +48,6 @@ impl EventSource for Burst {
 }
 
 #[test]
-#[ignore = "until the merged source lands"]
 fn any_child_source_waking_wakes_the_merged_source() {
     let (mut merged, handles) = merged_fakes(3);
 
@@ -59,7 +58,6 @@ fn any_child_source_waking_wakes_the_merged_source() {
 }
 
 #[test]
-#[ignore = "until the merged source lands"]
 fn it_wakes_again_after_the_wake_was_taken() {
     let (mut merged, handles) = merged_fakes(1);
 
@@ -71,7 +69,6 @@ fn it_wakes_again_after_the_wake_was_taken() {
 }
 
 #[test]
-#[ignore = "until the merged source lands"]
 fn a_burst_of_wakes_coalesces_into_one() {
     let done = Arc::new(AtomicBool::new(false));
     let burst = Burst {
@@ -90,7 +87,6 @@ fn a_burst_of_wakes_coalesces_into_one() {
 }
 
 #[test]
-#[ignore = "until the merged source lands"]
 fn it_times_out_without_a_wake() {
     let (mut merged, _handles) = merged_fakes(2);
     let started = Instant::now();
@@ -101,7 +97,6 @@ fn it_times_out_without_a_wake() {
 }
 
 #[test]
-#[ignore = "until the merged source lands"]
 fn dropping_it_joins_the_forwarding_threads_and_drops_the_sources() {
     let (merged, handles) = merged_fakes(3);
     assert!(handles.iter().all(|h| !h.is_closed()));
@@ -114,7 +109,6 @@ fn dropping_it_joins_the_forwarding_threads_and_drops_the_sources() {
 }
 
 #[test]
-#[ignore = "until the merged source lands"]
 fn with_no_sources_it_never_wakes_and_honours_the_timeout() {
     let mut merged = MergedSource::new(Vec::new());
     let started = Instant::now();
