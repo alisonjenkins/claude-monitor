@@ -7,6 +7,7 @@ use std::time::Duration;
 use rusqlite::Connection;
 
 pub mod events;
+pub mod legacy;
 mod migrations;
 mod schema;
 pub mod sessions;

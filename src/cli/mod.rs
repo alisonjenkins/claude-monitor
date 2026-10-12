@@ -7,6 +7,7 @@ use crate::error::Error;
 use crate::hook;
 
 mod command;
+pub mod migrate;
 mod output;
 
 pub use command::{Command, CommandInfo, ProjectAction};
