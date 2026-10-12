@@ -18,7 +18,7 @@ use claude_monitor::store::queries::{Flag, Overview, OverviewEntry, Section, Sec
 use claude_monitor::store::{Store, StoreOptions};
 use claude_monitor::testing::FakeClock;
 use claude_monitor::tui::app::{update, App, Effect, Msg, Snapshot};
-use claude_monitor::tui::dashboard::pump;
+use claude_monitor::tui::dashboard::{pump, warning_line};
 use claude_monitor::tui::view::view;
 use crossterm::event::{KeyCode, KeyModifiers};
 use ratatui::backend::TestBackend;
@@ -721,4 +721,23 @@ fn a_scripted_session_goes_from_hook_to_store_to_feed_to_screen() {
 
     let (_, effects) = press(app, KeyCode::Char('q'));
     assert_eq!(effects, [Effect::Quit]);
+}
+
+#[test]
+fn no_warnings_means_no_footer_line() {
+    assert_eq!(warning_line(&[]), None);
+}
+
+#[test]
+fn the_footer_names_the_first_warning_and_counts_the_rest() {
+    let one = ["claude registry: /x does not exist".to_owned()];
+    assert_eq!(
+        warning_line(&one).as_deref(),
+        Some("warning: claude registry: /x does not exist")
+    );
+    let three = ["a".to_owned(), "b".to_owned(), "c".to_owned()];
+    assert_eq!(
+        warning_line(&three).as_deref(),
+        Some("warning: a (+2 more)")
+    );
 }

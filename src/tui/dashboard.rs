@@ -4,6 +4,7 @@
 use std::collections::VecDeque;
 use std::io::stdout;
 use std::path::Path;
+use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
 use anyhow::{anyhow, Context, Result};
@@ -19,6 +20,7 @@ use super::view::{state_label, view};
 use crate::cli::migrate::open_viewer_store;
 use crate::env::Env;
 use crate::feed::{ChangeFeed, EventSource, FsWatcherSource, Monotonic, SystemMonotonic};
+use crate::live::{build_sources, spawn_live, LiveThread};
 use crate::store::{Store, StoreOptions};
 use crate::tmux;
 
@@ -80,6 +82,9 @@ pub fn run(env: &Env, state_dir: Option<&Path>) -> Result<()> {
     let feed = ChangeFeed::new(feed_store, source, SystemMonotonic)
         .map_err(|e| anyhow!("cannot start the change feed: {e}"))?;
 
+    let (signals, live_rx) = mpsc::channel();
+    let _live = start_live(env, &store, signals)?;
+
     install_panic_hook();
     enable_raw_mode().context("cannot enter raw mode")?;
     stdout()
@@ -87,9 +92,52 @@ pub fn run(env: &Env, state_dir: Option<&Path>) -> Result<()> {
         .context("cannot enter the alternate screen")?;
     let result = Terminal::new(CrosstermBackend::new(stdout()))
         .context("cannot start the terminal")
-        .and_then(|mut terminal| run_loop(&mut terminal, env, &store, feed));
+        .and_then(|mut terminal| run_loop(&mut terminal, env, &store, feed, &live_rx));
     restore_terminal();
     result
+}
+
+/// What the live refresh thread tells the UI.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LiveSignal {
+    /// A refresh changed the store: read it again and redraw.
+    Changed,
+    /// A source is missing or failing; one line for the footer.
+    Warning(String),
+}
+
+/// One footer line for the warnings of a refresh or of setting up the sources.
+pub fn warning_line(warnings: &[String]) -> Option<String> {
+    let (first, rest) = warnings.split_first()?;
+    Some(if rest.is_empty() {
+        format!("warning: {first}")
+    } else {
+        format!("warning: {first} (+{} more)", rest.len())
+    })
+}
+
+fn start_live(env: &Env, store: &Store, signals: mpsc::Sender<LiveSignal>) -> Result<LiveThread> {
+    let built = build_sources(env);
+    if let Some(line) = warning_line(&built.warnings) {
+        let _ = signals.send(LiveSignal::Warning(line));
+    }
+    let live_store = Store::open(store.path(), &StoreOptions::viewer())
+        .map_err(|e| anyhow!("cannot open the live refresh store: {e}"))?;
+    spawn_live(
+        live_store,
+        env.clone(),
+        built.sources,
+        built.proc_exit,
+        move |report| {
+            if let Some(line) = warning_line(&report.warnings) {
+                let _ = signals.send(LiveSignal::Warning(line));
+            }
+            if report.changed() {
+                let _ = signals.send(LiveSignal::Changed);
+            }
+        },
+    )
+    .context("cannot start the live refresh thread")
 }
 
 fn run_loop<S: EventSource>(
@@ -97,6 +145,7 @@ fn run_loop<S: EventSource>(
     env: &Env,
     store: &Store,
     mut feed: ChangeFeed<S, SystemMonotonic>,
+    live_rx: &mpsc::Receiver<LiveSignal>,
 ) -> Result<()> {
     let (mut app, _) = reload(App::new(), store, &env.clock.now());
     let mut last_reload = Instant::now();
@@ -105,6 +154,13 @@ fn run_loop<S: EventSource>(
         terminal.draw(|frame| view(&app, frame))?;
 
         let mut queue: VecDeque<Msg> = VecDeque::new();
+        let mut live_changed = false;
+        while let Ok(signal) = live_rx.try_recv() {
+            match signal {
+                LiveSignal::Changed => live_changed = true,
+                LiveSignal::Warning(line) => queue.push_back(Msg::Failed(line)),
+            }
+        }
         match event::poll(TICK) {
             Ok(true) => match event::read() {
                 Ok(Event::Key(key)) if key.kind == KeyEventKind::Press => {
@@ -118,7 +174,7 @@ fn run_loop<S: EventSource>(
         }
 
         let now = env.clock.now();
-        let (next, mut effects) = if last_reload.elapsed() >= SAFETY_NET {
+        let (next, mut effects) = if live_changed || last_reload.elapsed() >= SAFETY_NET {
             last_reload = Instant::now();
             reload(app, store, &now)
         } else {
