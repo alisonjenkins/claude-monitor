@@ -20,18 +20,19 @@ impl PaneLocation {
     }
 }
 
-/// The `-F` format `list_panes_at` asks tmux for.
-pub const LIST_PANES_FORMAT: &str = "#{pane_id}\t#{session_name}\t#{window_index}\t#{pane_index}";
+/// The `-F` format `list_panes_at` asks tmux for. Fields are separated by a
+/// space, not a tab: outside a UTF-8 locale tmux prints a tab as `_`. The pane
+/// id and both indexes never contain a space and the session name, which may,
+/// comes last so it takes the rest of the line.
+pub const LIST_PANES_FORMAT: &str = "#{pane_id} #{window_index} #{pane_index} #{session_name}";
 
-/// Parse the output of `tmux list-panes -a -F "#{pane_id}\t#{session_name}\t
-/// #{window_index}\t#{pane_index}"` into a pane id -> location map. Lines that
-/// don't have exactly four tab-separated fields are skipped. Tabs are used
-/// because tmux session names may contain spaces.
+/// Parse the output of `tmux list-panes -a -F` [`LIST_PANES_FORMAT`] into a
+/// pane id -> location map. Lines with fewer than four fields are skipped.
 pub fn parse_list_panes(output: &str) -> HashMap<String, PaneLocation> {
     let mut map = HashMap::new();
     for line in output.lines() {
-        let parts: Vec<&str> = line.splitn(4, '\t').collect();
-        let [pane_id, session_name, window_index, pane_index] = parts[..] else {
+        let parts: Vec<&str> = line.splitn(4, ' ').collect();
+        let [pane_id, window_index, pane_index, session_name] = parts[..] else {
             continue;
         };
         map.insert(
@@ -106,40 +107,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn parses_well_formed_lines() {
-        let out = "%0\tmain\t0\t0\n%1\tmain\t0\t1\n%2\tother\t1\t0\n";
-        let map = parse_list_panes(out);
-        assert_eq!(map.len(), 3);
-        assert_eq!(
-            map.get("%1"),
-            Some(&PaneLocation {
-                session_name: "main".to_string(),
-                window_index: "0".to_string(),
-                pane_index: "1".to_string(),
-            })
-        );
-    }
-
-    #[test]
-    fn skips_malformed_lines() {
-        let out = "%0\tmain\t0\t0\ngarbage\n\n%2\tother\t1\t0\n";
-        let map = parse_list_panes(out);
-        assert_eq!(map.len(), 2);
-        assert!(map.contains_key("%0"));
-        assert!(map.contains_key("%2"));
-    }
-
-    #[test]
-    fn session_names_may_contain_spaces() {
-        let map = parse_list_panes("%7\tmy project\t2\t1\n");
-        assert_eq!(
-            map.get("%7").map(|l| l.session_name.as_str()),
-            Some("my project")
-        );
-    }
-
-    #[test]
-    #[ignore = "pending the separator change"]
     fn parses_space_separated_lines_with_the_session_name_last() {
         let out = "%0 0 0 main\n%1 2 1 my project\n";
         let map = parse_list_panes(out);
@@ -155,7 +122,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "pending the separator change"]
     fn space_format_skips_malformed_lines() {
         let map = parse_list_panes("garbage\n\n%2 1 0 other\n%3 1\n");
         assert_eq!(map.len(), 1);

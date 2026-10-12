@@ -249,7 +249,6 @@ fn spawn_window_fails_when_the_session_is_missing() {
 /// Regression: outside a UTF-8 locale (the Nix sandbox) tmux prints a tab in
 /// `-F` output as `_`, so the pane listing must not rely on one.
 #[test]
-#[ignore = "pending the separator change"]
 fn list_panes_format_parses_under_a_c_locale_with_a_spaced_session_name() {
     let Some(server) = TmuxServer::start() else {
         return;
