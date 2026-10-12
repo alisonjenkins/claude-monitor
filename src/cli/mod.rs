@@ -548,6 +548,7 @@ pub fn run_with(
     state_dir: Option<&Path>,
     options: RunOptions,
 ) -> Result<Output, Error> {
+    let cmd = confirm::confirm_command(cmd, env, state_dir, None)?;
     if options.refresh && reads_sessions(&cmd) {
         refresh_first(env, state_dir)?;
     }

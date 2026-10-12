@@ -134,6 +134,25 @@ pub fn run_links_check(env: &Env, state_dir: Option<&Path>) -> Result<Output, Er
     })
 }
 
+/// What `unlink` will do, for the confirmation; fails the way `unlink` would
+/// on a bad node id or an unknown owner.
+pub(super) fn unlink_question(
+    env: &Env,
+    state_dir: Option<&Path>,
+    owner: &str,
+    node_id: &str,
+) -> Result<String, Error> {
+    require_number("a node id", node_id)?;
+    let store = open_viewer_store(env, state_dir)?;
+    let (kind, shown) = match resolve_target(&store, owner)? {
+        Target::Session(id) => ("session", id),
+        Target::Project { name, .. } => ("project", name),
+    };
+    Ok(format!(
+        "Unlink {kind} {shown} from node {node_id}: the link is removed (the node itself is untouched)"
+    ))
+}
+
 pub fn run_unlink(
     env: &Env,
     state_dir: Option<&Path>,

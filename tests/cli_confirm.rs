@@ -114,7 +114,6 @@ mod the_question {
     use super::*;
 
     #[test]
-    #[ignore = "confirmation is not implemented yet"]
     fn names_a_session_and_its_consequence_and_ends_in_the_proceed_prompt() {
         let fx = Fixture::new();
 
@@ -127,7 +126,6 @@ mod the_question {
     }
 
     #[test]
-    #[ignore = "confirmation is not implemented yet"]
     fn names_a_project_and_says_it_is_archived() {
         let fx = Fixture::new();
         fx.run(Command::Project {
@@ -145,7 +143,6 @@ mod the_question {
     }
 
     #[test]
-    #[ignore = "confirmation is not implemented yet"]
     fn names_the_link_that_unlink_removes() {
         let fx = Fixture::new();
         fx.run(link("s1")).unwrap();
@@ -163,7 +160,6 @@ mod the_answer {
     use super::*;
 
     #[test]
-    #[ignore = "confirmation is not implemented yet"]
     fn y_and_yes_agree_in_any_case() {
         let fx = Fixture::new();
         for answer in ["y\n", "Y\n", "yes\n", " YES \n"] {
@@ -173,7 +169,6 @@ mod the_answer {
     }
 
     #[test]
-    #[ignore = "confirmation is not implemented yet"]
     fn anything_else_declines_and_changes_nothing() {
         let fx = Fixture::new();
         for answer in ["n\n", "\n", "", "yep\n", "no\n", "maybe\n"] {
@@ -185,7 +180,6 @@ mod the_answer {
     }
 
     #[test]
-    #[ignore = "confirmation is not implemented yet"]
     fn declining_unlink_keeps_the_link() {
         let fx = Fixture::new();
         fx.run(link("s1")).unwrap();
@@ -230,7 +224,6 @@ mod with_nobody_to_ask {
     use super::*;
 
     #[test]
-    #[ignore = "confirmation is not implemented yet"]
     fn no_terminal_and_no_yes_is_refused_naming_the_flag() {
         let fx = Fixture::new();
 
@@ -241,7 +234,6 @@ mod with_nobody_to_ask {
     }
 
     #[test]
-    #[ignore = "confirmation is not implemented yet"]
     fn running_a_command_directly_without_yes_changes_nothing() {
         let fx = Fixture::new();
         fx.run(link("s1")).unwrap();
@@ -259,7 +251,6 @@ mod with_nobody_to_ask {
     }
 
     #[test]
-    #[ignore = "confirmation is not implemented yet"]
     fn an_unknown_target_is_reported_before_any_question() {
         let fx = Fixture::new();
 
@@ -296,7 +287,6 @@ mod the_binary {
     }
 
     #[test]
-    #[ignore = "confirmation is not implemented yet"]
     fn dismiss_without_yes_and_without_a_terminal_exits_1_and_changes_nothing() {
         let fx = Fixture::new();
 
@@ -309,7 +299,6 @@ mod the_binary {
     }
 
     #[test]
-    #[ignore = "confirmation is not implemented yet"]
     fn json_mode_is_refused_the_same_way_with_the_error_on_stdout() {
         let fx = Fixture::new();
 
@@ -336,7 +325,6 @@ mod the_binary {
     }
 
     #[test]
-    #[ignore = "confirmation is not implemented yet"]
     fn unlink_without_yes_keeps_the_link() {
         let fx = Fixture::new();
         fx.run(link("s1")).unwrap();

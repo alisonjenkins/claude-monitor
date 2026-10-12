@@ -8,12 +8,11 @@ use claude_monitor::env::Env;
 fn main() -> ExitCode {
     let cli = Cli::parse();
     let json = cli.json();
-    match cli::run_with(
-        cli.command(),
-        &Env::real(),
-        cli.state_dir().map(PathBuf::as_path),
-        cli.run_options(),
-    ) {
+    let env = Env::real();
+    let state_dir = cli.state_dir().map(PathBuf::as_path);
+    let result = cli::confirm::confirm_on_terminal(cli.command(), &env, state_dir, json)
+        .and_then(|command| cli::run_with(command, &env, state_dir, cli.run_options()));
+    match result {
         Ok(output) => {
             print!("{}", output.render(json));
             ExitCode::SUCCESS

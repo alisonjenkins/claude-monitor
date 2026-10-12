@@ -80,6 +80,24 @@ pub fn run_note(
     })
 }
 
+/// What `dismiss` will do, for the confirmation; fails the way `dismiss`
+/// would on an unknown target.
+pub(super) fn dismiss_question(
+    env: &Env,
+    state_dir: Option<&Path>,
+    target: &str,
+) -> Result<String, Error> {
+    let store = open_viewer_store(env, state_dir)?;
+    Ok(match resolve_target(&store, target)? {
+        Target::Session(id) => format!(
+            "Dismiss session {id}: it is hidden from the default views; nothing is deleted"
+        ),
+        Target::Project { name, .. } => format!(
+            "Dismiss project {name}: it is archived and hidden from the default views; nothing is deleted"
+        ),
+    })
+}
+
 pub fn run_marker(
     env: &Env,
     state_dir: Option<&Path>,
