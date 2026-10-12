@@ -135,7 +135,6 @@ fn all_done_has_no_current() {
 }
 
 #[test]
-#[ignore = "T087"]
 fn todo_payload_fixture() {
     let p = todo::parse(TODO).unwrap();
     assert_eq!((p.done, p.total), (1, 3));
@@ -148,7 +147,6 @@ fn todo_payload_fixture() {
 }
 
 #[test]
-#[ignore = "T087"]
 fn todo_tolerates_alternate_shapes() {
     let bare = r#"[{"text":"a","status":"completed"},{"title":"b","status":"pending"}]"#;
     let p = todo::parse(bare).unwrap();
@@ -161,7 +159,6 @@ fn todo_tolerates_alternate_shapes() {
 }
 
 #[test]
-#[ignore = "T087"]
 fn todo_unknown_shapes_are_none() {
     for input in [
         "",
@@ -264,7 +261,6 @@ fn random_markdown_never_panics_and_keeps_invariants() {
 }
 
 #[test]
-#[ignore = "T087"]
 fn random_json_never_panics() {
     let mut rng = Rng(0xD1B5_4A32_D192_ED03);
     const PIECES: &[&str] = &[
