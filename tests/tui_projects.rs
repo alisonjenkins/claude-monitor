@@ -77,7 +77,6 @@ fn ids(parts: &[&str]) -> Vec<String> {
 }
 
 #[test]
-#[ignore = "T111: implemented in the next commit"]
 fn flat_keeps_the_sections_and_titles_them_plainly() {
     let data = sections(&[
         ("a", Some("P"), SectionName::Active),
@@ -104,7 +103,6 @@ fn flat_keeps_the_sections_and_titles_them_plainly() {
 }
 
 #[test]
-#[ignore = "T111: implemented in the next commit"]
 fn each_project_gets_its_own_sections_in_active_interrupted_finished_done_order() {
     let data = sections(&[
         ("a1", Some("Beta"), SectionName::Active),
@@ -130,7 +128,6 @@ fn each_project_gets_its_own_sections_in_active_interrupted_finished_done_order(
 }
 
 #[test]
-#[ignore = "T111: implemented in the next commit"]
 fn a_projects_done_section_lists_only_its_own_done_sessions() {
     let data = sections(&[
         ("dp", Some("P"), SectionName::Done),
@@ -152,7 +149,6 @@ fn a_projects_done_section_lists_only_its_own_done_sessions() {
 }
 
 #[test]
-#[ignore = "T111: implemented in the next commit"]
 fn sessions_in_no_project_follow_the_projects_with_all_four_sections() {
     let data = sections(&[
         ("a", None, SectionName::Active),
@@ -173,7 +169,6 @@ fn sessions_in_no_project_follow_the_projects_with_all_four_sections() {
 }
 
 #[test]
-#[ignore = "T111: implemented in the next commit"]
 fn unseen_and_dismissed_stay_global_and_last_whatever_their_project() {
     let data = sections(&[
         ("u", Some("P"), SectionName::Unseen),
@@ -195,7 +190,6 @@ fn unseen_and_dismissed_stay_global_and_last_whatever_their_project() {
 }
 
 #[test]
-#[ignore = "T111: implemented in the next commit"]
 fn a_collapsed_unseen_section_keeps_its_full_count() {
     let data = sections(&[
         ("u1", None, SectionName::Unseen),
@@ -215,7 +209,6 @@ fn a_collapsed_unseen_section_keeps_its_full_count() {
 }
 
 #[test]
-#[ignore = "T111: implemented in the next commit"]
 fn rows_the_filters_removed_leave_no_empty_project_part() {
     let data = sections(&[("a", Some("P"), SectionName::Active)]);
     let nothing_shown: Vec<(&Section, Vec<&OverviewEntry>)> =
@@ -231,7 +224,6 @@ fn rows_the_filters_removed_leave_no_empty_project_part() {
 }
 
 #[test]
-#[ignore = "T111: implemented in the next commit"]
 fn the_order_inside_a_section_is_kept() {
     let data = sections(&[
         ("a", Some("P"), SectionName::Active),

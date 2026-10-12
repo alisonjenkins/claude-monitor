@@ -73,7 +73,7 @@ fn label_style(entry: &OverviewEntry) -> Style {
     }
 }
 
-fn section_title(name: SectionName) -> &'static str {
+pub(super) fn section_title(name: SectionName) -> &'static str {
     match name {
         SectionName::Active => "Active",
         SectionName::Interrupted => "Interrupted",
