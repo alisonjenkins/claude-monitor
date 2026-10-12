@@ -17,7 +17,8 @@ use serde_json::json;
 use tempfile::TempDir;
 
 use claude_monitor::feed::{
-    ChangeFeed, EventSource, FakeHandle, FakeSource, FsWatcherSource, ManualClock,
+    ChangeFeed, CopilotSessionsSource, EventSource, FakeHandle, FakeSource, FsWatcherSource,
+    ManualClock,
 };
 
 const AT: &str = "2026-10-12T14:03:22Z";
@@ -250,4 +251,51 @@ fn the_fs_watcher_wakes_when_another_handle_commits() {
         source.wait(REAL_OS_WAKE_TIMEOUT),
         "no wake within {REAL_OS_WAKE_TIMEOUT:?}"
     );
+}
+
+#[test]
+#[cfg(target_os = "linux")]
+fn the_copilot_watch_wakes_on_new_session_files_and_directories_only() {
+    let dir = TempDir::new().unwrap();
+    let root = dir.path().join("session-state");
+    std::fs::create_dir_all(&root).unwrap();
+    let mut source = CopilotSessionsSource::watch(&root).unwrap();
+
+    std::fs::write(root.join("notes.txt"), "x").unwrap();
+    assert!(!source.wait(ms(300)), "not a session file");
+
+    let session = root.join("5b0c2c58-0f5e-4d0a-9d0e-0a4a3f5d7c11");
+    std::fs::create_dir_all(&session).unwrap();
+    assert!(source.wait(REAL_OS_WAKE_TIMEOUT), "new session directory");
+
+    // The recursive watch adds the new directory after announcing it, so the
+    // first write can land before the watch exists and is missed by design (the
+    // directory wake makes the consumer rescan). Rewrite until the watch is live.
+    let workspace = session.join("workspace.yaml");
+    let woke = (0..20).any(|n| {
+        std::fs::write(&workspace, format!("id: x\nrev: {n}\n")).unwrap();
+        source.wait(ms(250))
+    });
+    assert!(
+        woke,
+        "workspace.yaml in a new directory never woke the watch"
+    );
+
+    while source.wait(ms(100)) {}
+
+    std::fs::write(session.join(".workspace-fork.lock"), "").unwrap();
+    assert!(!source.wait(ms(300)), "lock file is not a session file");
+
+    std::fs::write(session.join("events.jsonl"), "{}\n").unwrap();
+    assert!(source.wait(REAL_OS_WAKE_TIMEOUT), "new events.jsonl");
+}
+
+#[test]
+fn watching_a_missing_copilot_directory_is_an_error_naming_it() {
+    let dir = TempDir::new().unwrap();
+    let missing = dir.path().join("nope");
+
+    let err = CopilotSessionsSource::watch(&missing).unwrap_err();
+
+    assert!(err.to_string().contains("nope"), "{err}");
 }
