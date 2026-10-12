@@ -10,6 +10,7 @@ pub mod events;
 pub mod legacy;
 mod migrations;
 pub mod queries;
+pub mod respawn;
 mod schema;
 pub mod sessions;
 
