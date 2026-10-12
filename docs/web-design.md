@@ -49,9 +49,10 @@ on you. So the page is calm paper-and-ink, and exactly one thing is loud.
   `show`. A stale source says so in words. Sessions with several candidate
   plans show "choose a plan", never a guessed figure (FR-016).
 - **Collapsed sections as the TUI.** Only `unseen` is collapsed by default (a
-  closed `<details>` with its count); `finished` is never collapsed or hidden
-  (FR-019). `done` is shown, in the muted style, below finished. `dismissed`
-  appears only with `include_dismissed`.
+  closed `<details>` with its count), plus each node's nested Done; `finished`
+  is never collapsed or hidden (FR-019). `dismissed` appears only with
+  `include_dismissed`. Project nodes are open by default and remember the
+  viewer's folds (see the tree section).
 - **Keyboard.** Plain links and buttons only, so Tab order is document order;
   a "skip to sessions" link first; visible `:focus-visible` ring (2px signal
   outline); section toggles are native `<details>`/`<summary>`; no focus
@@ -59,6 +60,55 @@ on you. So the page is calm paper-and-ink, and exactly one thing is loud.
   Tab and arrow behaviour stays predictable with a screen reader.
 - **Motion.** One 150ms fade when a region is swapped by htmx, off under
   `prefers-reduced-motion`.
+
+## The overview is a tree (one page for sessions and projects)
+
+The overview and the old projects page were one idea split in two, so `/` is
+now a tree: sessions nested under their projects, with a Move button on each.
+
+- **Order.** The unchanged "Waiting on you" band first (cross-project; each
+  row names its project, so nothing waiting hides inside a collapsed node),
+  then one `<details open>` node per project (alphabetical), then a "No
+  project" node (the global home of sessions without one; left out when
+  empty), then the collapsed Unseen node and, with the toggle, Dismissed.
+- **Node.** Header: project name (h2), status badge, state summary
+  (`2 working · 1 interrupted · 3 finished`, from the sessions listed, so it
+  follows the filters) and the plan figure when the project has a bound plan.
+  Body: a quiet "Manage project" menu (rename, status, note, park or unpark,
+  link to `/projects/{id}`), then Active, Interrupted, Finished and a nested
+  Done. Finished is never collapsed; Done is a closed nested `<details>`.
+  Waiting sessions appear in the band and in their node (band rows carry the
+  `w-` id prefix, node rows `s-`). A project with no sessions stays visible,
+  muted (`class="node empty"`), so a session can be dropped into it. A small
+  "New empty project" form sits under the tree.
+- **Move.** Each tree row has a Move button that reveals an inline panel (no
+  modal): a labelled `<select>` of existing projects (the current one is
+  selected and disabled), "No project (remove)" (`-`) and a last option "New
+  project…" which reveals a name input. The panel posts to
+  `POST /sessions/{id}/group`; the endpoint creates a missing project, so a
+  new name and an existing name behave the same. `app.js` moves focus into
+  the select, Escape or Cancel closes the panel and returns focus to the
+  button, Move stays disabled until a real target (and, for a new project, a
+  name) is chosen, and after a move focus lands on the session's Move button
+  in its new place. Bulk moving is out of scope.
+- **Folds are per viewer.** Node open/closed state lives in `localStorage`
+  (`cc-nodes`, closed ids only, default open; every access in try/catch, with
+  an in-memory fallback). It is written from the summary click, not from the
+  `toggle` event, which also fires when a refresh swaps in new markup.
+  `aria-expanded` on each node summary follows it.
+- **Live refresh keeps your place.** `cc-changed` still re-fetches the whole
+  `#sessions` region. Before the swap `app.js` records open Move panels, the
+  values typed in open panels and open menus, the open menus and the focused
+  element (by id); after the swap it re-applies the stored node folds and
+  restores those. Only fields inside open panels or menus are restored, so a
+  closed panel always shows what the server just rendered.
+- **JSON.** `GET /` with `Accept: application/json` keeps the flat `sessions`
+  list and adds `projects`: `[{id, name, status, summary, counts, progress?,
+  sessions: [...]}]` (alphabetical, empty projects included, `progress` only
+  when bound) and `no_project: {summary, counts, sessions}`. Every listed
+  session appears once in the flat list and once in its node (sessions naming
+  an unknown project fall under `no_project`); each carries its `section`, so
+  a client can regroup. `GET /sessions` stays byte-for-byte `list --json`.
 
 ## Confirmation before destructive or hard-to-notice actions
 
@@ -97,8 +147,9 @@ and this view).
 
 | Page | Route | Notes |
 |---|---|---|
-| Overview | `/`, `/sessions` | Waiting band, Active, Finished, Done, Unseen (collapsed). Filter form (state, agent, repo, project, text, include dismissed) submits as a plain GET so it works without JS. |
-| Project | `/projects/{id}` | Header with name, status and notes; then Active, Interrupted, Finished and the project's own Done section. |
+| Overview | `/`, `/sessions` | The project tree (below), Unseen (collapsed), Dismissed (with the toggle). Filter form (state, agent, repo, project, text, include dismissed) submits as a plain GET so it works without JS and applies to the tree. |
+| Project | `/projects/{id}` | Deep link: header with name, status and notes, then the same node component for that one project. |
+| Projects | `/projects` | 302 to `/` for pages; `Accept: application/json` still returns the project list. No nav entry. |
 | Session | `/sessions/{id}` | Verbatim task and left-off, progress with source label, lineage (resumed from / by), notes, labelled generated summaries, actions. No transcript, no conversation text beyond what `show` prints. |
 | Restore | `/restore`, `/restore?session={id}` | The interrupted list from `restore` without `--yes`, a checkbox per row (all selected), refusals listed with their alternatives, one confirm button posting to `/respawn`. With `session`, the preview of that one session, which is where the Respawn buttons lead. |
 | Links | `/links` | Stored cortexiphan links; `?check=1` runs `links check` and marks disagreements. |
