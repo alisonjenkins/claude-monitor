@@ -229,7 +229,6 @@ fn the_plan_labels_its_window_with_the_branch_else_the_directory() {
 }
 
 #[test]
-#[ignore = "pending T073 respawn command"]
 fn a_single_respawn_lands_in_the_recorded_directory() {
     let Some(fx) = Fixture::new() else { return };
     let session = fx.add_session("s1", State::Interrupted, "work-a");
@@ -248,7 +247,6 @@ fn a_single_respawn_lands_in_the_recorded_directory() {
 }
 
 #[test]
-#[ignore = "pending T073 respawn command"]
 fn five_at_once_land_in_five_directories() {
     let Some(fx) = Fixture::new() else { return };
     let ids = ["s1", "s2", "s3", "s4", "s5"];
@@ -277,7 +275,6 @@ fn five_at_once_land_in_five_directories() {
 }
 
 #[test]
-#[ignore = "pending T073 respawn command"]
 fn a_request_row_and_an_event_are_recorded_and_no_session_row_is_added() {
     let Some(fx) = Fixture::new() else { return };
     fx.add_session("s1", State::Interrupted, "work-a");
@@ -299,7 +296,6 @@ fn a_request_row_and_an_event_are_recorded_and_no_session_row_is_added() {
 }
 
 #[test]
-#[ignore = "pending T073 respawn command"]
 fn a_refusal_starts_nothing_and_exits_2() {
     let Some(fx) = Fixture::new() else { return };
     let session = fx.add_session("s1", State::Interrupted, "work-a");
@@ -320,11 +316,11 @@ fn a_refusal_starts_nothing_and_exits_2() {
     assert_eq!(error.exit_code(), 2);
     assert!(error.to_string().contains(&session.cwd), "{error}");
     assert!(!fx.server_has_sessions(), "tmux was started for a refusal");
-    assert!(fx.store().events_since(0, 100).unwrap().is_empty());
+    let events = fx.respawn_events();
+    assert!(events.is_empty(), "{events:?}");
 }
 
 #[test]
-#[ignore = "pending T073 respawn command"]
 fn a_refusal_prints_its_alternatives() {
     let Some(fx) = Fixture::new() else { return };
     let mut session = fx.add_session("s1", State::Interrupted, "work-a");
@@ -338,7 +334,6 @@ fn a_refusal_prints_its_alternatives() {
 }
 
 #[test]
-#[ignore = "pending T073 respawn command"]
 fn some_started_and_some_refused_exits_3_and_still_starts_the_good_ones() {
     let Some(fx) = Fixture::new() else { return };
     fx.add_session("good", State::Interrupted, "work-a");
@@ -358,7 +353,6 @@ fn some_started_and_some_refused_exits_3_and_still_starts_the_good_ones() {
 }
 
 #[test]
-#[ignore = "pending T073 respawn command"]
 fn an_unknown_session_is_refused() {
     let Some(fx) = Fixture::new() else { return };
     fx.add_session("s1", State::Interrupted, "work-a");
@@ -379,7 +373,6 @@ fn an_unknown_session_is_refused() {
 }
 
 #[test]
-#[ignore = "pending T073 respawn command"]
 fn in_without_fresh_is_a_usage_error() {
     let Some(fx) = Fixture::new() else { return };
     fx.add_session("s1", State::Interrupted, "work-a");
@@ -397,7 +390,6 @@ fn in_without_fresh_is_a_usage_error() {
 }
 
 #[test]
-#[ignore = "pending T073 respawn command"]
 fn an_already_running_session_is_refused() {
     let Some(fx) = Fixture::new() else { return };
     let mut session = fx.add_session("s1", State::Working, "work-a");
@@ -434,7 +426,6 @@ fn git(dir: &std::path::Path, args: &[&str]) -> bool {
 }
 
 #[test]
-#[ignore = "pending T073 respawn command"]
 fn a_missing_worktree_is_recreated_only_with_the_flag() {
     let Some(fx) = Fixture::new() else { return };
     let repo = fx.root().join("repo");

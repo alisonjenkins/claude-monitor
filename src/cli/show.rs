@@ -20,7 +20,7 @@ fn refused(code: &'static str, message: String) -> Error {
 }
 
 /// `id` exactly, else the one session whose id starts with it.
-fn resolve(store: &Store, id: &str) -> Result<String, Error> {
+pub(super) fn resolve(store: &Store, id: &str) -> Result<String, Error> {
     let lookup = |e| store_error_message("find session", Some(store.path()), &e);
     if store.overview_entry(id).map_err(lookup)?.is_some() {
         return Ok(id.to_owned());

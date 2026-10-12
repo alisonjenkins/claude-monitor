@@ -14,6 +14,8 @@ mod list;
 pub mod migrate;
 mod output;
 mod reconcile;
+mod respawn;
+mod restore;
 mod show;
 mod watch;
 
@@ -104,6 +106,43 @@ enum Commands {
     },
     /// Log one line per session state change until interrupted (SIGINT or SIGTERM)
     Watch,
+    /// Start interrupted sessions again in tmux; without --yes, only print the plan
+    Restore {
+        /// Restore every interrupted session (required with --yes)
+        #[arg(long)]
+        all_interrupted: bool,
+        /// Also restore finished sessions
+        #[arg(long)]
+        include_finished: bool,
+        /// Start new sessions instead of resuming the old conversations
+        #[arg(long)]
+        fresh: bool,
+        /// Leave this session out (id or start of one); repeat for several
+        #[arg(long, value_name = "ID")]
+        skip: Vec<String>,
+        /// Start the sessions instead of printing the plan
+        #[arg(long)]
+        yes: bool,
+    },
+    /// Start named sessions again in tmux, resuming their conversations
+    Respawn {
+        /// Session ids, or the start of each
+        #[arg(required = true)]
+        sessions: Vec<String>,
+        /// Start a new session instead of resuming the conversation
+        #[arg(long)]
+        fresh: bool,
+        /// With --fresh: start in this directory instead of the recorded one
+        #[arg(long = "in", value_name = "DIR")]
+        in_dir: Option<PathBuf>,
+        /// Run `git worktree add` for a missing worktree whose branch still exists
+        #[arg(long)]
+        recreate_worktree: bool,
+        /// Accepted so scripts can pass it to respawn and restore alike; a
+        /// respawn names its sessions and never asks
+        #[arg(long)]
+        yes: bool,
+    },
     /// Count sessions a reboot or crash interrupted, notify once and start nothing
     BootCheck {
         /// Show the pending notice as a tmux message once, then clear it
@@ -163,6 +202,31 @@ impl Cli {
                 session: session.clone(),
             },
             Some(Commands::Watch) => Command::Watch,
+            Some(Commands::Restore {
+                all_interrupted,
+                include_finished,
+                fresh,
+                skip,
+                yes,
+            }) => Command::Restore {
+                all_interrupted: *all_interrupted,
+                include_finished: *include_finished,
+                fresh: *fresh,
+                skip: skip.clone(),
+                yes: *yes,
+            },
+            Some(Commands::Respawn {
+                sessions,
+                fresh,
+                in_dir,
+                recreate_worktree,
+                yes: _,
+            }) => Command::Respawn {
+                sessions: sessions.clone(),
+                fresh: *fresh,
+                in_dir: in_dir.clone(),
+                recreate_worktree: *recreate_worktree,
+            },
             Some(Commands::BootCheck { banner }) => Command::BootCheck { banner: *banner },
         }
     }
@@ -182,7 +246,8 @@ pub struct RunOptions {
 }
 
 /// Run one command; `state_dir` is the `--state-dir` override. `Hook`,
-/// `Dashboard`, `Migrate`, `List`, `Show`, `Reconcile` and `Watch` are implemented; every other
+/// `Dashboard`, `Migrate`, `List`, `Show`, `Reconcile`, `Watch`, `BootCheck`,
+/// `Restore` and `Respawn` are implemented; every other
 /// command reports `NotImplemented` until its task lands. Reads the store as it
 /// is; [`run_with`] adds the refresh pass the binary runs.
 pub fn run_in(cmd: Command, env: &Env, state_dir: Option<&Path>) -> Result<Output, Error> {
@@ -227,6 +292,38 @@ pub fn run_with(
         Command::Show { session } => show::run(env, state_dir, &session),
         Command::Reconcile { pane, session } => reconcile::run(env, state_dir, pane, session),
         Command::Watch => watch::run(env, state_dir),
+        Command::Restore {
+            all_interrupted,
+            include_finished,
+            fresh,
+            skip,
+            yes,
+        } => restore::run(
+            env,
+            state_dir,
+            restore::RestoreArgs {
+                all_interrupted,
+                include_finished,
+                fresh,
+                skip,
+                yes,
+            },
+        ),
+        Command::Respawn {
+            sessions,
+            fresh,
+            in_dir,
+            recreate_worktree,
+        } => respawn::run(
+            env,
+            state_dir,
+            &sessions,
+            respawn::PlanFlags {
+                fresh,
+                in_dir,
+                recreate_worktree,
+            },
+        ),
         Command::BootCheck { banner } => boot_check::run(env, state_dir, banner),
         Command::Hook { agent, event } => {
             hook::run(agent.as_deref(), event.as_deref(), state_dir, env);
@@ -245,7 +342,11 @@ pub fn run_with(
 fn reads_sessions(cmd: &Command) -> bool {
     matches!(
         cmd,
-        Command::List { .. } | Command::Show { .. } | Command::Dashboard
+        Command::List { .. }
+            | Command::Show { .. }
+            | Command::Dashboard
+            | Command::Restore { .. }
+            | Command::Respawn { .. }
     )
 }
 

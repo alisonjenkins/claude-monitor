@@ -110,8 +110,6 @@ macro_rules! command_tests {
 }
 
 command_tests! {
-    restore => "restore", "implemented by T073";
-    respawn => "respawn", "implemented by T073";
     project => "project", "implemented by T108";
     group => "group", "implemented by T108";
     note => "note", "implemented by T109";
@@ -224,6 +222,40 @@ mod boot_check {
     }
 }
 
+/// `restore` and `respawn` start sessions in tmux, so the conformance run uses
+/// a temporary state directory (the example `restore --yes` finds nothing to
+/// start there) and a `respawn` of a session that does not exist, which is
+/// refused before tmux is touched.
+mod session_starters {
+    use super::*;
+    use claude_monitor::cli::run_in;
+    use claude_monitor::store::{legacy, Store, StoreOptions};
+
+    fn run_in_tempdir(name: &str) -> Result<Output, Error> {
+        let state = tempfile::tempdir().unwrap();
+        let fake = FakeEnv::new();
+        let store = Store::open_in_dir(state.path(), &StoreOptions::viewer()).unwrap();
+        let empty = tempfile::tempdir().unwrap();
+        legacy::migrate(&store, empty.path(), fake.env.clock.as_ref()).unwrap();
+        let info = Command::all().iter().find(|i| i.name == name).unwrap();
+        run_in((info.example)(), &fake.env, Some(state.path()))
+    }
+
+    #[test]
+    fn restore_implemented() {
+        let result = run_in_tempdir("restore");
+        assert!(result.is_ok(), "{result:?}");
+        assert_contract("restore", &result);
+    }
+
+    #[test]
+    fn respawn_implemented() {
+        let result = run_in_tempdir("respawn");
+        assert!(matches!(result, Err(Error::Refused { .. })), "{result:?}");
+        assert_contract("respawn", &result);
+    }
+}
+
 /// `list` and `show` read the store, so they run against a temporary state
 /// directory with the legacy-import marker already recorded; the real
 /// runtime directory is then never read.
@@ -285,7 +317,7 @@ fn every_command_has_generated_tests_with_the_right_task() {
     for info in Command::all() {
         match info.name {
             "hook" | "dashboard" | "migrate" | "list" | "show" | "reconcile" | "watch"
-            | "boot-check" => {}
+            | "boot-check" | "restore" | "respawn" => {}
             name => {
                 let reason = GENERATED
                     .iter()
@@ -300,7 +332,7 @@ fn every_command_has_generated_tests_with_the_right_task() {
             }
         }
     }
-    assert_eq!(GENERATED.len() + 8, Command::all().len());
+    assert_eq!(GENERATED.len() + 10, Command::all().len());
 }
 
 #[test]

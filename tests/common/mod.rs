@@ -19,7 +19,8 @@ use std::time::{Duration, Instant};
 use claude_monitor::agents::kinds;
 use claude_monitor::env::{Env, SystemFs, SystemTmux};
 use claude_monitor::model::{Session, State};
-use claude_monitor::store::{Store, StoreOptions};
+use claude_monitor::store::events::EventRow;
+use claude_monitor::store::{legacy, Store, StoreOptions};
 use claude_monitor::testing::{FakeEnv, FakeProcesses, FakeVars};
 use tempfile::TempDir;
 
@@ -57,8 +58,15 @@ impl Fixture {
         let mut env = fake.env.clone();
         env.tmux = Arc::new(SystemTmux::with_socket(&socket));
         env.fs = Arc::new(SystemFs);
+        // Record the legacy import as done so opening the store never reads
+        // the real runtime directory.
+        let state_dir = root.join("state");
+        let store = Store::open_in_dir(&state_dir, &StoreOptions::viewer()).unwrap();
+        let empty = root.join("no-legacy-sessions");
+        std::fs::create_dir_all(&empty).unwrap();
+        legacy::migrate(&store, &empty, fake.env.clock.as_ref()).unwrap();
         Some(Self {
-            state_dir: root.join("state"),
+            state_dir,
             home,
             env,
             vars: fake.vars.clone(),
@@ -74,6 +82,16 @@ impl Fixture {
 
     pub fn store(&self) -> Store {
         Store::open_in_dir(&self.state_dir, &StoreOptions::viewer()).unwrap()
+    }
+
+    /// The `session.respawn_requested` events recorded so far.
+    pub fn respawn_events(&self) -> Vec<EventRow> {
+        self.store()
+            .events_since(0, 1000)
+            .unwrap()
+            .into_iter()
+            .filter(|e| e.kind == "session.respawn_requested")
+            .collect()
     }
 
     /// A session of `state` in a new directory `name` under the fixture root,

@@ -55,7 +55,6 @@ fn mixed(fx: &Fixture) {
 }
 
 #[test]
-#[ignore = "pending T073 restore command"]
 fn without_yes_it_prints_the_plan_and_starts_nothing() {
     let Some(fx) = Fixture::new() else { return };
     mixed(&fx);
@@ -70,11 +69,10 @@ fn without_yes_it_prints_the_plan_and_starts_nothing() {
     assert_eq!(out["executed"], false);
     assert_eq!(ids(&out["would_start"]), ["int1", "int2"]);
     assert!(!fx.server_has_sessions(), "tmux was started by a preview");
-    assert!(fx.store().events_since(0, 100).unwrap().is_empty());
+    assert!(fx.respawn_events().is_empty());
 }
 
 #[test]
-#[ignore = "pending T073 restore command"]
 fn the_text_plan_names_each_session_and_its_directory() {
     let Some(fx) = Fixture::new() else { return };
     let a = fx.add_session("int1", State::Interrupted, "a");
@@ -92,7 +90,6 @@ fn the_text_plan_names_each_session_and_its_directory() {
 }
 
 #[test]
-#[ignore = "pending T073 restore command"]
 fn all_interrupted_yes_starts_only_the_interrupted_ones() {
     let Some(fx) = Fixture::new() else { return };
     mixed(&fx);
@@ -111,18 +108,14 @@ fn all_interrupted_yes_starts_only_the_interrupted_ones() {
         "the session's shell window plus the two interrupted sessions"
     );
     let events: Vec<_> = fx
-        .store()
-        .events_since(0, 100)
-        .unwrap()
+        .respawn_events()
         .into_iter()
-        .filter(|e| e.kind == "session.respawn_requested")
         .map(|e| e.entity_id)
         .collect();
     assert_eq!(events.len(), 2, "{events:?}");
 }
 
 #[test]
-#[ignore = "pending T073 restore command"]
 fn finished_sessions_are_included_only_with_include_finished() {
     let Some(fx) = Fixture::new() else { return };
     mixed(&fx);
@@ -137,7 +130,6 @@ fn finished_sessions_are_included_only_with_include_finished() {
 }
 
 #[test]
-#[ignore = "pending T073 restore command"]
 fn skip_leaves_a_session_out_by_id_or_prefix() {
     let Some(fx) = Fixture::new() else { return };
     mixed(&fx);
@@ -154,7 +146,6 @@ fn skip_leaves_a_session_out_by_id_or_prefix() {
 }
 
 #[test]
-#[ignore = "pending T073 restore command"]
 fn skipping_an_unknown_session_is_a_refusal_that_starts_nothing() {
     let Some(fx) = Fixture::new() else { return };
     mixed(&fx);
@@ -180,7 +171,6 @@ fn skipping_an_unknown_session_is_a_refusal_that_starts_nothing() {
 }
 
 #[test]
-#[ignore = "pending T073 restore command"]
 fn yes_without_all_interrupted_is_a_usage_error() {
     let Some(fx) = Fixture::new() else { return };
     mixed(&fx);
@@ -198,7 +188,6 @@ fn yes_without_all_interrupted_is_a_usage_error() {
 }
 
 #[test]
-#[ignore = "pending T073 restore command"]
 fn fresh_plans_a_fresh_start_for_each_session() {
     let Some(fx) = Fixture::new() else { return };
     mixed(&fx);
@@ -219,7 +208,6 @@ fn fresh_plans_a_fresh_start_for_each_session() {
 }
 
 #[test]
-#[ignore = "pending T073 restore command"]
 fn a_session_that_cannot_resume_is_refused_and_the_rest_start_with_exit_3() {
     let Some(fx) = Fixture::new() else { return };
     mixed(&fx);
@@ -239,7 +227,6 @@ fn a_session_that_cannot_resume_is_refused_and_the_rest_start_with_exit_3() {
 }
 
 #[test]
-#[ignore = "pending T073 restore command"]
 fn the_preview_reports_refusals_and_still_exits_0() {
     let Some(fx) = Fixture::new() else { return };
     mixed(&fx);
@@ -258,7 +245,6 @@ fn the_preview_reports_refusals_and_still_exits_0() {
 }
 
 #[test]
-#[ignore = "pending T073 restore command"]
 fn nothing_to_restore_is_success() {
     let Some(fx) = Fixture::new() else { return };
     fx.add_session("wrk1", State::Working, "e");
