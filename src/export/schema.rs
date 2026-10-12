@@ -2,6 +2,11 @@
 
 use serde_json::Value;
 
+/// Bumps only for breaking changes; fields are added, never repurposed.
+pub const SCHEMA_VERSION: u32 = 1;
+/// The `external.system` of every record.
+pub const SYSTEM: &str = "ai-control-centre";
+
 /// The JSON Schema (draft 2020-12) of one export record.
 pub fn generate() -> Value {
     Value::Null
