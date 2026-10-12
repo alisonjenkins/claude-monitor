@@ -103,9 +103,12 @@ pub fn run(env: &Env, state_dir: Option<&Path>, id: &str) -> Result<Output, Erro
         if let Value::Object(map) = &mut json {
             map.extend(detail.json_fields());
         }
-        for extra in detail
-            .progress_lines()
+        let links = detail
+            .link_lines()
             .into_iter()
+            .map(|link| format!("{:<LABEL_WIDTH$}{link}", "link"));
+        for extra in links
+            .chain(detail.progress_lines())
             .chain(detail.generated_lines())
         {
             text.push('\n');

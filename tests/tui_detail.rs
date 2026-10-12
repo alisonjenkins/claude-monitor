@@ -158,6 +158,7 @@ fn generated(body: &str) -> Summary {
 
 fn detail(progress: ProgressView) -> SessionDetail {
     SessionDetail {
+        links: Vec::new(),
         id: "s1".to_owned(),
         progress,
         task_description: Some("fix the build".to_owned()),

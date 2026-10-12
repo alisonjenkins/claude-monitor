@@ -9,8 +9,10 @@ use serde_json::{json, Map, Value};
 
 use super::progress::{candidate_line, current_text, json_value};
 use crate::env::Env;
-use crate::model::Session;
+use crate::export::links::link_json;
+use crate::model::{OwnerKind, Session};
 use crate::progress::binding::{self, session_root, ProgressView};
+use crate::store::links::Link;
 use crate::store::summaries::{Summary, GENERATED_LABEL};
 use crate::store::Store;
 
@@ -25,11 +27,20 @@ pub struct SessionDetail {
     pub task_description: Option<String>,
     pub left_off: Option<String>,
     pub generated: Vec<Summary>,
+    pub links: Vec<Link>,
     pub root: PathBuf,
 }
 
 fn line(label: &str, value: &str) -> String {
     format!("{label:<LABEL_WIDTH$}{value}")
+}
+
+/// `task 42 (doc 7)`, without the doc when none is recorded.
+pub fn link_text(link: &Link) -> String {
+    match &link.cortex_doc_id {
+        Some(doc) => format!("{} {} (doc {doc})", link.cortex_kind, link.cortex_node_id),
+        None => format!("{} {}", link.cortex_kind, link.cortex_node_id),
+    }
 }
 
 impl SessionDetail {
@@ -42,12 +53,16 @@ impl SessionDetail {
             .into_iter()
             .filter(|summary| summary.model_written)
             .collect();
+        let links = store
+            .links_for(OwnerKind::Session, &session.id)
+            .map_err(|e| e.to_string())?;
         Ok(Self {
             id: session.id.clone(),
             progress,
             task_description: session.task_description.clone(),
             left_off: session.left_off.clone(),
             generated,
+            links,
             root: session_root(session),
         })
     }
@@ -86,7 +101,16 @@ impl SessionDetail {
                 "generated": generated,
             }),
         );
+        fields.insert(
+            "links".to_owned(),
+            Value::Array(self.links.iter().map(link_json).collect()),
+        );
         fields
+    }
+
+    /// One plain line per link: `task 42 (doc 7)`.
+    pub fn link_lines(&self) -> Vec<String> {
+        self.links.iter().map(link_text).collect()
     }
 
     /// Plain lines for the progress block; empty when there is nothing to say.

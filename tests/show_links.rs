@@ -60,7 +60,6 @@ impl Rig {
 }
 
 #[test]
-#[ignore = "T103: implemented in the next commit"]
 fn json_lists_the_sessions_links_in_the_link_command_shape() {
     let rig = rig();
     rig.link("s1", "42", "task", Some("7"));
@@ -82,7 +81,6 @@ fn json_lists_the_sessions_links_in_the_link_command_shape() {
 }
 
 #[test]
-#[ignore = "T103: implemented in the next commit"]
 fn json_has_an_empty_links_list_when_nothing_is_linked() {
     let rig = rig();
     rig.link("s2", "99", "task", Some("7"));
@@ -93,7 +91,6 @@ fn json_has_an_empty_links_list_when_nothing_is_linked() {
 }
 
 #[test]
-#[ignore = "T103: implemented in the next commit"]
 fn text_has_one_link_line_per_link_and_none_for_other_sessions() {
     let rig = rig();
     rig.link("s1", "42", "task", Some("7"));
@@ -109,7 +106,6 @@ fn text_has_one_link_line_per_link_and_none_for_other_sessions() {
 }
 
 #[test]
-#[ignore = "T103: implemented in the next commit"]
 fn text_has_no_link_line_without_links() {
     let rig = rig();
 
