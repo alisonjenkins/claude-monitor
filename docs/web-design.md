@@ -60,6 +60,39 @@ on you. So the page is calm paper-and-ink, and exactly one thing is loud.
 - **Motion.** One 150ms fade when a region is swapped by htmx, off under
   `prefers-reduced-motion`.
 
+## Confirmation before destructive or hard-to-notice actions
+
+`dismiss` (a session or a project), `unlink` and `Respawn` never act on the
+first request in any interface (CLI prompt or `--yes`, TUI footer question,
+and this view).
+
+- **Dismiss and unlink.** `POST /sessions/{id}/dismiss`, `POST
+  /projects/{id}/dismiss` and `POST /sessions/{id}/unlink` change nothing
+  unless the body carries `confirm` (`1`, `true`, `on`, `yes`). Without it
+  they answer 409 `{"ok":false,"error":...,"code":"confirmation_required"}`;
+  an unknown target is still 404. The same path answers `GET` with the
+  confirmation: JSON (`confirmation_required`, `action`, `consequence`,
+  `confirm_with`) for scripts, an inline fragment for htmx requests, a whole
+  page otherwise. `unlink` takes `?cortex=<node>`.
+- **Panel, not modal.** The session page's Dismiss button `hx-get`s the
+  fragment into `#confirm-slot`, above the page and outside the live region
+  so a background refresh does not close it. It is a bordered panel in ink,
+  not the signal colour: it names the target as a question, says the
+  consequence, and offers Confirm (solid ink, a form that posts `confirm=1`)
+  and Cancel (a plain link back to the page). `app.js` moves focus to
+  Confirm, closes the panel on Escape or Cancel and returns focus to the
+  button. The button sets `hx-select="unset"` because htmx would otherwise
+  inherit the live region's filter and drop the fragment.
+- **Respawn.** The Respawn button on the overview and the session page is a
+  link to `/restore?session=<id>`: the `/restore` preview for that one
+  session (any state, refusals and alternatives shown), whose Respawn button
+  posts `/respawn` with that id. `POST /sessions/{id}/respawn` stays for
+  scripts, as the contract says.
+- **Not gated.** Reversible inverses (`undismiss`, `unpark`, `undone`) and
+  notes, grouping, parking and filters. Setting a project's status to
+  `archived` through the status form is `project set-status`, not `dismiss`,
+  and is not gated.
+
 ## Pages
 
 | Page | Route | Notes |
@@ -67,7 +100,7 @@ on you. So the page is calm paper-and-ink, and exactly one thing is loud.
 | Overview | `/`, `/sessions` | Waiting band, Active, Finished, Done, Unseen (collapsed). Filter form (state, agent, repo, project, text, include dismissed) submits as a plain GET so it works without JS. |
 | Project | `/projects/{id}` | Header with name, status and notes; then Active, Interrupted, Finished and the project's own Done section. |
 | Session | `/sessions/{id}` | Verbatim task and left-off, progress with source label, lineage (resumed from / by), notes, labelled generated summaries, actions. No transcript, no conversation text beyond what `show` prints. |
-| Restore | `/restore` | The interrupted list from `restore` without `--yes`, a checkbox per row (all selected), refusals listed with their alternatives, one confirm button posting to `/respawn`. |
+| Restore | `/restore`, `/restore?session={id}` | The interrupted list from `restore` without `--yes`, a checkbox per row (all selected), refusals listed with their alternatives, one confirm button posting to `/respawn`. With `session`, the preview of that one session, which is where the Respawn buttons lead. |
 | Links | `/links` | Stored cortexiphan links; `?check=1` runs `links check` and marks disagreements. |
 
 ## Parity (SC-011)
