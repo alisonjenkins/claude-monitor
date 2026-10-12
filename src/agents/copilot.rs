@@ -1,6 +1,7 @@
 use serde_json::Value;
 
-use super::{AgentKind, ParseError, ParsedHook};
+use super::{copilot_discover, AgentKind, DiscoverError, ParseError, ParsedHook, SessionStub};
+use crate::env::Env;
 use crate::model::{Event, NotificationKind, StartSource};
 
 const UNKNOWN_END_REASON: &str = "unknown";
@@ -29,6 +30,10 @@ pub struct CopilotKind;
 impl AgentKind for CopilotKind {
     fn id(&self) -> &'static str {
         "copilot"
+    }
+
+    fn discover(&self, env: &Env) -> Result<Vec<SessionStub>, DiscoverError> {
+        copilot_discover::scan(env).map(|report| report.stubs)
     }
 
     /// Payload shapes are those captured on Copilot CLI 1.0.93

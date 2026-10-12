@@ -14,10 +14,11 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 
+use claude_monitor::agents::copilot::CopilotKind;
 use claude_monitor::agents::copilot_discover::{
     discover_and_store, scan, MAX_PROMPT_CHARS, READ_WINDOW_BYTES,
 };
-use claude_monitor::agents::DiscoverError;
+use claude_monitor::agents::{kinds, AgentKind, DiscoverError};
 use claude_monitor::env::{Env, EnvError, FileMeta, Fs, SystemFs};
 use claude_monitor::model::{Author, Session, State};
 use claude_monitor::store::{Store, StoreOptions};
@@ -509,6 +510,43 @@ fn an_absent_session_state_directory_is_an_empty_result() {
         (0, 0, 0)
     );
     assert!(store.list_sessions().unwrap().is_empty());
+}
+
+#[test]
+fn the_copilot_kind_discovers_the_same_stubs_as_the_scanner() {
+    let fx = Fx::new();
+    let other = "7bb1ff4a-8486-442e-b134-55a7a63408ec";
+    fx.write(
+        SESSION,
+        &workspace_yaml(SESSION),
+        &simple_events(SESSION, "Fix the build"),
+    );
+    fx.write(
+        other,
+        &workspace_yaml(other),
+        &simple_events(other, "Second task"),
+    );
+
+    let scanned = scan(&fx.env).unwrap().stubs;
+    let via_kind = CopilotKind.discover(&fx.env).unwrap();
+    let via_registry = kinds()
+        .into_iter()
+        .find(|kind| kind.id() == "copilot")
+        .expect("copilot is registered")
+        .discover(&fx.env)
+        .unwrap();
+
+    let mut expected: Vec<&str> = scanned
+        .iter()
+        .map(|s| s.agent_session_id.as_str())
+        .collect();
+    expected.sort();
+    assert_eq!(expected.len(), 2);
+    for stubs in [&via_kind, &via_registry] {
+        let mut got: Vec<&str> = stubs.iter().map(|s| s.agent_session_id.as_str()).collect();
+        got.sort();
+        assert_eq!(got, expected);
+    }
 }
 
 #[test]
