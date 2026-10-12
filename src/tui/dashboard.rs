@@ -9,11 +9,11 @@ use std::collections::HashMap;
 use std::io::stdout;
 use std::time::Duration;
 
-use crate::desktop_notify;
+use super::ui::{self, App};
+use super::watcher;
+use crate::notify;
 use crate::session;
 use crate::tmux;
-use crate::ui::{self, App};
-use crate::watcher;
 
 const CLEANUP_INTERVAL_SECS: u64 = 30;
 
@@ -53,7 +53,7 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>) -> Result
 
     let sessions = session::read_all_sessions(&status_dir);
     app.pane_locations = tmux::list_panes().unwrap_or_default().unwrap_or_default();
-    let mut prev_states = desktop_notify::state_snapshot(&sessions);
+    let mut prev_states = notify::state_snapshot(&sessions);
     app.update_sessions(sessions);
 
     let mut last_cleanup = std::time::Instant::now();
@@ -111,12 +111,12 @@ fn refresh(
         Err(e) => app.last_error = Some(format!("tmux error: {e:#}")),
     }
 
-    for s in desktop_notify::transitions_into_attention(prev_states, &sessions) {
-        if let Err(e) = desktop_notify::notify_transition(s.project_name(), s.state) {
+    for s in notify::transitions_into_attention(prev_states, &sessions) {
+        if let Err(e) = notify::notify_transition(s.project_name(), s.state) {
             app.last_error = Some(format!("notification failed: {e:#}"));
         }
     }
-    *prev_states = desktop_notify::state_snapshot(&sessions);
+    *prev_states = notify::state_snapshot(&sessions);
 
     app.update_sessions(sessions);
 }

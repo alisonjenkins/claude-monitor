@@ -5,6 +5,10 @@ edition = "2021"
 description = "TUI dashboard for monitoring multiple Claude Code sessions in tmux"
 license = "MIT OR Apache-2.0"
 
+[lib]
+name = "claude_monitor"
+path = "src/lib.rs"
+
 [[bin]]
 name = "claude-monitor"
 path = "src/main.rs"
