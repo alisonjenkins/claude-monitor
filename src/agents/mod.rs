@@ -14,6 +14,7 @@ use crate::model::{Event, Session};
 
 pub mod claude;
 pub mod claude_discover;
+pub mod claude_registry;
 pub mod copilot;
 pub mod copilot_discover;
 pub mod discover_store;
