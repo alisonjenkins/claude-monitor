@@ -38,7 +38,6 @@ fn kill_and_reap(mut child: Child) {
 }
 
 #[test]
-#[ignore = "until the process exit source lands"]
 fn killing_a_registered_process_wakes_and_reports_its_pid() {
     let mut source = ProcExitSource::new().unwrap();
     let mut child = spawn_sleeper();
@@ -55,7 +54,6 @@ fn killing_a_registered_process_wakes_and_reports_its_pid() {
 }
 
 #[test]
-#[ignore = "until the process exit source lands"]
 fn registering_an_already_dead_pid_reports_it_at_once() {
     let mut source = ProcExitSource::new().unwrap();
     let mut child = spawn_sleeper();
@@ -71,7 +69,6 @@ fn registering_an_already_dead_pid_reports_it_at_once() {
 }
 
 #[test]
-#[ignore = "until the process exit source lands"]
 fn a_start_time_mismatch_is_reported_as_exited() {
     // The pid now belongs to a different process than the one recorded (pid
     // reuse), so the recorded process is gone; the live one is not watched.
@@ -91,7 +88,6 @@ fn a_start_time_mismatch_is_reported_as_exited() {
 }
 
 #[test]
-#[ignore = "until the process exit source lands"]
 fn unregistered_processes_are_not_reported() {
     let mut source = ProcExitSource::new().unwrap();
     let mut child = spawn_sleeper();
@@ -107,7 +103,6 @@ fn unregistered_processes_are_not_reported() {
 }
 
 #[test]
-#[ignore = "until the process exit source lands"]
 fn unregister_forgets_an_exit_that_was_not_drained() {
     let mut source = ProcExitSource::new().unwrap();
     let mut child = spawn_sleeper();
@@ -123,7 +118,6 @@ fn unregister_forgets_an_exit_that_was_not_drained() {
 }
 
 #[test]
-#[ignore = "until the process exit source lands"]
 fn registering_from_another_thread_wakes_a_blocked_wait() {
     let mut source = ProcExitSource::new().unwrap();
     let handle = source.handle();
@@ -145,7 +139,6 @@ fn registering_from_another_thread_wakes_a_blocked_wait() {
 }
 
 #[test]
-#[ignore = "until the process exit source lands"]
 fn wait_times_out_without_an_exit() {
     let mut source = ProcExitSource::new().unwrap();
     let child = spawn_sleeper();

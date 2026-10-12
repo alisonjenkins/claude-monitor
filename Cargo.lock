@@ -424,6 +424,7 @@ dependencies = [
  "notify-rust",
  "ratatui",
  "rusqlite",
+ "rustix",
  "serde",
  "serde_json",
  "tempfile",
