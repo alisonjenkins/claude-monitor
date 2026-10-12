@@ -17,7 +17,7 @@ use crate::cli::detail::SessionDetail;
 use crate::export::links::Check;
 use crate::model::State;
 use crate::notify::is_notifiable;
-use crate::store::queries::{Overview, OverviewEntry, OverviewQuery, Section, SectionName};
+use crate::store::queries::{Flag, Overview, OverviewEntry, OverviewQuery, Section, SectionName};
 use crate::store::Store;
 
 const NO_PANE_STATUS: &str = "no tmux pane recorded for this session";
@@ -424,6 +424,21 @@ impl App {
         vec![Effect::Organise(action)]
     }
 
+    fn toggle_park(&mut self) -> Vec<Effect> {
+        let Some((id, parked)) = self
+            .selected_entry()
+            .map(|entry| (entry.id.clone(), entry.flags.contains(&Flag::Parked)))
+        else {
+            return Vec::new();
+        };
+        let action = if parked {
+            Organise::Unpark { id }
+        } else {
+            Organise::Park { id }
+        };
+        vec![Effect::Organise(action)]
+    }
+
     fn refuse(&mut self, message: &str) -> Vec<Effect> {
         self.status = Some(message.to_owned());
         Vec::new()
@@ -555,6 +570,7 @@ impl App {
             Action::Undone => return self.organise_selected(Mark::Undone),
             Action::Dismiss => return self.organise_selected(Mark::Dismiss),
             Action::Note => self.open_note(),
+            Action::TogglePark => return self.toggle_park(),
             Action::Detail => return self.open_detail(),
             Action::Links => return self.open_detail_and_check_links(),
             Action::Restore => self.open_restore(),

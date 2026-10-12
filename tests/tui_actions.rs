@@ -109,7 +109,6 @@ mod park {
     use super::*;
 
     #[test]
-    #[ignore = "I1: dashboard actions"]
     fn p_upper_parks_a_row_that_is_not_parked() {
         let (_, effects) = press(single("s1", vec![]), KeyCode::Char('P'));
 
@@ -117,7 +116,6 @@ mod park {
     }
 
     #[test]
-    #[ignore = "I1: dashboard actions"]
     fn p_upper_unparks_a_parked_row() {
         let (_, effects) = press(single("s1", vec![Flag::Parked]), KeyCode::Char('P'));
 
@@ -499,7 +497,6 @@ mod with_a_real_store {
     use super::*;
 
     #[test]
-    #[ignore = "I1: dashboard actions"]
     fn p_upper_parks_then_unparks() {
         let rig = rig();
         rig.session("act", "/work");
