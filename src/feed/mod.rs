@@ -135,6 +135,13 @@ impl<S: EventSource, C: Monotonic> ChangeFeed<S, C> {
         self.throttle.deadline()
     }
 
+    /// Blocks on the source for up to `timeout`, then polls. A stub until the
+    /// implementing commit.
+    pub fn wait_poll(&mut self, timeout: Duration) -> Result<Vec<EventRow>, EventsError> {
+        let _ = timeout;
+        Ok(Vec::new())
+    }
+
     /// Non-blocking. Rows after the cursor once a window has fired (or a replay
     /// or backlog is pending), oldest first; empty otherwise.
     pub fn poll(&mut self) -> Result<Vec<EventRow>, EventsError> {

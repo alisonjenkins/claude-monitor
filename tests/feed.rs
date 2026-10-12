@@ -18,7 +18,7 @@ use tempfile::TempDir;
 
 use claude_monitor::feed::{
     ChangeFeed, CopilotSessionsSource, EventSource, FakeHandle, FakeSource, FsWatcherSource,
-    ManualClock,
+    ManualClock, SystemMonotonic,
 };
 
 const AT: &str = "2026-10-12T14:03:22Z";
@@ -298,4 +298,63 @@ fn watching_a_missing_copilot_directory_is_an_error_naming_it() {
     let err = CopilotSessionsSource::watch(&missing).unwrap_err();
 
     assert!(err.to_string().contains("nope"), "{err}");
+}
+
+type RealClockRig = (
+    TempDir,
+    Store,
+    ChangeFeed<FakeSource, SystemMonotonic>,
+    FakeHandle,
+);
+
+fn real_clock_rig() -> RealClockRig {
+    let dir = TempDir::new().unwrap();
+    let writer = open(&dir);
+    let (source, wake) = FakeSource::new();
+    let feed = ChangeFeed::new(open(&dir), source, SystemMonotonic).unwrap();
+    (dir, writer, feed, wake)
+}
+
+#[test]
+#[ignore = "implemented with ChangeFeed::wait_poll"]
+fn wait_poll_blocks_until_the_window_fires_then_returns_the_rows() {
+    let (_dir, writer, mut feed, wake) = real_clock_rig();
+    let seq = append(&writer, 1);
+    wake.wake();
+
+    let started = std::time::Instant::now();
+    let rows = feed.wait_poll(REAL_OS_WAKE_TIMEOUT).unwrap();
+
+    assert_eq!(seqs(&rows), vec![seq]);
+    assert!(started.elapsed() >= WINDOW, "returned before the window");
+    assert!(
+        started.elapsed() < REAL_OS_WAKE_TIMEOUT,
+        "waited for the timeout"
+    );
+}
+
+#[test]
+#[ignore = "implemented with ChangeFeed::wait_poll"]
+fn wait_poll_returns_empty_after_the_timeout_when_nothing_happens() {
+    let (_dir, _writer, mut feed, _wake) = real_clock_rig();
+
+    let started = std::time::Instant::now();
+    let rows = feed.wait_poll(ms(80)).unwrap();
+
+    assert!(rows.is_empty());
+    assert!(started.elapsed() >= ms(60), "did not wait");
+}
+
+#[test]
+#[ignore = "implemented with ChangeFeed::wait_poll"]
+fn wait_poll_returns_a_replay_at_once() {
+    let (_dir, writer, mut feed, _wake) = real_clock_rig();
+    let first = append(&writer, 1);
+    feed.resume_from(0);
+
+    let started = std::time::Instant::now();
+    let rows = feed.wait_poll(REAL_OS_WAKE_TIMEOUT).unwrap();
+
+    assert_eq!(seqs(&rows), vec![first]);
+    assert!(started.elapsed() < ms(40), "a pending replay must not wait");
 }
