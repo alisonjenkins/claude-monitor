@@ -190,7 +190,6 @@ mod link {
     }
 
     #[test]
-    #[ignore = "I1: dashboard actions"]
     fn l_opens_a_link_prompt() {
         assert_eq!(
             keys(single("s1", vec![]), "l").prompt(),
@@ -202,7 +201,6 @@ mod link {
     }
 
     #[test]
-    #[ignore = "I1: dashboard actions"]
     fn a_node_and_a_doc_are_linked() {
         let (app, effects) = press(typing("123 45"), KeyCode::Enter);
 
@@ -218,7 +216,6 @@ mod link {
     }
 
     #[test]
-    #[ignore = "I1: dashboard actions"]
     fn the_doc_is_optional() {
         let (_, effects) = press(typing("123"), KeyCode::Enter);
 
@@ -233,7 +230,6 @@ mod link {
     }
 
     #[test]
-    #[ignore = "I1: dashboard actions"]
     fn empty_input_or_esc_links_nothing() {
         let (_, effects) = press(typing(""), KeyCode::Enter);
         assert!(effects.is_empty(), "{effects:?}");
@@ -244,7 +240,6 @@ mod link {
     }
 
     #[test]
-    #[ignore = "I1: dashboard actions"]
     fn more_than_a_node_and_a_doc_is_refused_in_the_footer() {
         let (app, effects) = press(typing("1 2 3"), KeyCode::Enter);
 
@@ -528,7 +523,6 @@ mod with_a_real_store {
     }
 
     #[test]
-    #[ignore = "I1: dashboard actions"]
     fn l_links_the_session_and_a_bad_node_id_is_refused() {
         let rig = rig();
         rig.session("act", "/work");

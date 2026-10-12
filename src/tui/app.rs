@@ -24,6 +24,7 @@ const NO_PANE_STATUS: &str = "no tmux pane recorded for this session";
 const NO_LINKS_STATUS: &str = "this session has no links to check";
 const NOT_FINISHED_STATUS: &str = "only a finished session can be marked done";
 const NOT_DONE_STATUS: &str = "that session is not done";
+const LINK_USAGE_STATUS: &str = "link takes <node-id> [doc]";
 
 /// What `D`, `U` and `x` ask for on the selected row.
 #[derive(Debug, Clone, Copy)]
@@ -453,6 +454,15 @@ impl App {
         }
     }
 
+    fn open_link(&mut self) {
+        if let Some(id) = self.selected_entry().map(|entry| entry.id.clone()) {
+            self.prompt = Some(Prompt::Link {
+                id,
+                text: String::new(),
+            });
+        }
+    }
+
     fn open_group(&mut self) {
         if let Some(id) = self.selected_entry().map(|entry| entry.id.clone()) {
             self.prompt = Some(Prompt::Group {
@@ -519,6 +529,30 @@ impl App {
                 }
             }
             (Prompt::Group { .. }, KeyCode::Esc) => self.prompt = None,
+            (Prompt::Link { id, mut text }, KeyCode::Char(c)) => {
+                text.push(c);
+                self.prompt = Some(Prompt::Link { id, text });
+            }
+            (Prompt::Link { id, mut text }, KeyCode::Backspace) => {
+                text.pop();
+                self.prompt = Some(Prompt::Link { id, text });
+            }
+            (Prompt::Link { id, text }, KeyCode::Enter) => {
+                self.prompt = None;
+                let words: Vec<&str> = text.split_whitespace().collect();
+                match words.as_slice() {
+                    [] => {}
+                    [node_id] | [node_id, _] => {
+                        return vec![Effect::Organise(Organise::Link {
+                            id,
+                            node_id: (*node_id).to_owned(),
+                            doc: words.get(1).map(|doc| (*doc).to_owned()),
+                        })];
+                    }
+                    _ => return self.refuse(LINK_USAGE_STATUS),
+                }
+            }
+            (Prompt::Link { .. }, KeyCode::Esc) => self.prompt = None,
             _ => {}
         }
         Vec::new()
@@ -600,6 +634,7 @@ impl App {
             Action::Note => self.open_note(),
             Action::TogglePark => return self.toggle_park(),
             Action::Group => self.open_group(),
+            Action::Link => self.open_link(),
             Action::Detail => return self.open_detail(),
             Action::Links => return self.open_detail_and_check_links(),
             Action::Restore => self.open_restore(),
