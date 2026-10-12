@@ -57,10 +57,10 @@ let
 
   copilotHooksFile = {
     version = 1;
-    hooks = lib.genAttrs copilotHookEvents (_event: [
+    hooks = lib.genAttrs copilotHookEvents (event: [
       {
         type = "command";
-        bash = "${hookCommand} --agent copilot";
+        bash = "${hookCommand} --agent copilot --event ${event}";
         timeoutSec = 10;
       }
     ]);
