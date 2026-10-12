@@ -300,3 +300,86 @@ fn resumed_session_after_reboot_is_not_interrupted_again() {
     let report = h.reconcile(Scope::All, T2);
     assert_eq!((report.interrupted, report.unchanged), (0, 1));
 }
+
+#[test]
+fn clean_session_end_is_finished_and_listed_in_the_default_overview() {
+    let h = Harness::new();
+    h.feed(
+        Some("%1"),
+        Some(AGENT_PID),
+        &payload("SessionStart-startup", "s1"),
+    );
+    h.fake.clock.set(T1);
+    h.feed(
+        Some("%1"),
+        Some(AGENT_PID),
+        &payload("SessionEnd-other", "s1"),
+    );
+
+    let s = h.session("s1");
+    assert_eq!(s.state, State::Finished);
+    let overview = h.store().overview(&OverviewQuery::default(), T2).unwrap();
+    assert_eq!(
+        section_ids(&overview, SectionName::Finished),
+        std::slice::from_ref(&s.id)
+    );
+    assert!(section_ids(&overview, SectionName::Active).is_empty());
+    assert!(section_ids(&overview, SectionName::Interrupted).is_empty());
+}
+
+#[test]
+fn old_finished_session_is_counted_and_listed_on_request_never_dropped() {
+    let h = Harness::new();
+    h.fake.clock.set("2026-08-01T00:00:00Z");
+    h.feed(None, None, &payload("SessionStart-startup", "s1"));
+    h.feed(None, None, &payload("SessionEnd-other", "s1"));
+    let id = h.session("s1").id;
+
+    let collapsed = h.store().overview(&OverviewQuery::default(), T2).unwrap();
+    let finished = collapsed
+        .sections
+        .iter()
+        .find(|s| s.name == SectionName::Finished)
+        .unwrap();
+    assert_eq!(finished.collapsed_count, 1);
+
+    let expanded = h
+        .store()
+        .overview(
+            &OverviewQuery {
+                expand_finished: true,
+                ..OverviewQuery::default()
+            },
+            T2,
+        )
+        .unwrap();
+    assert_eq!(
+        section_ids(&expanded, SectionName::Finished),
+        std::slice::from_ref(&id)
+    );
+}
+
+#[test]
+fn clear_ends_one_session_and_links_the_next_to_it() {
+    let h = Harness::new();
+    h.feed(Some("%1"), None, &payload("SessionStart-startup", "old"));
+    h.fake.clock.set(T1);
+    h.feed(Some("%1"), None, &payload("SessionEnd-clear", "old"));
+    h.fake.clock.set(T2);
+    h.feed(Some("%1"), None, &payload("SessionStart-clear", "new"));
+
+    let old = h.session("old");
+    let new = h.session("new");
+    assert_eq!(old.state, State::Finished);
+    assert_eq!(old.end_reason.as_deref(), Some("clear"));
+    assert_eq!(new.resumed_from.as_deref(), Some(old.id.as_str()));
+    let overview = h.store().overview(&OverviewQuery::default(), T2).unwrap();
+    assert_eq!(
+        section_ids(&overview, SectionName::Finished),
+        std::slice::from_ref(&old.id)
+    );
+    assert_eq!(
+        section_ids(&overview, SectionName::Active),
+        std::slice::from_ref(&new.id)
+    );
+}
