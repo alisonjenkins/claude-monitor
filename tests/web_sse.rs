@@ -62,7 +62,6 @@ fn changed(entity: &str, id: &str, kind: &str) -> Value {
 }
 
 #[test]
-#[ignore = "implemented by T118"]
 fn the_stream_is_an_event_stream_that_is_not_cached() {
     let rig = Rig::start();
 
@@ -77,7 +76,6 @@ fn the_stream_is_an_event_stream_that_is_not_cached() {
 }
 
 #[test]
-#[ignore = "implemented by T118"]
 fn a_pushed_change_carries_its_seq_and_what_changed() {
     let rig = Rig::start();
     let mut stream = open_events(&rig, None);
@@ -92,7 +90,6 @@ fn a_pushed_change_carries_its_seq_and_what_changed() {
 }
 
 #[test]
-#[ignore = "implemented by T118"]
 fn several_changes_arrive_in_seq_order_one_message_each() {
     let rig = Rig::start();
     let mut stream = open_events(&rig, None);
@@ -109,7 +106,6 @@ fn several_changes_arrive_in_seq_order_one_message_each() {
 }
 
 #[test]
-#[ignore = "implemented by T118"]
 fn a_new_connection_does_not_replay_history() {
     let rig = Rig::start();
     append(&rig.writer, "old", "state");
@@ -124,7 +120,6 @@ fn a_new_connection_does_not_replay_history() {
 }
 
 #[test]
-#[ignore = "implemented by T118"]
 fn reconnecting_with_last_event_id_replays_what_was_missed_from_the_table() {
     let rig = Rig::start();
     let seen = append(&rig.writer, "s-1", "state");
@@ -141,7 +136,6 @@ fn reconnecting_with_last_event_id_replays_what_was_missed_from_the_table() {
 }
 
 #[test]
-#[ignore = "implemented by T118"]
 fn after_a_replay_live_changes_follow_without_duplicates() {
     let rig = Rig::start();
     let seen = append(&rig.writer, "s-1", "state");
@@ -158,7 +152,6 @@ fn after_a_replay_live_changes_follow_without_duplicates() {
 }
 
 #[test]
-#[ignore = "implemented by T118"]
 fn a_last_event_id_that_is_not_a_number_means_live_only() {
     let rig = Rig::start();
     append(&rig.writer, "old", "state");
@@ -172,7 +165,6 @@ fn a_last_event_id_that_is_not_a_number_means_live_only() {
 }
 
 #[test]
-#[ignore = "implemented by T118"]
 fn an_idle_stream_sends_keepalive_comment_lines() {
     let rig = Rig::start_with(|config| config.keepalive = Duration::from_millis(100));
     let mut stream = open_events(&rig, None);
@@ -188,7 +180,6 @@ fn an_idle_stream_sends_keepalive_comment_lines() {
 }
 
 #[test]
-#[ignore = "implemented by T118"]
 fn shutting_the_server_down_ends_open_streams() {
     let rig = Rig::start();
     let mut stream = open_events(&rig, None);

@@ -6,6 +6,7 @@
 use std::io;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread::JoinHandle;
 use std::time::Duration;
@@ -14,11 +15,12 @@ use axum::middleware::from_fn_with_state;
 use axum::routing::get;
 use axum::Router;
 use tokio::net::TcpListener;
-use tokio::sync::oneshot;
+use tokio::sync::watch;
 
 use crate::feed::{ChangeFeed, EventSource, SystemMonotonic};
 
 pub mod auth;
+pub mod events;
 
 pub use auth::Token;
 
@@ -72,6 +74,7 @@ impl WebConfig {
 #[derive(Debug, Clone)]
 pub struct AppState {
     pub auth: Arc<auth::Auth>,
+    pub events: events::Events,
 }
 
 /// The routes behind the guard. Pages and actions are added here; the guard
@@ -83,6 +86,7 @@ pub fn routes() -> Router<AppState> {
 fn router(state: AppState) -> Router {
     Router::new()
         .route("/healthz", get(healthz))
+        .route("/events", get(events::events))
         .merge(routes())
         .with_state(state.clone())
         .layer(from_fn_with_state(state, auth::guard))
@@ -95,8 +99,9 @@ async fn healthz() -> &'static str {
 #[derive(Debug)]
 pub struct Server {
     addr: SocketAddr,
-    stop: Option<oneshot::Sender<()>>,
-    thread: Option<JoinHandle<()>>,
+    closing: Arc<watch::Sender<bool>>,
+    feed_stop: Arc<AtomicBool>,
+    threads: Vec<JoinHandle<()>>,
 }
 
 impl Server {
@@ -113,7 +118,7 @@ impl Server {
     }
 
     fn join(&mut self) {
-        if let Some(thread) = self.thread.take() {
+        for thread in self.threads.drain(..) {
             // A panicked server thread has nothing left to report here.
             let _ = thread.join();
         }
@@ -122,10 +127,8 @@ impl Server {
 
 impl Drop for Server {
     fn drop(&mut self) {
-        if let Some(stop) = self.stop.take() {
-            // The receiver is gone once the server has already stopped.
-            let _ = stop.send(());
-        }
+        self.feed_stop.store(true, Ordering::Release);
+        self.closing.send_replace(true);
         self.join();
     }
 }
@@ -136,7 +139,6 @@ pub fn start<S: EventSource + Send + 'static>(
     config: WebConfig,
     feed: ChangeFeed<S, SystemMonotonic>,
 ) -> Result<Server, WebError> {
-    drop(feed);
     if !config.bind.is_loopback() {
         return Err(WebError::NotLoopback { addr: config.bind });
     }
@@ -155,40 +157,62 @@ pub fn start<S: EventSource + Send + 'static>(
         addr: wanted,
         source,
     })?;
+    let (closing, closing_rx) = watch::channel(false);
+    let closing = Arc::new(closing);
+    let events = events::Events::new(config.store_path, config.keepalive, closing_rx);
     let state = AppState {
         auth: Arc::new(auth::Auth::new(config.token, addr.port())),
+        events: events.clone(),
     };
     let app = router(state);
-    let (stop, stopped) = oneshot::channel();
+    let feed_stop = Arc::new(AtomicBool::new(false));
+    let feed_thread = events
+        .spawn_feed(feed, Arc::clone(&feed_stop))
+        .map_err(WebError::Thread)?;
+    let serving = Arc::clone(&closing);
     let handle_signals = config.handle_signals;
-    let thread = std::thread::Builder::new()
+    let server_thread = std::thread::Builder::new()
         .name("web-server".to_owned())
         .spawn(move || {
             let served = runtime.block_on(async {
                 axum::serve(listener, app)
-                    .with_graceful_shutdown(shutdown_requested(stopped, handle_signals))
+                    .with_graceful_shutdown(shutdown_requested(serving, handle_signals))
                     .await
             });
             if let Err(error) = served {
                 eprintln!("claude-monitor: web server stopped: {error}");
             }
         })
-        .map_err(WebError::Thread)?;
+        .map_err(WebError::Thread);
+    let server_thread = match server_thread {
+        Ok(thread) => thread,
+        Err(error) => {
+            feed_stop.store(true, Ordering::Release);
+            let _ = feed_thread.join();
+            return Err(error);
+        }
+    };
     Ok(Server {
         addr,
-        stop: Some(stop),
-        thread: Some(thread),
+        closing,
+        feed_stop,
+        threads: vec![server_thread, feed_thread],
     })
 }
 
-async fn shutdown_requested(stopped: oneshot::Receiver<()>, handle_signals: bool) {
+/// Resolves when the server is told to stop, or with `handle_signals` when a
+/// termination signal arrives, which also ends the open event streams.
+async fn shutdown_requested(closing: Arc<watch::Sender<bool>>, handle_signals: bool) {
+    let stopped = events::closed(closing.subscribe());
     if handle_signals {
         tokio::select! {
-            _ = stopped => {}
-            () = termination_signal() => {}
+            () = stopped => {}
+            () = termination_signal() => {
+                closing.send_replace(true);
+            }
         }
     } else {
-        let _ = stopped.await;
+        stopped.await;
     }
 }
 
