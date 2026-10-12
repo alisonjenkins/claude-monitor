@@ -184,8 +184,8 @@ fn five_windows_in_a_row_get_distinct_ids() {
     }
     assert_eq!(
         names.lines().count(),
-        6,
-        "initial window plus five: {names}"
+        5,
+        "five windows, no placeholder: {names}"
     );
 }
 

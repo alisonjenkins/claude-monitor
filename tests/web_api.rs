@@ -472,11 +472,7 @@ fn a_respawn_starts_the_session_in_a_private_tmux_pane() {
     let body = response.json();
     assert_eq!(body["started"][0]["session"], "int1");
     assert_eq!(body["refused"], json!([]));
-    assert_eq!(
-        fx.pane_ids().len(),
-        2,
-        "the shell window plus the started session"
-    );
+    assert_eq!(fx.pane_ids().len(), 1, "only the started session's window");
 }
 
 #[test]
@@ -523,11 +519,7 @@ fn a_batch_respawn_takes_ids_or_all_interrupted_except() {
         .collect();
     assert_eq!(started, ["int1"]);
     assert_eq!(rest.json()["skipped"], json!(["int2"]));
-    assert_eq!(
-        fx.pane_ids().len(),
-        3,
-        "the shell window plus the two started sessions"
-    );
+    assert_eq!(fx.pane_ids().len(), 2, "one window per started session");
 }
 
 #[test]

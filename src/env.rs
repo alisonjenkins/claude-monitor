@@ -260,6 +260,9 @@ impl Processes for SystemProcesses {
 /// user's own tmux.
 pub const TMUX_SOCKET_VAR: &str = "CLAUDE_MONITOR_TMUX_SOCKET";
 
+/// Name of the window a new session starts with; `spawn_window` closes it.
+const PLACEHOLDER_WINDOW: &str = "claude-monitor-placeholder";
+
 /// The real tmux. With a socket it talks to that private server (`tmux -S`),
 /// otherwise to the default one.
 #[derive(Debug, Clone, Default)]
@@ -282,6 +285,32 @@ impl SystemTmux {
 
     fn output(&self, operation: &'static str, args: &[&str]) -> Result<String, EnvError> {
         tmux_output(operation, self.socket.as_deref(), args)
+    }
+
+    /// Close the empty shell window `ensure_session` left when it created the
+    /// session; the agent's own window now keeps the session alive. Best
+    /// effort: a leftover shell is harmless, a failed respawn is not.
+    fn discard_placeholder(&self, target: &str) {
+        let Ok(listing) = self.output(
+            "list tmux windows",
+            &[
+                "list-windows",
+                "-t",
+                target,
+                "-F",
+                "#{window_id} #{window_name}",
+            ],
+        ) else {
+            return;
+        };
+        for line in listing.lines() {
+            if let Some((window_id, PLACEHOLDER_WINDOW)) = line.split_once(' ') {
+                let _ = self.output(
+                    "close placeholder window",
+                    &["kill-window", "-t", window_id],
+                );
+            }
+        }
     }
 
     /// Exact-name match (`=`), so `agents` never matches `agents-old`.
@@ -392,7 +421,19 @@ impl Tmux for SystemTmux {
             return Ok(false);
         }
         let cwd = cwd.to_string_lossy();
-        match self.output(OPERATION, &["new-session", "-d", "-s", session, "-c", &cwd]) {
+        match self.output(
+            OPERATION,
+            &[
+                "new-session",
+                "-d",
+                "-s",
+                session,
+                "-n",
+                PLACEHOLDER_WINDOW,
+                "-c",
+                &cwd,
+            ],
+        ) {
             Ok(_) => Ok(true),
             // Another client may have created it between the check and now.
             Err(e) => {
@@ -431,6 +472,7 @@ impl Tmux for SystemTmux {
         ];
         args.extend(argv.iter().map(String::as_str));
         let out = self.output(OPERATION, &args)?;
+        self.discard_placeholder(&target);
         // Not a tab: tmux prints tabs as `_` outside a UTF-8 locale.
         match out.split_once(' ') {
             Some((pane_id, window_id)) => Ok(SpawnedWindow {

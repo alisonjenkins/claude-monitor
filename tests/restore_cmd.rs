@@ -102,11 +102,7 @@ fn all_interrupted_yes_starts_only_the_interrupted_ones() {
 
     assert_eq!(out["executed"], true);
     assert_eq!(ids(&out["started"]), ["int1", "int2"]);
-    assert_eq!(
-        fx.pane_ids().len(),
-        3,
-        "the session's shell window plus the two interrupted sessions"
-    );
+    assert_eq!(fx.pane_ids().len(), 2, "one window per interrupted session");
     let events: Vec<_> = fx
         .respawn_events()
         .into_iter()
@@ -142,7 +138,7 @@ fn skip_leaves_a_session_out_by_id_or_prefix() {
 
     assert_eq!(ids(&out["started"]), ["int1"]);
     assert_eq!(out["skipped"], serde_json::json!(["int2"]));
-    assert_eq!(fx.pane_ids().len(), 2);
+    assert_eq!(fx.pane_ids().len(), 1);
 }
 
 #[test]
@@ -223,7 +219,7 @@ fn a_session_that_cannot_resume_is_refused_and_the_rest_start_with_exit_3() {
 
     assert!(matches!(error, Error::Partial { .. }), "{error}");
     assert_eq!(error.exit_code(), 3);
-    assert_eq!(fx.pane_ids().len(), 2);
+    assert_eq!(fx.pane_ids().len(), 1);
 }
 
 #[test]

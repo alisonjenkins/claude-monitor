@@ -344,11 +344,7 @@ fn some_started_and_some_refused_exits_3_and_still_starts_the_good_ones() {
 
     assert!(matches!(error, Error::Partial { .. }), "{error}");
     assert_eq!(error.exit_code(), 3);
-    assert_eq!(
-        fx.pane_ids().len(),
-        2,
-        "the shell window plus the good session"
-    );
+    assert_eq!(fx.pane_ids().len(), 1, "only the good session's window");
     assert!(error.to_string().contains("bad"), "{error}");
 }
 
