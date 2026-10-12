@@ -156,6 +156,33 @@ enum Commands {
         /// Session id, or the start of one
         target: String,
     },
+    /// Show a session's plan progress and the file it comes from
+    #[command(args_conflicts_with_subcommands = true, arg_required_else_help = true)]
+    Progress {
+        /// Session id, or the start of one
+        session: Option<String>,
+        #[command(subcommand)]
+        action: Option<ProgressAction>,
+    },
+}
+
+#[derive(Subcommand)]
+enum ProgressAction {
+    /// Choose the plan a session's progress comes from; with neither a path
+    /// nor a flag, show the candidates
+    Bind {
+        /// Session id, or the start of one
+        session: String,
+        /// Plan file: a spec-kit tasks.md or a Markdown checklist
+        #[arg(conflicts_with_all = ["none", "source"])]
+        path: Option<PathBuf>,
+        /// Show no progress for this session
+        #[arg(long, conflicts_with = "source")]
+        none: bool,
+        /// Source other than a file: agent_todo or none
+        #[arg(long, value_name = "SOURCE")]
+        source: Option<String>,
+    },
 }
 
 impl Cli {
@@ -238,6 +265,32 @@ impl Cli {
             Some(Commands::Summarize { target }) => Command::Summarize {
                 target: target.clone(),
             },
+            Some(Commands::Progress {
+                action:
+                    Some(ProgressAction::Bind {
+                        session,
+                        path,
+                        none,
+                        source,
+                    }),
+                ..
+            }) => Command::ProgressBind {
+                owner: session.clone(),
+                file: path.clone(),
+                source: if *none {
+                    Some("none".to_owned())
+                } else {
+                    source.clone()
+                },
+            },
+            Some(Commands::Progress {
+                session,
+                action: None,
+            }) => Command::ProgressBind {
+                owner: session.clone().unwrap_or_default(),
+                file: None,
+                source: None,
+            },
         }
     }
 }
@@ -257,7 +310,7 @@ pub struct RunOptions {
 
 /// Run one command; `state_dir` is the `--state-dir` override. `Hook`,
 /// `Dashboard`, `Migrate`, `List`, `Show`, `Reconcile`, `Watch`, `BootCheck`,
-/// `Restore`, `Respawn` and `Summarize` are implemented; every other
+/// `Restore`, `Respawn`, `Summarize` and `ProgressBind` are implemented; every other
 /// command reports `NotImplemented` until its task lands. Reads the store as it
 /// is; [`run_with`] adds the refresh pass the binary runs.
 pub fn run_in(cmd: Command, env: &Env, state_dir: Option<&Path>) -> Result<Output, Error> {
@@ -361,6 +414,7 @@ fn reads_sessions(cmd: &Command) -> bool {
         Command::List { .. }
             | Command::Show { .. }
             | Command::Dashboard
+            | Command::ProgressBind { .. }
             | Command::Restore { .. }
             | Command::Respawn { .. }
     )

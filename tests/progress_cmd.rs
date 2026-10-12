@@ -113,13 +113,11 @@ mod parsing {
     }
 
     #[test]
-    #[ignore = "implemented by T088"]
     fn progress_with_an_id_shows_it() {
         assert_eq!(command(&["progress", "s1"]), show("s1"));
     }
 
     #[test]
-    #[ignore = "implemented by T088"]
     fn bind_takes_a_path() {
         assert_eq!(
             command(&["progress", "bind", "s1", "todo.md"]),
@@ -132,7 +130,6 @@ mod parsing {
     }
 
     #[test]
-    #[ignore = "implemented by T088"]
     fn bind_none_opts_the_session_out() {
         assert_eq!(
             command(&["progress", "bind", "s1", "--none"]),
@@ -145,7 +142,6 @@ mod parsing {
     }
 
     #[test]
-    #[ignore = "implemented by T088"]
     fn a_path_and_none_together_are_refused() {
         assert!(Cli::try_parse_from([
             "claude-monitor",
@@ -160,7 +156,6 @@ mod parsing {
 }
 
 #[test]
-#[ignore = "implemented by T088"]
 fn the_figure_names_its_source() {
     let rig = rig();
     rig.write("specs/008-a/tasks.md", TASKS);
@@ -183,7 +178,6 @@ fn the_figure_names_its_source() {
 }
 
 #[test]
-#[ignore = "implemented by T088"]
 fn ambiguous_candidates_list_without_a_figure() {
     let rig = rig();
     rig.write("PENDING.md", "- [ ] one\n");
@@ -210,7 +204,6 @@ fn ambiguous_candidates_list_without_a_figure() {
 }
 
 #[test]
-#[ignore = "implemented by T088"]
 fn no_plan_means_no_progress_key_not_zero() {
     let rig = rig();
     rig.write("README.md", "nothing\n");
@@ -223,7 +216,6 @@ fn no_plan_means_no_progress_key_not_zero() {
 }
 
 #[test]
-#[ignore = "implemented by T088"]
 fn a_chosen_file_is_remembered_by_the_next_run() {
     let rig = rig();
     rig.write("PENDING.md", "- [ ] one\n");
@@ -243,7 +235,6 @@ fn a_chosen_file_is_remembered_by_the_next_run() {
 }
 
 #[test]
-#[ignore = "implemented by T088"]
 fn a_session_id_prefix_is_enough() {
     let rig = rig();
     rig.write("PENDING.md", "- [ ] one\n");
@@ -253,7 +244,6 @@ fn a_session_id_prefix_is_enough() {
 }
 
 #[test]
-#[ignore = "implemented by T088"]
 fn none_opts_out_and_stays_out() {
     let rig = rig();
     rig.write("PENDING.md", "- [ ] one\n");
@@ -274,7 +264,6 @@ fn none_opts_out_and_stays_out() {
 }
 
 #[test]
-#[ignore = "implemented by T088"]
 fn a_vanished_file_is_reported_stale_with_its_last_figure() {
     let rig = rig();
     let tasks = rig.write("specs/008-a/tasks.md", TASKS);
@@ -293,7 +282,6 @@ fn a_vanished_file_is_reported_stale_with_its_last_figure() {
 }
 
 #[test]
-#[ignore = "implemented by T088"]
 fn a_file_with_no_tasks_is_refused_and_nothing_is_bound() {
     let rig = rig();
     let readme = rig.write("README.md", "no checkboxes\n");
@@ -307,7 +295,6 @@ fn a_file_with_no_tasks_is_refused_and_nothing_is_bound() {
 }
 
 #[test]
-#[ignore = "implemented by T088"]
 fn an_unknown_session_is_refused() {
     let rig = rig();
 
@@ -326,7 +313,6 @@ fn an_unknown_session_is_refused() {
 }
 
 #[test]
-#[ignore = "implemented by T088"]
 fn a_path_and_a_source_together_are_a_usage_error() {
     let rig = rig();
     rig.session("s1", "main");
@@ -343,7 +329,6 @@ fn a_path_and_a_source_together_are_a_usage_error() {
 }
 
 #[test]
-#[ignore = "implemented by T088"]
 fn an_unknown_source_is_a_usage_error() {
     let rig = rig();
     rig.session("s1", "main");

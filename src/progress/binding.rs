@@ -103,11 +103,13 @@ pub struct SyncSummary {
     pub warnings: Vec<String>,
 }
 
-fn session_root(session: &Session) -> PathBuf {
+/// The directory plans are looked for in: the repository root, else the cwd.
+pub fn session_root(session: &Session) -> PathBuf {
     PathBuf::from(session.repo_root.as_deref().unwrap_or(&session.cwd))
 }
 
-fn display_path(root: &Path, path: &Path) -> String {
+/// `path` relative to `root` when it is under it, for showing to a person.
+pub fn display_path(root: &Path, path: &Path) -> String {
     path.strip_prefix(root)
         .unwrap_or(path)
         .display()

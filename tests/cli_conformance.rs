@@ -11,9 +11,9 @@
 //!
 //! Rule: the task that implements a command removes that command's
 //! `#[ignore]` (its reason names the task) and makes `implemented` pass.
-//! `hook`, `dashboard`, `migrate`, `list`, `show`, `reconcile`, `boot-check`
-//! and `watch` exist and are not ignored; `migrate`, `list`, `show`,
-//! `reconcile` and `boot-check` have
+//! `hook`, `dashboard`, `migrate`, `list`, `show`, `reconcile`, `boot-check`,
+//! `progress-bind` and `watch` exist and are not ignored; `migrate`, `list`,
+//! `show`, `reconcile`, `boot-check` and `progress-bind` have
 //! their own tests because they need a temporary store, and `watch` runs until
 //! signalled, so `tests/watch_cli.rs` drives the real binary.
 
@@ -119,7 +119,6 @@ command_tests! {
     undismiss => "undismiss", "implemented by T109";
     done => "done", "implemented by T110";
     undone => "undone", "implemented by T110";
-    progress_bind => "progress-bind", "implemented by T088";
     serve => "serve", "implemented by T117";
     link => "link", "implemented by T100";
     export_cortexiphan => "export-cortexiphan", "implemented by T098";
@@ -337,7 +336,7 @@ fn every_command_has_generated_tests_with_the_right_task() {
     for info in Command::all() {
         match info.name {
             "hook" | "dashboard" | "migrate" | "list" | "show" | "reconcile" | "watch"
-            | "boot-check" | "restore" | "respawn" | "summarize" => {}
+            | "boot-check" | "restore" | "respawn" | "summarize" | "progress-bind" => {}
             name => {
                 let reason = GENERATED
                     .iter()
@@ -352,7 +351,7 @@ fn every_command_has_generated_tests_with_the_right_task() {
             }
         }
     }
-    assert_eq!(GENERATED.len() + 11, Command::all().len());
+    assert_eq!(GENERATED.len() + 12, Command::all().len());
 }
 
 #[test]
