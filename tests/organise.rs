@@ -274,7 +274,6 @@ mod markers {
     use super::*;
 
     #[test]
-    #[ignore = "implemented by T109"]
     fn a_note_is_stored_and_recorded_as_a_user_event() {
         let fx = Fixture::new();
         fx.put("s1", State::Idle, RECENT);
@@ -300,7 +299,6 @@ mod markers {
     }
 
     #[test]
-    #[ignore = "implemented by T109"]
     fn an_empty_note_or_unknown_target_is_rejected() {
         let fx = Fixture::new();
         fx.put("s1", State::Idle, RECENT);
@@ -311,7 +309,6 @@ mod markers {
     }
 
     #[test]
-    #[ignore = "implemented by T109"]
     fn dismiss_hides_by_default_and_include_dismissed_returns_it_with_history() {
         let fx = Fixture::new();
         fx.put("s1", State::Idle, RECENT);
@@ -356,7 +353,6 @@ mod markers {
     }
 
     #[test]
-    #[ignore = "implemented by T109"]
     fn dismissing_twice_records_one_event() {
         let fx = Fixture::new();
         fx.put("s1", State::Idle, RECENT);
@@ -368,7 +364,6 @@ mod markers {
     }
 
     #[test]
-    #[ignore = "implemented by T109"]
     fn park_flags_a_session_without_moving_or_hiding_it() {
         let fx = Fixture::new();
         fx.put("s1", State::Working, RECENT);
@@ -394,7 +389,6 @@ mod markers {
     }
 
     #[test]
-    #[ignore = "implemented by T109"]
     fn park_and_dismiss_on_a_project_change_its_status_and_never_delete() {
         let fx = Fixture::new();
         fx.put("s1", State::Idle, RECENT);
@@ -422,7 +416,6 @@ mod markers {
     }
 
     #[test]
-    #[ignore = "implemented by T109"]
     fn an_unknown_marker_target_is_refused() {
         let fx = Fixture::new();
 

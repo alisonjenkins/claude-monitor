@@ -10,7 +10,7 @@ use super::output::strip_control;
 use super::Output;
 use crate::env::Env;
 use crate::error::Error;
-use crate::model::Author;
+use crate::model::{Author, Note, OwnerKind};
 use crate::store::queries::OverviewEntry;
 use crate::store::Store;
 
@@ -56,6 +56,9 @@ pub fn run(env: &Env, state_dir: Option<&Path>, id: &str) -> Result<Output, Erro
         .map_err(read)?
         .ok_or_else(|| refused("unknown_session", format!("no session matches {id:?}")))?;
     let resumed_by = store.resumed_by(&id).map_err(read)?;
+    let notes = store
+        .notes_for(OwnerKind::Session, &id)
+        .map_err(|e| store_error_message("read notes", Some(store.path()), &e))?;
 
     // A row that cannot be decoded still shows what the overview could read.
     let session = store.get_session(&id).ok().flatten();
@@ -74,6 +77,7 @@ pub fn run(env: &Env, state_dir: Option<&Path>, id: &str) -> Result<Output, Erro
             json!(entry.flags.iter().map(|f| f.as_str()).collect::<Vec<_>>()),
         );
         map.insert("resumed_by".to_owned(), json!(resumed_by));
+        map.insert("notes".to_owned(), json!(notes));
         if let Some(error) = &entry.error {
             map.insert("error".to_owned(), json!(error));
         }
@@ -88,6 +92,7 @@ pub fn run(env: &Env, state_dir: Option<&Path>, id: &str) -> Result<Output, Erro
         resumed_from.as_deref(),
         forked_from.as_deref(),
         &resumed_by,
+        &notes,
         &env.clock.now(),
     );
     Ok(Output::Dual { text, json })
@@ -98,6 +103,7 @@ fn detail_text(
     resumed_from: Option<&str>,
     forked_from: Option<&str>,
     resumed_by: &[String],
+    notes: &[Note],
     now: &str,
 ) -> String {
     let mut lines = Vec::new();
@@ -134,5 +140,8 @@ fn detail_text(
     put("forked from", forked_from);
     put("resumed by", Some(&resumed_by.join(", ")));
     put("error", entry.error.as_deref());
+    for note in notes {
+        put("note", Some(&note.body));
+    }
     lines.join("\n")
 }

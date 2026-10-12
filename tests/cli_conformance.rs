@@ -110,11 +110,6 @@ macro_rules! command_tests {
 }
 
 command_tests! {
-    note => "note", "implemented by T109";
-    park => "park", "implemented by T109";
-    unpark => "unpark", "implemented by T109";
-    dismiss => "dismiss", "implemented by T109";
-    undismiss => "undismiss", "implemented by T109";
     done => "done", "implemented by T110";
     undone => "undone", "implemented by T110";
     serve => "serve", "implemented by T117";
@@ -337,6 +332,19 @@ mod organisers {
         assert!(matches!(result, Err(Error::Refused { .. })), "{result:?}");
         assert_contract("group", &result);
     }
+
+    /// The example targets a session the empty store does not have.
+    #[test]
+    fn markers_refuse_an_unknown_target() {
+        for name in ["note", "park", "unpark", "dismiss", "undismiss"] {
+            let result = run_against_empty_store(name);
+            assert!(
+                matches!(result, Err(Error::Refused { .. })),
+                "{name}: {result:?}"
+            );
+            assert_contract(name, &result);
+        }
+    }
 }
 
 mod dashboard {
@@ -367,7 +375,7 @@ fn every_command_has_generated_tests_with_the_right_task() {
         match info.name {
             "hook" | "dashboard" | "migrate" | "list" | "show" | "reconcile" | "watch"
             | "boot-check" | "restore" | "respawn" | "summarize" | "progress-bind" | "project"
-            | "group" => {}
+            | "group" | "note" | "park" | "unpark" | "dismiss" | "undismiss" => {}
             name => {
                 let reason = GENERATED
                     .iter()
@@ -382,7 +390,7 @@ fn every_command_has_generated_tests_with_the_right_task() {
             }
         }
     }
-    assert_eq!(GENERATED.len() + 14, Command::all().len());
+    assert_eq!(GENERATED.len() + 19, Command::all().len());
 }
 
 #[test]

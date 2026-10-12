@@ -6,11 +6,13 @@ use crate::env::Env;
 use crate::error::Error;
 use crate::hook;
 use crate::session;
+use crate::store::markers::Marker;
 use crate::store::{resolve_state_dir, StateDirEnv};
 
 mod boot_check;
 mod command;
 mod list;
+mod markers;
 pub mod migrate;
 mod output;
 mod progress;
@@ -169,6 +171,34 @@ enum Commands {
     Project {
         #[command(subcommand)]
         action: ProjectCommands,
+    },
+    /// Attach a note to a session or project
+    Note {
+        /// Session id (or the start of one), or a project name
+        target: String,
+        /// The note; several words are joined with spaces
+        #[arg(required = true)]
+        text: Vec<String>,
+    },
+    /// Flag a session or project as parked; it stays listed
+    Park {
+        /// Session id (or the start of one), or a project name
+        target: String,
+    },
+    /// Clear the parked flag
+    Unpark {
+        /// Session id (or the start of one), or a project name
+        target: String,
+    },
+    /// Hide a session or project from the default views; nothing is deleted
+    Dismiss {
+        /// Session id (or the start of one), or a project name
+        target: String,
+    },
+    /// Show a dismissed session or project again
+    Undismiss {
+        /// Session id (or the start of one), or a project name
+        target: String,
     },
     /// Put sessions in a project (created if new); `-` as the project removes them from theirs
     Group {
@@ -336,6 +366,22 @@ impl Cli {
                 project: project.clone(),
                 sessions: sessions.clone(),
             },
+            Some(Commands::Note { target, text }) => Command::Note {
+                target: target.clone(),
+                text: text.join(" "),
+            },
+            Some(Commands::Park { target }) => Command::Park {
+                target: target.clone(),
+            },
+            Some(Commands::Unpark { target }) => Command::Unpark {
+                target: target.clone(),
+            },
+            Some(Commands::Dismiss { target }) => Command::Dismiss {
+                target: target.clone(),
+            },
+            Some(Commands::Undismiss { target }) => Command::Undismiss {
+                target: target.clone(),
+            },
         }
     }
 }
@@ -355,8 +401,8 @@ pub struct RunOptions {
 
 /// Run one command; `state_dir` is the `--state-dir` override. `Hook`,
 /// `Dashboard`, `Migrate`, `List`, `Show`, `Reconcile`, `Watch`, `BootCheck`,
-/// `Restore`, `Respawn`, `Summarize`, `ProgressBind`, `Project` and `Group` are
-/// implemented; every other
+/// `Restore`, `Respawn`, `Summarize`, `ProgressBind`, `Project`, `Group`, `Note`,
+/// `Park`, `Unpark`, `Dismiss` and `Undismiss` are implemented; every other
 /// command reports `NotImplemented` until its task lands. Reads the store as it
 /// is; [`run_with`] adds the refresh pass the binary runs.
 pub fn run_in(cmd: Command, env: &Env, state_dir: Option<&Path>) -> Result<Output, Error> {
@@ -448,6 +494,19 @@ pub fn run_with(
         Command::Group { project, sessions } => {
             project::run_group(env, state_dir, &project, &sessions)
         }
+        Command::Note { target, text } => markers::run_note(env, state_dir, &target, &text),
+        Command::Park { target } => {
+            markers::run_marker(env, state_dir, Marker::Parked, true, &target)
+        }
+        Command::Unpark { target } => {
+            markers::run_marker(env, state_dir, Marker::Parked, false, &target)
+        }
+        Command::Dismiss { target } => {
+            markers::run_marker(env, state_dir, Marker::Dismissed, true, &target)
+        }
+        Command::Undismiss { target } => {
+            markers::run_marker(env, state_dir, Marker::Dismissed, false, &target)
+        }
         Command::Hook { agent, event } => {
             hook::run(agent.as_deref(), event.as_deref(), state_dir, env);
             Ok(Output::empty())
@@ -472,6 +531,11 @@ fn reads_sessions(cmd: &Command) -> bool {
             | Command::Restore { .. }
             | Command::Respawn { .. }
             | Command::Group { .. }
+            | Command::Note { .. }
+            | Command::Park { .. }
+            | Command::Unpark { .. }
+            | Command::Dismiss { .. }
+            | Command::Undismiss { .. }
     )
 }
 
