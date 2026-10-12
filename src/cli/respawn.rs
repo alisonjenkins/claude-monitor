@@ -48,7 +48,7 @@ pub fn run(
 
 /// Plan each session id with `flags`; a session that cannot be read is an
 /// error for the whole command, a refusal is data.
-pub(super) fn plan_all(
+pub(crate) fn plan_all(
     store: &Store,
     env: &Env,
     ids: &[String],
@@ -66,7 +66,7 @@ pub(super) fn plan_all(
 }
 
 /// Contradictory flags are a usage error (exit 1), not a refusal of one session.
-pub(super) fn usage_error(planned: &[(Session, Result<Plan, Refusal>)]) -> Option<Error> {
+pub(crate) fn usage_error(planned: &[(Session, Result<Plan, Refusal>)]) -> Option<Error> {
     planned.iter().find_map(|(_, plan)| match plan {
         Err(refusal) if refusal.code == RefusalCode::InvalidOptions => {
             Some(Error::Usage(refusal.message.clone()))
@@ -152,7 +152,7 @@ fn refusal_text(item: &RefusedItem) -> String {
     lines.join("\n")
 }
 
-fn started_json(items: &[Item]) -> Vec<Value> {
+pub(crate) fn started_json(items: &[Item]) -> Vec<Value> {
     items
         .iter()
         .filter_map(|item| match item {

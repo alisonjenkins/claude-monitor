@@ -22,14 +22,14 @@ fn refused(code: &'static str, message: String) -> Error {
 }
 
 /// The author of a change the person asked for: `$USER`, else `user`.
-pub(super) fn user_author(env: &Env) -> Author {
+pub(crate) fn user_author(env: &Env) -> Author {
     Author::User {
         name: env.vars.var("USER").unwrap_or_else(|| "user".to_owned()),
     }
 }
 
 /// `id` exactly, else the one session whose id starts with it.
-pub(super) fn resolve(store: &Store, id: &str) -> Result<String, Error> {
+pub(crate) fn resolve(store: &Store, id: &str) -> Result<String, Error> {
     let lookup = |e| store_error_message("find session", Some(store.path()), &e);
     if store.overview_entry(id).map_err(lookup)?.is_some() {
         return Ok(id.to_owned());

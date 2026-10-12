@@ -80,7 +80,7 @@ pub fn run(env: &Env, state_dir: Option<&Path>, args: RestoreArgs) -> Result<Out
 
 /// Interrupted sessions the user has not dismissed, plus finished ones when
 /// asked, oldest first.
-fn candidates(store: &Store, include_finished: bool) -> Result<Vec<Session>, Error> {
+pub(crate) fn candidates(store: &Store, include_finished: bool) -> Result<Vec<Session>, Error> {
     let rows = store
         .list_sessions_lenient()
         .map_err(|e| store_error_message("list sessions", Some(store.path()), &e))?;

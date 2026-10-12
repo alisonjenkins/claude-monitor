@@ -23,10 +23,10 @@ mod output;
 mod progress;
 mod project;
 mod reconcile;
-mod respawn;
-mod restore;
+pub(crate) mod respawn;
+pub(crate) mod restore;
 mod serve;
-mod show;
+pub(crate) mod show;
 mod summarize;
 mod watch;
 
