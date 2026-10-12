@@ -64,7 +64,6 @@ fn probe_path(path: &str) -> String {
 }
 
 #[test]
-#[ignore = "T119: routes are added with the pages"]
 fn every_command_is_mapped_to_a_route_or_explicitly_excluded() {
     let routed: BTreeSet<&str> = COMMAND_ROUTES.iter().map(|r| r.command).collect();
     let mut missing = Vec::new();
@@ -81,7 +80,6 @@ fn every_command_is_mapped_to_a_route_or_explicitly_excluded() {
 }
 
 #[test]
-#[ignore = "T119: routes are added with the pages"]
 fn the_exclusion_list_is_honest() {
     let known: BTreeSet<&str> = Command::all().iter().map(|i| i.name).collect();
     let routed: BTreeSet<&str> = COMMAND_ROUTES.iter().map(|r| r.command).collect();
@@ -101,7 +99,6 @@ fn the_exclusion_list_is_honest() {
 }
 
 #[test]
-#[ignore = "T119: routes are added with the pages"]
 fn a_command_with_a_tui_action_is_never_excluded() {
     for info in Command::all() {
         if info.name != "dashboard" && info.is_interactive() {
@@ -116,7 +113,6 @@ fn a_command_with_a_tui_action_is_never_excluded() {
 }
 
 #[test]
-#[ignore = "T119: routes are added with the pages"]
 fn every_mapped_route_exists_with_its_method() {
     let rig = Rig::start();
     for route in COMMAND_ROUTES {
@@ -136,7 +132,6 @@ fn every_mapped_route_exists_with_its_method() {
 }
 
 #[test]
-#[ignore = "T119: routes are added with the pages"]
 fn every_write_route_needs_the_csrf_header() {
     let rig = Rig::start();
     for route in COMMAND_ROUTES.iter().filter(|r| r.method == "POST") {
