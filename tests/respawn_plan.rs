@@ -1,0 +1,315 @@
+//! The respawn planner: checks, refusal codes, launcher templates (T063, T068).
+
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::indexing_slicing)]
+
+use std::path::{Path, PathBuf};
+
+use claude_monitor::agents::{
+    AgentKind, Launch, LaunchError, LaunchMode, LauncherConfig, ParseError, ParsedHook,
+};
+use claude_monitor::model::{Session, State};
+use claude_monitor::respawn::{
+    plan_respawn, plan_respawn_with, Options, Plan, Refusal, RefusalCode,
+};
+use claude_monitor::testing::FakeEnv;
+
+const AT: &str = "2026-10-12T00:00:00Z";
+const CWD: &str = "/w/proj";
+const TRANSCRIPT: &str = "/home/u/.claude/projects/-w-proj/agent-1.jsonl";
+
+fn session(state: State) -> Session {
+    let mut s = Session::new("s1", "claude", "agent-1", CWD, AT);
+    s.state = state;
+    s.repo_root = Some("/repos/proj".to_owned());
+    s.branch = Some("feature".to_owned());
+    s
+}
+
+/// An environment where a Claude session in `CWD` can be resumed.
+fn ready() -> FakeEnv {
+    let fake = FakeEnv::new();
+    fake.vars.set("HOME", "/home/u");
+    fake.fs.add_dir(CWD);
+    fake.fs.add_file(TRANSCRIPT, "{}\n");
+    fake
+}
+
+fn plan(fake: &FakeEnv, session: &Session, options: &Options) -> Result<Plan, Refusal> {
+    plan_respawn(session, &fake.env, options)
+}
+
+fn refusal(result: Result<Plan, Refusal>) -> Refusal {
+    result.expect_err("expected a refusal")
+}
+
+#[test]
+#[ignore = "T068"]
+fn interrupted_claude_session_resumes_in_its_recorded_directory() {
+    let fake = ready();
+    let plan = plan(&fake, &session(State::Interrupted), &Options::default()).unwrap();
+    assert_eq!(plan.mode, LaunchMode::Resume);
+    assert_eq!(plan.launch.program, "claude");
+    assert_eq!(plan.launch.args, ["--resume", "agent-1"]);
+    assert_eq!(plan.launch.cwd, Path::new(CWD));
+    assert!(plan.setup.is_empty());
+    assert!(plan.notices.is_empty(), "{:?}", plan.notices);
+}
+
+#[test]
+#[ignore = "T068"]
+fn copilot_session_resumes_with_its_session_id() {
+    let fake = FakeEnv::new();
+    fake.vars.set("HOME", "/home/u");
+    fake.fs.add_dir(CWD);
+    fake.fs.add_dir("/home/u/.copilot/session-state/agent-1");
+    let mut s = session(State::Interrupted);
+    s.agent_kind = "copilot".to_owned();
+    let plan = plan(&fake, &s, &Options::default()).unwrap();
+    assert_eq!(plan.launch.program, "copilot");
+    assert_eq!(plan.launch.args, ["--resume", "agent-1"]);
+    assert_eq!(plan.launch.cwd, Path::new(CWD));
+}
+
+#[test]
+#[ignore = "T068"]
+fn copilot_session_without_its_state_directory_is_refused() {
+    let fake = FakeEnv::new();
+    fake.vars.set("HOME", "/home/u");
+    fake.fs.add_dir(CWD);
+    let mut s = session(State::Interrupted);
+    s.agent_kind = "copilot".to_owned();
+    let r = refusal(plan(&fake, &s, &Options::default()));
+    assert_eq!(r.code, RefusalCode::MissingTranscript);
+}
+
+#[test]
+#[ignore = "T068"]
+fn missing_directory_is_refused_and_names_the_path() {
+    let fake = ready();
+    let mut s = session(State::Interrupted);
+    s.cwd = "/w/gone".to_owned();
+    s.repo_root = None;
+    s.branch = None;
+    let r = refusal(plan(&fake, &s, &Options::default()));
+    assert_eq!(r.code, RefusalCode::MissingDirectory);
+    assert!(r.message.contains("/w/gone"), "{}", r.message);
+}
+
+#[test]
+#[ignore = "T068"]
+fn missing_transcript_is_refused_and_offers_a_fresh_start() {
+    let fake = FakeEnv::new();
+    fake.vars.set("HOME", "/home/u");
+    fake.fs.add_dir(CWD);
+    let r = refusal(plan(
+        &fake,
+        &session(State::Interrupted),
+        &Options::default(),
+    ));
+    assert_eq!(r.code, RefusalCode::MissingTranscript);
+    assert!(r.message.contains(TRANSCRIPT), "{}", r.message);
+    assert!(r.alternatives.iter().any(|a| a.command.contains("--fresh")));
+}
+
+#[test]
+#[ignore = "T068"]
+fn gone_branch_with_a_missing_worktree_is_refused_as_branch_gone() {
+    let fake = ready();
+    let mut s = session(State::Interrupted);
+    s.cwd = "/w/gone".to_owned();
+    let r = refusal(plan(&fake, &s, &Options::default()));
+    assert_eq!(r.code, RefusalCode::BranchGone);
+    assert!(r.message.contains("feature"), "{}", r.message);
+}
+
+#[test]
+#[ignore = "T068"]
+fn live_process_means_already_running() {
+    let fake = ready();
+    fake.processes.spawn(4242, 99);
+    let mut s = session(State::Working);
+    s.pid = Some(4242);
+    s.pid_start = Some(99);
+    s.tmux_pane = Some("%7".to_owned());
+    let r = refusal(plan(&fake, &s, &Options::default()));
+    assert_eq!(r.code, RefusalCode::AlreadyRunning);
+    assert!(r.message.contains("%7"), "{}", r.message);
+}
+
+#[test]
+#[ignore = "T068"]
+fn recycled_pid_is_not_running() {
+    let fake = ready();
+    fake.processes.spawn(4242, 100);
+    let mut s = session(State::Interrupted);
+    s.pid = Some(4242);
+    s.pid_start = Some(99);
+    assert!(plan(&fake, &s, &Options::default()).is_ok());
+}
+
+#[test]
+#[ignore = "T068"]
+fn unknown_agent_kind_has_no_launcher() {
+    let fake = ready();
+    let mut s = session(State::Interrupted);
+    s.agent_kind = "nonesuch".to_owned();
+    let r = refusal(plan(&fake, &s, &Options::default()));
+    assert_eq!(r.code, RefusalCode::NoLauncher);
+}
+
+#[test]
+#[ignore = "T068"]
+fn unusable_launcher_template_has_no_launcher() {
+    let fake = ready();
+    let options = Options {
+        launcher: LauncherConfig {
+            template: Some("claude --resume \"{session_id}".to_owned()),
+        },
+        ..Options::default()
+    };
+    let r = refusal(plan(&fake, &session(State::Interrupted), &options));
+    assert_eq!(r.code, RefusalCode::NoLauncher);
+}
+
+#[test]
+#[ignore = "T068"]
+fn missing_tmux_is_refused() {
+    let fake = ready();
+    fake.tmux.set_available(false);
+    let r = refusal(plan(
+        &fake,
+        &session(State::Interrupted),
+        &Options::default(),
+    ));
+    assert_eq!(r.code, RefusalCode::NoTmux);
+}
+
+#[test]
+#[ignore = "T068"]
+fn launcher_template_fills_session_id_cwd_and_name() {
+    let fake = ready();
+    let options = Options {
+        launcher: LauncherConfig {
+            template: Some(
+                "wrap --dir {cwd} --name '{name}' -- claude --resume {session_id}".to_owned(),
+            ),
+        },
+        ..Options::default()
+    };
+    let plan = plan(&fake, &session(State::Interrupted), &options).unwrap();
+    assert_eq!(plan.launch.program, "wrap");
+    assert_eq!(
+        plan.launch.args,
+        ["--dir", CWD, "--name", "feature", "--", "claude", "--resume", "agent-1"]
+    );
+}
+
+#[test]
+#[ignore = "T068"]
+fn explicit_fresh_starts_without_resume_and_says_so() {
+    let fake = FakeEnv::new();
+    fake.fs.add_dir(CWD);
+    let options = Options {
+        fresh: true,
+        ..Options::default()
+    };
+    let plan = plan(&fake, &session(State::Interrupted), &options).unwrap();
+    assert_eq!(plan.mode, LaunchMode::Fresh);
+    assert_eq!(plan.launch.program, "claude");
+    assert!(plan.launch.args.is_empty());
+    assert_eq!(plan.launch.cwd, Path::new(CWD));
+    assert!(
+        plan.notices.iter().any(|n| n.contains("not restored")),
+        "{:?}",
+        plan.notices
+    );
+}
+
+/// A kind that can start sessions but has no way to continue one.
+struct NoResume;
+
+impl AgentKind for NoResume {
+    fn id(&self) -> &'static str {
+        "noresume"
+    }
+
+    fn parse_hook(&self, _raw: &serde_json::Value) -> Result<Vec<ParsedHook>, ParseError> {
+        Ok(Vec::new())
+    }
+
+    fn launch(
+        &self,
+        session: &Session,
+        mode: LaunchMode,
+        _cfg: &LauncherConfig,
+    ) -> Result<Launch, LaunchError> {
+        match mode {
+            LaunchMode::Resume => Err(LaunchError::ResumeUnsupported { kind: "noresume" }),
+            LaunchMode::Fresh => Ok(Launch {
+                program: "noresume".to_owned(),
+                args: Vec::new(),
+                cwd: PathBuf::from(&session.cwd),
+                env: Vec::new(),
+            }),
+        }
+    }
+}
+
+#[test]
+#[ignore = "T068"]
+fn agent_without_resume_starts_fresh_with_a_notice() {
+    let fake = FakeEnv::new();
+    fake.fs.add_dir(CWD);
+    let mut s = session(State::Interrupted);
+    s.agent_kind = "noresume".to_owned();
+    let plan = plan_respawn_with(&NoResume, &s, &fake.env, &Options::default()).unwrap();
+    assert_eq!(plan.mode, LaunchMode::Fresh);
+    assert_eq!(plan.launch.program, "noresume");
+    assert_eq!(plan.launch.cwd, Path::new(CWD));
+    assert!(
+        plan.notices.iter().any(|n| n.contains("not restored")),
+        "{:?}",
+        plan.notices
+    );
+}
+
+#[test]
+#[ignore = "T068"]
+fn finished_session_plans_exactly_like_an_interrupted_one() {
+    let fake = ready();
+    let interrupted = plan(&fake, &session(State::Interrupted), &Options::default());
+    let mut done = session(State::Finished);
+    done.end_reason = Some("prompt_input_exit".to_owned());
+    done.done_at = Some(AT.to_owned());
+    let finished = plan(&fake, &done, &Options::default());
+    assert!(interrupted.is_ok());
+    assert_eq!(finished, interrupted);
+}
+
+#[test]
+#[ignore = "T068"]
+fn in_dir_without_fresh_is_a_usage_error() {
+    let fake = ready();
+    let options = Options {
+        in_dir: Some(PathBuf::from("/repos/proj")),
+        ..Options::default()
+    };
+    let r = refusal(plan(&fake, &session(State::Interrupted), &options));
+    assert_eq!(r.code, RefusalCode::InvalidOptions);
+    assert_eq!(r.code.exit_code(), 1);
+}
+
+#[test]
+fn refusal_codes_map_to_contract_strings_and_exit_code_2() {
+    for (code, text) in [
+        (RefusalCode::AlreadyRunning, "already_running"),
+        (RefusalCode::MissingDirectory, "missing_directory"),
+        (RefusalCode::MissingTranscript, "missing_transcript"),
+        (RefusalCode::BranchGone, "branch_gone"),
+        (RefusalCode::NoLauncher, "no_launcher"),
+        (RefusalCode::NoTmux, "no_tmux"),
+    ] {
+        assert_eq!(code.as_str(), text);
+        assert_eq!(code.exit_code(), 2);
+    }
+}

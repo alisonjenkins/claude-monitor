@@ -8,6 +8,7 @@ pub mod live;
 pub mod model;
 pub mod reconcile;
 pub mod refresh;
+pub mod respawn;
 pub mod session;
 pub mod store;
 #[doc(hidden)]
