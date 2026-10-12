@@ -808,7 +808,6 @@ mod restore_view_model {
     }
 
     #[test]
-    #[ignore = "T074 view-model"]
     fn interrupted_start_selected_finished_and_unseen_do_not() {
         let view = RestoreView::from_overview(&mixed());
 
@@ -827,7 +826,6 @@ mod restore_view_model {
     }
 
     #[test]
-    #[ignore = "T074 view-model"]
     fn active_done_and_dismissed_sessions_are_not_offered() {
         let view = RestoreView::from_overview(&mixed());
         let ids: Vec<&str> = view.rows().iter().map(|r| r.entry.id.as_str()).collect();
@@ -837,7 +835,6 @@ mod restore_view_model {
     }
 
     #[test]
-    #[ignore = "T074 view-model"]
     fn toggle_flips_the_row_under_the_cursor_and_keeps_it_interrupted() {
         let mut view = RestoreView::from_overview(&mixed());
 
@@ -853,7 +850,6 @@ mod restore_view_model {
     }
 
     #[test]
-    #[ignore = "T074 view-model"]
     fn a_selects_every_interrupted_session_and_n_selects_none() {
         let mut view = RestoreView::from_overview(&mixed());
         view.select_none();
@@ -869,7 +865,6 @@ mod restore_view_model {
     }
 
     #[test]
-    #[ignore = "T074 view-model"]
     fn the_cursor_stays_within_the_rows() {
         let mut view = RestoreView::from_overview(&mixed());
         view.move_cursor(false);
@@ -881,7 +876,6 @@ mod restore_view_model {
     }
 
     #[test]
-    #[ignore = "T074 view-model"]
     fn an_overview_with_nothing_to_restore_has_no_rows() {
         let view = RestoreView::from_overview(&active_only(vec![active("a", State::Working)]));
         assert!(view.rows().is_empty());
