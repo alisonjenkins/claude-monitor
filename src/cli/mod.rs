@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use clap::{Parser, Subcommand};
 
@@ -32,8 +32,12 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Update session state from a Claude Code hook event (reads hook JSON from stdin)
-    Hook,
+    /// Update session state from an agent hook event (reads hook JSON from stdin)
+    Hook {
+        /// Agent kind whose payload shape is on stdin (default: claude)
+        #[arg(long, value_name = "KIND")]
+        agent: Option<String>,
+    },
 }
 
 impl Cli {
@@ -46,20 +50,27 @@ impl Cli {
     }
 
     pub fn command(&self) -> Command {
-        match self.command {
+        match &self.command {
             None => Command::Dashboard,
-            Some(Commands::Hook) => Command::Hook { agent: None },
+            Some(Commands::Hook { agent }) => Command::Hook {
+                agent: agent.clone(),
+            },
         }
     }
 }
 
-/// Run one command against the given providers. `Hook` and `Dashboard` use
-/// the existing code paths; every other command reports `NotImplemented`
+/// Run one command against the given providers and the default state directory.
+pub fn run(cmd: Command, env: &Env) -> Result<Output, Error> {
+    run_in(cmd, env, None)
+}
+
+/// Run one command; `state_dir` is the `--state-dir` override. `Hook` and
+/// `Dashboard` are implemented; every other command reports `NotImplemented`
 /// until its task lands.
-pub fn run(cmd: Command, _env: &Env) -> Result<Output, Error> {
+pub fn run_in(cmd: Command, env: &Env, state_dir: Option<&Path>) -> Result<Output, Error> {
     match cmd {
-        Command::Hook { .. } => {
-            hook::run();
+        Command::Hook { agent } => {
+            hook::run(agent.as_deref(), state_dir, env);
             Ok(Output::empty())
         }
         Command::Dashboard => run_dashboard(),
@@ -104,6 +115,17 @@ mod tests {
     fn hook_subcommand_maps_to_hook() {
         let cli = Cli::try_parse_from(["claude-monitor", "hook"]).unwrap();
         assert_eq!(cli.command(), Command::Hook { agent: None });
+    }
+
+    #[test]
+    fn hook_agent_flag_is_passed_through() {
+        let cli = Cli::try_parse_from(["claude-monitor", "hook", "--agent", "copilot"]).unwrap();
+        assert_eq!(
+            cli.command(),
+            Command::Hook {
+                agent: Some("copilot".to_owned())
+            }
+        );
     }
 
     #[test]

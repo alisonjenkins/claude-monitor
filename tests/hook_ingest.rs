@@ -121,7 +121,6 @@ fn event_kinds(store: &Store) -> Vec<String> {
 }
 
 #[test]
-#[ignore = "T025"]
 fn full_claude_sequence_leads_to_the_right_row() {
     let git = GitInfo {
         root: "/tmp/SCRATCH/r2".to_owned(),
@@ -161,7 +160,6 @@ fn full_claude_sequence_leads_to_the_right_row() {
 }
 
 #[test]
-#[ignore = "T025"]
 fn branch_is_none_when_cwd_is_not_a_git_repo() {
     let h = Harness::new();
     h.feed(None, &payload("SessionStart-startup", "sess-a"));
@@ -172,7 +170,6 @@ fn branch_is_none_when_cwd_is_not_a_git_repo() {
 }
 
 #[test]
-#[ignore = "T025"]
 fn fs_git_reads_branch_from_head_in_a_parent_directory() {
     let repo = TempDir::new().unwrap();
     std::fs::create_dir_all(repo.path().join(".git")).unwrap();
@@ -190,7 +187,6 @@ fn fs_git_reads_branch_from_head_in_a_parent_directory() {
 }
 
 #[test]
-#[ignore = "T025"]
 fn fs_git_follows_a_worktree_gitdir_file() {
     let main = TempDir::new().unwrap();
     let gitdir = main.path().join(".git/worktrees/wt");
@@ -209,7 +205,6 @@ fn fs_git_follows_a_worktree_gitdir_file() {
 }
 
 #[test]
-#[ignore = "T025"]
 fn task_description_comes_from_the_first_prompt_only() {
     let h = Harness::new();
     h.feed(None, &payload("SessionStart-startup", "sess-a"));
@@ -233,7 +228,6 @@ fn task_description_comes_from_the_first_prompt_only() {
 }
 
 #[test]
-#[ignore = "T025"]
 fn left_off_follows_the_latest_stop() {
     let h = Harness::new();
     h.feed(None, &payload("SessionStart-startup", "sess-a"));
@@ -250,7 +244,6 @@ fn left_off_follows_the_latest_stop() {
 }
 
 #[test]
-#[ignore = "T025"]
 fn permission_sequence_moves_through_needs_permission_to_idle() {
     let h = Harness::new();
     let id = "sess-a";
@@ -267,7 +260,6 @@ fn permission_sequence_moves_through_needs_permission_to_idle() {
 }
 
 #[test]
-#[ignore = "T025"]
 fn tool_search_events_are_ignored() {
     let h = Harness::new();
     h.feed(None, &payload("SessionStart-startup", "sess-a"));
@@ -285,7 +277,6 @@ fn tool_search_events_are_ignored() {
 }
 
 #[test]
-#[ignore = "T025"]
 fn resume_revives_the_same_row() {
     let h = Harness::new();
     let id = "sess-a";
@@ -308,7 +299,6 @@ fn resume_revives_the_same_row() {
 }
 
 #[test]
-#[ignore = "T025"]
 fn clear_creates_a_new_row_linked_by_pane() {
     let h = Harness::new();
     h.feed(Some("%1"), &payload("SessionStart-startup", "old"));
@@ -327,7 +317,6 @@ fn clear_creates_a_new_row_linked_by_pane() {
 }
 
 #[test]
-#[ignore = "T025"]
 fn clear_without_a_pane_links_by_cwd() {
     let h = Harness::new();
     h.feed(None, &payload("SessionStart-startup", "old"));
@@ -340,7 +329,6 @@ fn clear_without_a_pane_links_by_cwd() {
 }
 
 #[test]
-#[ignore = "T025"]
 fn clear_does_not_link_a_session_that_did_not_end_by_clear() {
     let h = Harness::new();
     h.feed(Some("%1"), &payload("SessionStart-startup", "old"));
@@ -350,7 +338,6 @@ fn clear_does_not_link_a_session_that_did_not_end_by_clear() {
 }
 
 #[test]
-#[ignore = "T025"]
 fn a_predecessor_is_linked_to_only_one_successor() {
     let h = Harness::new();
     h.feed(None, &payload("SessionStart-startup", "old"));
@@ -362,7 +349,6 @@ fn a_predecessor_is_linked_to_only_one_successor() {
 }
 
 #[test]
-#[ignore = "T025"]
 fn real_changes_append_events_with_authors_and_repeats_do_not() {
     let h = Harness::new();
     let id = "sess-a";
@@ -407,7 +393,6 @@ fn real_changes_append_events_with_authors_and_repeats_do_not() {
 }
 
 #[test]
-#[ignore = "T025"]
 fn every_hook_updates_last_activity_without_an_event() {
     let h = Harness::new();
     h.feed(None, &payload("SessionStart-startup", "sess-a"));
@@ -427,7 +412,6 @@ fn every_hook_updates_last_activity_without_an_event() {
 }
 
 #[test]
-#[ignore = "T025"]
 fn a_pane_or_branch_change_appends_a_location_event() {
     let h = Harness::new();
     h.feed(Some("%1"), &payload("SessionStart-startup", "sess-a"));
@@ -443,7 +427,6 @@ fn a_pane_or_branch_change_appends_a_location_event() {
 }
 
 #[test]
-#[ignore = "T025"]
 fn legacy_runtime_file_is_still_written_and_removed() {
     let h = Harness::new();
     let id = "sess-a";
@@ -468,7 +451,6 @@ fn legacy_runtime_file_is_still_written_and_removed() {
 }
 
 #[test]
-#[ignore = "T025"]
 fn bad_input_never_panics_and_each_failure_logs_one_line() {
     let h = Harness::new();
     h.feed(None, "{ not json");
@@ -491,7 +473,6 @@ fn bad_input_never_panics_and_each_failure_logs_one_line() {
 }
 
 #[test]
-#[ignore = "T025"]
 fn payload_without_a_session_id_is_a_silent_no_op() {
     let h = Harness::new();
     h.feed(None, r#"{"hook_event_name":"Stop"}"#);
@@ -501,7 +482,6 @@ fn payload_without_a_session_id_is_a_silent_no_op() {
 }
 
 #[test]
-#[ignore = "T025"]
 fn log_lines_have_utc_timestamp_agent_event_and_error_in_a_private_file() {
     let h = Harness::new();
     h.clock.set(T1);
@@ -535,7 +515,6 @@ fn hook_busy_timeout_is_200_ms() {
 }
 
 #[test]
-#[ignore = "T025"]
 fn a_locked_database_returns_quickly_logs_and_keeps_the_legacy_file() {
     let h = Harness::new();
     let id = "sess-a";
@@ -591,7 +570,6 @@ fn run_binary(
 }
 
 #[test]
-#[ignore = "T025"]
 fn the_binary_exits_zero_with_empty_stdout_for_good_and_bad_input() {
     let dir = TempDir::new().unwrap();
     let state = dir.path().join("state");
