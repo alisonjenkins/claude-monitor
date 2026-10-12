@@ -14,13 +14,70 @@ use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{SocketAddr, TcpStream};
 use std::time::Duration;
 
+use claude_monitor::cli::{run_in, Command};
 use claude_monitor::env::Env;
 use claude_monitor::feed::{ChangeFeed, FakeHandle, FakeSource, SystemMonotonic};
-use claude_monitor::store::{Store, StoreOptions};
+use claude_monitor::model::{Session, State};
+use claude_monitor::store::{legacy, Store, StoreOptions};
+use claude_monitor::testing::FakeEnv;
 use claude_monitor::web::{self, Server, Token, WebConfig};
 use tempfile::TempDir;
 
 pub const IO_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// A server over a fresh store with a fake clock and no tmux, plus the means
+/// to seed sessions and to run the same command through the CLI.
+pub struct Plain {
+    pub dir: TempDir,
+    pub fake: FakeEnv,
+    pub store: Store,
+    pub rig: Rig,
+}
+
+impl Plain {
+    pub fn new() -> Self {
+        let dir = TempDir::new().unwrap();
+        let fake = FakeEnv::new();
+        let store = Store::open_in_dir(dir.path(), &StoreOptions::viewer()).unwrap();
+        let empty = TempDir::new().unwrap();
+        legacy::migrate(&store, empty.path(), fake.env.clock.as_ref()).unwrap();
+        let rig = Rig::start_on(dir.path(), fake.env.clone());
+        Self {
+            dir,
+            fake,
+            store,
+            rig,
+        }
+    }
+
+    pub fn put(&self, id: &str, state: State) {
+        let mut session = Session::new(
+            id,
+            "claude",
+            &format!("agent-{id}"),
+            &format!("/work/{id}"),
+            "2026-07-01T00:00:00Z",
+        );
+        session.state = state;
+        session.last_activity_at = "2026-10-11T09:00:00Z".to_owned();
+        session.task_description = Some(format!("task of {id}"));
+        session.left_off = Some(format!("left off in {id}"));
+        self.store.upsert_session(&session).unwrap();
+    }
+
+    pub fn session(&self, id: &str) -> Session {
+        self.store.get_session(id).unwrap().unwrap()
+    }
+
+    pub fn save(&self, session: &Session) {
+        self.store.upsert_session(session).unwrap();
+    }
+
+    pub fn cli(&self, command: Command) -> serde_json::Value {
+        let output = run_in(command, &self.fake.env, Some(self.dir.path())).unwrap();
+        serde_json::from_str(&output.render(true)).unwrap()
+    }
+}
 
 pub struct Rig {
     pub dir: TempDir,

@@ -13,60 +13,11 @@
 mod common;
 mod web_support;
 
-use claude_monitor::cli::{run_in, Command};
-use claude_monitor::model::{Session, State};
-use claude_monitor::store::{legacy, Store, StoreOptions};
-use claude_monitor::testing::FakeEnv;
+use claude_monitor::cli::Command;
+use claude_monitor::model::State;
 use common::Fixture;
 use serde_json::{json, Value};
-use tempfile::TempDir;
-use web_support::{Request, Response, Rig};
-
-const T0: &str = "2026-07-01T00:00:00Z";
-
-struct Plain {
-    dir: TempDir,
-    fake: FakeEnv,
-    store: Store,
-    rig: Rig,
-}
-
-impl Plain {
-    fn new() -> Self {
-        let dir = TempDir::new().unwrap();
-        let fake = FakeEnv::new();
-        let store = Store::open_in_dir(dir.path(), &StoreOptions::viewer()).unwrap();
-        let empty = TempDir::new().unwrap();
-        legacy::migrate(&store, empty.path(), fake.env.clock.as_ref()).unwrap();
-        let rig = Rig::start_on(dir.path(), fake.env.clone());
-        Self {
-            dir,
-            fake,
-            store,
-            rig,
-        }
-    }
-
-    fn put(&self, id: &str, state: State) {
-        let mut session = Session::new(
-            id,
-            "claude",
-            &format!("agent-{id}"),
-            &format!("/work/{id}"),
-            T0,
-        );
-        session.state = state;
-        session.last_activity_at = "2026-10-11T09:00:00Z".to_owned();
-        session.task_description = Some(format!("task of {id}"));
-        session.left_off = Some(format!("left off in {id}"));
-        self.store.upsert_session(&session).unwrap();
-    }
-
-    fn cli(&self, command: Command) -> Value {
-        let output = run_in(command, &self.fake.env, Some(self.dir.path())).unwrap();
-        serde_json::from_str(&output.render(true)).unwrap()
-    }
-}
+use web_support::{Plain, Request, Response, Rig};
 
 fn get(rig: &Rig, path: &str) -> Response {
     Request::get(path)
