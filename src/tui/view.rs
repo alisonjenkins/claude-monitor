@@ -7,6 +7,7 @@ use ratatui::widgets::{Block, Borders, Paragraph, Wrap};
 use ratatui::Frame;
 
 use super::app::{App, Prompt};
+use super::bind::BindChooser;
 use super::detail::detail_lines;
 use super::restore::{Group, PreviewRow, RestoreResult, RestoreRow, RestoreView, Stage};
 use crate::cli::age;
@@ -248,6 +249,17 @@ fn help_lines(app: &App) -> Vec<Line<'static>> {
         spans.extend(restore_help(restore.stage(), key));
         return vec![Line::from(spans)];
     }
+    if app.chooser().is_some() {
+        spans.extend([
+            Span::styled(" j/k", key),
+            Span::raw(" move  "),
+            Span::styled("Enter", key),
+            Span::raw(" bind  "),
+            Span::styled("Esc", key),
+            Span::raw(" cancel"),
+        ]);
+        return vec![Line::from(spans)];
+    }
     if app.detail().is_some() {
         spans.extend([
             Span::styled(" L", key),
@@ -331,6 +343,28 @@ fn prompt_help(prompt: &Prompt, filter_text: &str, key: Style) -> Vec<Span<'stat
     ]
 }
 
+/// The chooser's rows and the line of the highlighted one.
+fn chooser_lines(chooser: &BindChooser) -> (Vec<Line<'static>>, usize) {
+    let mut lines = vec![
+        heading(format!("Progress source for {}", chooser.id())),
+        Line::default(),
+    ];
+    let first = lines.len();
+    lines.extend(chooser.options().iter().enumerate().map(|(at, option)| {
+        let chosen = at == chooser.cursor();
+        let style = if chosen {
+            Style::default().add_modifier(Modifier::REVERSED)
+        } else {
+            Style::default()
+        };
+        Line::from(Span::styled(
+            format!("{} {}", if chosen { ">" } else { " " }, option.label),
+            style,
+        ))
+    }));
+    (lines, first.saturating_add(chooser.cursor()))
+}
+
 fn scroll_offset(selected_line: usize, visible_rows: u16) -> u16 {
     let rows = usize::from(visible_rows).max(1);
     let offset = selected_line.saturating_add(1).saturating_sub(rows);
@@ -390,6 +424,10 @@ fn sessions_title(app: &App) -> String {
 fn render_body(app: &App, frame: &mut Frame, area: Rect) {
     let inner_width = usize::from(area.width.saturating_sub(BORDER_ROWS));
     let (lines, selected_line, title, wrap) = match (app.detail(), app.restore(), app.snapshot()) {
+        _ if app.chooser().is_some() => {
+            let (lines, selected) = app.chooser().map(chooser_lines).unwrap_or_default();
+            (lines, selected, " Progress source ".to_owned(), false)
+        }
         (Some(open), _, _) => {
             let entry = app.visible().into_iter().find(|e| e.id == open.id());
             (detail_lines(open, entry), 0, " Detail ".to_owned(), true)

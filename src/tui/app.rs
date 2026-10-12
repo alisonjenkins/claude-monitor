@@ -597,6 +597,9 @@ impl App {
         if self.restore.is_some() {
             return self.on_restore_key(code);
         }
+        if self.chooser.is_some() {
+            return self.on_chooser_key(code);
+        }
         if self.detail.is_some() {
             return self.on_detail_key(code);
         }
@@ -636,6 +639,7 @@ impl App {
             Action::Group => self.open_group(),
             Action::Link => self.open_link(),
             Action::Summarize => return self.summarize_selected(),
+            Action::BindProgress => return self.load_candidates(),
             Action::Detail => return self.open_detail(),
             Action::Links => return self.open_detail_and_check_links(),
             Action::Restore => self.open_restore(),
@@ -723,6 +727,45 @@ impl App {
             });
         }
         effects
+    }
+
+    fn load_candidates(&self) -> Vec<Effect> {
+        self.selected_entry()
+            .map(|entry| Effect::LoadCandidates {
+                id: entry.id.clone(),
+            })
+            .into_iter()
+            .collect()
+    }
+
+    /// Opens the chooser, unless the person has moved to another row since
+    /// asking.
+    fn on_candidates(&mut self, id: &str, options: Vec<BindOption>) {
+        if self.selected.as_deref() == Some(id) {
+            self.chooser = Some(BindChooser::new(id, options));
+        }
+    }
+
+    fn on_chooser_key(&mut self, code: KeyCode) -> Vec<Effect> {
+        let Some(chooser) = self.chooser.as_mut() else {
+            return Vec::new();
+        };
+        match code {
+            KeyCode::Char('j') | KeyCode::Down => chooser.step(true),
+            KeyCode::Char('k') | KeyCode::Up => chooser.step(false),
+            KeyCode::Esc => self.chooser = None,
+            KeyCode::Enter => {
+                let id = chooser.id().to_owned();
+                let path = chooser.highlighted().and_then(|option| option.path.clone());
+                let chosen = chooser.highlighted().is_some();
+                self.chooser = None;
+                if chosen {
+                    return vec![Effect::Organise(Organise::ProgressBind { id, path })];
+                }
+            }
+            _ => {}
+        }
+        Vec::new()
     }
 
     fn on_summarized(&mut self, id: &str, result: Result<(), String>) -> Vec<Effect> {
@@ -833,7 +876,10 @@ pub fn update(mut app: App, msg: Msg) -> (App, Vec<Effect>) {
             Vec::new()
         }
         Msg::Summarized { id, result } => app.on_summarized(&id, result),
-        Msg::Candidates { .. } => Vec::new(),
+        Msg::Candidates { id, options } => {
+            app.on_candidates(&id, options);
+            Vec::new()
+        }
     };
     (app, effects)
 }

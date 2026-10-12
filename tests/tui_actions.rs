@@ -278,7 +278,6 @@ mod bind_chooser {
     }
 
     #[test]
-    #[ignore = "I1: dashboard actions"]
     fn the_candidates_open_a_chooser_listing_each_plan_and_none() {
         let app = open();
 
@@ -307,7 +306,6 @@ mod bind_chooser {
     }
 
     #[test]
-    #[ignore = "I1: dashboard actions"]
     fn j_and_k_move_the_cursor_within_the_rows() {
         let app = keys(open(), "j");
         assert_eq!(app.chooser().unwrap().cursor(), 1);
@@ -318,7 +316,6 @@ mod bind_chooser {
     }
 
     #[test]
-    #[ignore = "I1: dashboard actions"]
     fn enter_binds_the_highlighted_plan_and_closes() {
         let (app, effects) = press(open(), KeyCode::Enter);
 
@@ -333,7 +330,6 @@ mod bind_chooser {
     }
 
     #[test]
-    #[ignore = "I1: dashboard actions"]
     fn enter_on_none_binds_no_plan() {
         let (_, effects) = press(keys(open(), "j"), KeyCode::Enter);
 
@@ -347,7 +343,6 @@ mod bind_chooser {
     }
 
     #[test]
-    #[ignore = "I1: dashboard actions"]
     fn esc_closes_without_binding_or_quitting() {
         let (app, effects) = press(open(), KeyCode::Esc);
 
@@ -550,7 +545,6 @@ mod with_a_real_store {
     }
 
     #[test]
-    #[ignore = "I1: dashboard actions"]
     fn b_lists_the_plans_in_the_session_directory_and_binds_the_pick() {
         let tree = TempDir::new().unwrap();
         fs::write(tree.path().join("a.md"), "- [x] one\n- [ ] two\n").unwrap();
@@ -593,7 +587,6 @@ mod with_a_real_store {
     }
 
     #[test]
-    #[ignore = "I1: dashboard actions"]
     fn binding_none_opts_the_session_out_of_progress() {
         let tree = TempDir::new().unwrap();
         fs::write(tree.path().join("a.md"), "- [x] one\n").unwrap();
