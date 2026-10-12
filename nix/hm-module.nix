@@ -197,6 +197,25 @@ in
       };
     };
 
+    serve = {
+      enable = lib.mkEnableOption "a systemd user service that runs `claude-monitor serve`" // {
+        description = ''
+          Run `claude-monitor serve` as a systemd user service (Linux only):
+          the web view of the same sessions, on a loopback address only
+          (127.0.0.1). The address with its access token is printed to the
+          journal each time the service starts; read it with
+          `journalctl --user -u claude-monitor-serve -n 5`. The token changes
+          on every start.
+        '';
+      };
+
+      port = lib.mkOption {
+        type = lib.types.port;
+        default = 8765;
+        description = "The loopback port `claude-monitor serve` listens on.";
+      };
+    };
+
     launchers = lib.mkOption {
       type = lib.types.attrsOf lib.types.str;
       default = { };
@@ -255,6 +274,29 @@ in
             ExecStart = "${cfg.package}/bin/claude-monitor watch";
             Restart = "on-failure";
             RestartSec = 5;
+          };
+          Install.WantedBy = [ "default.target" ];
+        };
+
+    # A respawn from the web view starts tmux and the agent from this unit's
+    # environment, which has no login PATH, so the profile directories and the
+    # two tools the library calls are named here.
+    systemd.user.services.claude-monitor-serve =
+      lib.mkIf (cfg.serve.enable && pkgs.stdenv.hostPlatform.isLinux)
+        {
+          Unit.Description = "claude-monitor: web view of AI agent sessions (loopback only)";
+          Service = {
+            ExecStart = "${cfg.package}/bin/claude-monitor serve --port ${toString cfg.serve.port}";
+            Restart = "on-failure";
+            RestartSec = 5;
+            Environment = [
+              "PATH=${
+                lib.makeBinPath [
+                  pkgs.tmux
+                  pkgs.git
+                ]
+              }:%h/.nix-profile/bin:/etc/profiles/per-user/%u/bin:/run/current-system/sw/bin"
+            ];
           };
           Install.WantedBy = [ "default.target" ];
         };

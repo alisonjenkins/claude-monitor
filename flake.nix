@@ -178,6 +178,7 @@
                   copilot,
                   tmuxHooks,
                   watch ? false,
+                  serve ? false,
                   bootCheck ? false,
                   bootCheckBanner ? false,
                   hostSystem ? system,
@@ -199,6 +200,7 @@
                       programs.claude-monitor.copilot.enable = copilot;
                       programs.claude-monitor.tmuxHooks.enable = tmuxHooks;
                       programs.claude-monitor.watch.enable = watch;
+                      programs.claude-monitor.serve.enable = serve;
                       programs.claude-monitor.bootCheck.enable = bootCheck;
                       programs.claude-monitor.bootCheck.banner.enable = bootCheckBanner;
                       programs.tmux.enable = true;
@@ -324,6 +326,36 @@
                   ++ pkgs.lib.optional (
                     watchOn.Install.WantedBy != [ "default.target" ]
                   ) "watch service is not wanted by default.target"
+                );
+              # serve unit: absent by default; when enabled on Linux it is a
+              # user service that restarts on failure and runs the store-path
+              # binary's `serve`, with no bind option (loopback is the default).
+              serveServiceName = "claude-monitor-serve";
+              hasServeService = cfg: builtins.hasAttr serveServiceName cfg.config.systemd.user.services;
+              serveOn =
+                (mkHmConfigWith {
+                  copilot = false;
+                  tmuxHooks = false;
+                  serve = true;
+                }).config.systemd.user.services.${serveServiceName};
+              serveProblems =
+                pkgs.lib.optional (hasServeService hmConfig) "serve service generated with serve.enable = false"
+                ++ pkgs.lib.optionals pkgs.stdenv.hostPlatform.isLinux (
+                  let
+                    exec = builtins.unsafeDiscardStringContext (
+                      builtins.head (pkgs.lib.toList serveOn.Service.ExecStart)
+                    );
+                  in
+                  pkgs.lib.optional (
+                    !(pkgs.lib.hasPrefix "/nix/store/" exec && pkgs.lib.hasInfix "/bin/claude-monitor serve" exec)
+                  ) "serve service ExecStart is not the store-path `claude-monitor serve`"
+                  ++ pkgs.lib.optional (pkgs.lib.hasInfix "--bind" exec) "serve service passes a bind address; it must stay on the loopback default"
+                  ++ pkgs.lib.optional (
+                    serveOn.Service.Restart != "on-failure"
+                  ) "serve service does not restart on failure"
+                  ++ pkgs.lib.optional (
+                    serveOn.Install.WantedBy != [ "default.target" ]
+                  ) "serve service is not wanted by default.target"
                 );
               # boot-check unit: absent by default; when enabled on Linux it is a
               # oneshot user unit running the store-path binary's `boot-check`
@@ -463,6 +495,8 @@
               throw "claude-monitor hm-module: ${builtins.concatStringsSep "; " tmuxProblems}"
             else if watchProblems != [ ] then
               throw "claude-monitor hm-module: ${builtins.concatStringsSep "; " watchProblems}"
+            else if serveProblems != [ ] then
+              throw "claude-monitor hm-module: ${builtins.concatStringsSep "; " serveProblems}"
             else if bootCheckProblems != [ ] then
               throw "claude-monitor hm-module: ${builtins.concatStringsSep "; " bootCheckProblems}"
             else if launchdProblems != [ ] then
