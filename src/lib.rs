@@ -15,3 +15,4 @@ pub mod testing;
 pub mod tmux;
 #[cfg(feature = "tui")]
 pub mod tui;
+pub mod watch;
