@@ -246,7 +246,9 @@ fn read_transcript(env: &Env, path: &Path, meta: FileMeta) -> Outcome {
     Outcome::Stub(SessionStub {
         agent_session_id: session_id.to_owned(),
         cwd,
+        repo_root: None,
         branch: latest_branch.unwrap_or(head_branch),
+        name: None,
         started_at,
         last_activity_at,
         first_prompt,

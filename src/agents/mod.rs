@@ -88,7 +88,11 @@ impl ParsedHook {
 pub struct SessionStub {
     pub agent_session_id: String,
     pub cwd: String,
+    /// The git repository root, when the agent records one.
+    pub repo_root: Option<String>,
     pub branch: Option<String>,
+    /// The name the user gave the session, when the agent records one.
+    pub name: Option<String>,
     pub started_at: String,
     pub last_activity_at: String,
     /// Truncated to [`claude_discover::MAX_PROMPT_CHARS`] characters.

@@ -101,6 +101,7 @@ fn new_session(kind: &str, stub: &SessionStub) -> Session {
         &stub.cwd,
         &stub.started_at,
     );
+    session.repo_root.clone_from(&stub.repo_root);
     session.branch.clone_from(&stub.branch);
     session.task_description.clone_from(&stub.first_prompt);
     session.last_activity_at.clone_from(&stub.last_activity_at);
@@ -112,6 +113,9 @@ fn new_session(kind: &str, stub: &SessionStub) -> Session {
 /// branch is only taken from a transcript recorded in the same working directory.
 fn fill_missing(existing: &Session, stub: &SessionStub) -> Option<Session> {
     let mut session = existing.clone();
+    if session.repo_root.is_none() && session.cwd == stub.cwd {
+        session.repo_root.clone_from(&stub.repo_root);
+    }
     if session.branch.is_none() && session.cwd == stub.cwd {
         session.branch.clone_from(&stub.branch);
     }
