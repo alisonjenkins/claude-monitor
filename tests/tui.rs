@@ -766,3 +766,125 @@ fn unseen_sessions_never_count_toward_the_title() {
         "{text}"
     );
 }
+
+mod restore_view_model {
+    use super::*;
+    use claude_monitor::tui::restore::{Group, RestoreView};
+
+    fn mixed() -> Overview {
+        overview(vec![
+            (SectionName::Active, vec![active("act", State::Working)]),
+            (
+                SectionName::Interrupted,
+                vec![
+                    entry("i1", State::Interrupted, SectionName::Interrupted),
+                    entry("i2", State::Interrupted, SectionName::Interrupted),
+                ],
+            ),
+            (
+                SectionName::Finished,
+                vec![entry("f1", State::Finished, SectionName::Finished)],
+            ),
+            (
+                SectionName::Done,
+                vec![entry("d1", State::Finished, SectionName::Done)],
+            ),
+            (
+                SectionName::Unseen,
+                vec![entry("u1", State::Finished, SectionName::Unseen)],
+            ),
+            (
+                SectionName::Dismissed,
+                vec![entry("x1", State::Interrupted, SectionName::Dismissed)],
+            ),
+        ])
+    }
+
+    fn selection(view: &RestoreView) -> Vec<(String, bool)> {
+        view.rows()
+            .iter()
+            .map(|r| (r.entry.id.clone(), r.selected))
+            .collect()
+    }
+
+    #[test]
+    #[ignore = "T074 view-model"]
+    fn interrupted_start_selected_finished_and_unseen_do_not() {
+        let view = RestoreView::from_overview(&mixed());
+
+        assert_eq!(
+            selection(&view),
+            [
+                ("i1".to_owned(), true),
+                ("i2".to_owned(), true),
+                ("f1".to_owned(), false),
+                ("u1".to_owned(), false),
+            ]
+        );
+        assert_eq!(view.rows()[2].group, Group::Finished);
+        assert_eq!(view.rows()[3].group, Group::Unseen);
+        assert_eq!(view.selected_ids(), ["i1", "i2"]);
+    }
+
+    #[test]
+    #[ignore = "T074 view-model"]
+    fn active_done_and_dismissed_sessions_are_not_offered() {
+        let view = RestoreView::from_overview(&mixed());
+        let ids: Vec<&str> = view.rows().iter().map(|r| r.entry.id.as_str()).collect();
+        for hidden in ["act", "d1", "x1"] {
+            assert!(!ids.contains(&hidden), "{hidden} offered: {ids:?}");
+        }
+    }
+
+    #[test]
+    #[ignore = "T074 view-model"]
+    fn toggle_flips_the_row_under_the_cursor_and_keeps_it_interrupted() {
+        let mut view = RestoreView::from_overview(&mixed());
+
+        view.toggle();
+        assert_eq!(view.selected_ids(), ["i2"]);
+        let row = &view.rows()[0];
+        assert!(!row.selected);
+        assert_eq!(row.entry.state, State::Interrupted);
+        assert_eq!(row.entry.section, SectionName::Interrupted);
+
+        view.toggle();
+        assert_eq!(view.selected_ids(), ["i1", "i2"]);
+    }
+
+    #[test]
+    #[ignore = "T074 view-model"]
+    fn a_selects_every_interrupted_session_and_n_selects_none() {
+        let mut view = RestoreView::from_overview(&mixed());
+        view.select_none();
+        assert!(view.selected_ids().is_empty());
+
+        view.move_cursor(true);
+        view.move_cursor(true);
+        view.toggle();
+        assert_eq!(view.selected_ids(), ["f1"]);
+
+        view.select_all_interrupted();
+        assert_eq!(view.selected_ids(), ["i1", "i2", "f1"]);
+    }
+
+    #[test]
+    #[ignore = "T074 view-model"]
+    fn the_cursor_stays_within_the_rows() {
+        let mut view = RestoreView::from_overview(&mixed());
+        view.move_cursor(false);
+        assert_eq!(view.cursor(), 0);
+        for _ in 0..10 {
+            view.move_cursor(true);
+        }
+        assert_eq!(view.cursor(), 3);
+    }
+
+    #[test]
+    #[ignore = "T074 view-model"]
+    fn an_overview_with_nothing_to_restore_has_no_rows() {
+        let view = RestoreView::from_overview(&active_only(vec![active("a", State::Working)]));
+        assert!(view.rows().is_empty());
+        assert!(view.selected_ids().is_empty());
+    }
+}
