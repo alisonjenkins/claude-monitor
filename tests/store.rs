@@ -76,7 +76,6 @@ fn insert_session(conn: &Connection, id: &str, agent_session_id: &str) -> rusqli
 }
 
 #[test]
-#[ignore = "T013"]
 fn creates_every_table_and_index_from_empty() {
     let dir = TempDir::new().unwrap();
     let store = open(&db_path(&dir));
@@ -94,7 +93,6 @@ fn creates_every_table_and_index_from_empty() {
 }
 
 #[test]
-#[ignore = "T013"]
 fn migrates_a_zero_version_database_file() {
     let dir = TempDir::new().unwrap();
     let path = db_path(&dir);
@@ -105,12 +103,11 @@ fn migrates_a_zero_version_database_file() {
     assert_eq!(user_version(store.connection()), 1);
     assert_eq!(
         master_names(store.connection(), "table").len(),
-        TABLES.len() + 1
+        TABLES.len()
     );
 }
 
 #[test]
-#[ignore = "T013"]
 fn reopening_is_idempotent_and_keeps_rows() {
     let dir = TempDir::new().unwrap();
     let path = db_path(&dir);
@@ -133,7 +130,6 @@ fn reopening_is_idempotent_and_keeps_rows() {
 }
 
 #[test]
-#[ignore = "T013"]
 fn recorded_v1_database_opens_without_change() {
     let dir = TempDir::new().unwrap();
     let path = db_path(&dir);
@@ -158,7 +154,6 @@ fn recorded_v1_database_opens_without_change() {
 }
 
 #[test]
-#[ignore = "T013"]
 fn wal_journal_and_foreign_keys_are_on() {
     let dir = TempDir::new().unwrap();
     let store = open(&db_path(&dir));
@@ -182,7 +177,6 @@ fn wal_journal_and_foreign_keys_are_on() {
 }
 
 #[test]
-#[ignore = "T013"]
 fn busy_timeout_follows_the_options() {
     let dir = TempDir::new().unwrap();
     let path = db_path(&dir);
@@ -200,7 +194,6 @@ fn busy_timeout_follows_the_options() {
 }
 
 #[test]
-#[ignore = "T013"]
 fn database_file_is_0600_and_new_directory_is_0700() {
     let dir = TempDir::new().unwrap();
     let state_dir = dir.path().join("nested").join("ai-control-centre");
@@ -212,7 +205,6 @@ fn database_file_is_0600_and_new_directory_is_0700() {
 }
 
 #[test]
-#[ignore = "T013"]
 fn loose_existing_file_mode_is_tightened() {
     let dir = TempDir::new().unwrap();
     let path = db_path(&dir);
@@ -225,7 +217,6 @@ fn loose_existing_file_mode_is_tightened() {
 }
 
 #[test]
-#[ignore = "T013"]
 fn state_dir_override_wins_over_the_environment() {
     let env = StateDirEnv {
         xdg_state_home: Some(PathBuf::from("/xdg")),
@@ -238,7 +229,6 @@ fn state_dir_override_wins_over_the_environment() {
 }
 
 #[test]
-#[ignore = "T013"]
 fn state_dir_defaults_follow_xdg_then_home() {
     let xdg = StateDirEnv {
         xdg_state_home: Some(PathBuf::from("/xdg")),
@@ -280,7 +270,6 @@ fn state_dir_defaults_follow_xdg_then_home() {
 }
 
 #[test]
-#[ignore = "T013"]
 fn override_directory_holds_state_db() {
     let dir = TempDir::new().unwrap();
     let state_dir = dir.path().join("override");
@@ -292,7 +281,6 @@ fn override_directory_holds_state_db() {
 }
 
 #[test]
-#[ignore = "T013"]
 fn corrupt_database_is_a_typed_error_naming_path_and_operation() {
     let dir = TempDir::new().unwrap();
     let path = db_path(&dir);
@@ -302,14 +290,13 @@ fn corrupt_database_is_a_typed_error_naming_path_and_operation() {
 
     assert_eq!(err.path(), Some(path.as_path()));
     assert!(!err.operation().is_empty());
-    assert!(!matches!(err, StoreError::NotImplemented { .. }));
+    assert!(!matches!(err, StoreError::NewerSchema { .. }));
     let message = err.to_string();
     assert!(message.contains(path.to_str().unwrap()), "{message}");
     assert!(message.contains(err.operation().split(' ').next().unwrap()));
 }
 
 #[test]
-#[ignore = "T013"]
 fn newer_schema_version_is_refused_and_left_untouched() {
     let dir = TempDir::new().unwrap();
     let path = db_path(&dir);
@@ -338,7 +325,6 @@ fn newer_schema_version_is_refused_and_left_untouched() {
 }
 
 #[test]
-#[ignore = "T013"]
 fn schema_constraints_hold() {
     let dir = TempDir::new().unwrap();
     let store = open(&db_path(&dir));

@@ -1,11 +1,21 @@
+use std::fs::{self, DirBuilder, OpenOptions};
 use std::io;
+use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use rusqlite::Connection;
 
+mod migrations;
+mod schema;
+
+pub use migrations::SCHEMA_VERSION;
+
 pub const DB_FILE_NAME: &str = "state.db";
 pub const APP_DIR_NAME: &str = "ai-control-centre";
+
+const PRIVATE_DIR_MODE: u32 = 0o700;
+const PRIVATE_FILE_MODE: u32 = 0o600;
 
 const DEFAULT_BUSY_TIMEOUT: Duration = Duration::from_secs(2);
 const VIEWER_BUSY_TIMEOUT: Duration = Duration::from_secs(5);
@@ -13,8 +23,6 @@ const HOOK_BUSY_TIMEOUT: Duration = Duration::from_millis(200);
 
 #[derive(Debug, thiserror::Error)]
 pub enum StoreError {
-    #[error("cannot {operation}: not implemented")]
-    NotImplemented { operation: &'static str },
     #[error("cannot locate a state directory: neither XDG_STATE_HOME nor HOME is usable")]
     NoStateDir,
     #[error("cannot create state directory {path}: {source}")]
@@ -60,7 +68,7 @@ pub enum StoreError {
 impl StoreError {
     pub fn path(&self) -> Option<&Path> {
         match self {
-            Self::NotImplemented { .. } | Self::NoStateDir => None,
+            Self::NoStateDir => None,
             Self::CreateDir { path, .. }
             | Self::CreateFile { path, .. }
             | Self::Permissions { path, .. }
@@ -75,7 +83,6 @@ impl StoreError {
 
     pub fn operation(&self) -> &'static str {
         match self {
-            Self::NotImplemented { operation } => operation,
             Self::NoStateDir => "locate state directory",
             Self::CreateDir { .. } => "create state directory",
             Self::CreateFile { .. } => "create database file",
@@ -132,13 +139,68 @@ impl StateDirEnv {
     }
 }
 
+/// `override_dir` is used as given. Otherwise `$XDG_STATE_HOME/ai-control-centre`
+/// (ignored unless absolute, per the XDG spec), else the per-OS default under `$HOME`.
 pub fn resolve_state_dir(
-    _override_dir: Option<&Path>,
-    _env: &StateDirEnv,
+    override_dir: Option<&Path>,
+    env: &StateDirEnv,
 ) -> Result<PathBuf, StoreError> {
-    Err(StoreError::NotImplemented {
-        operation: "resolve state directory",
-    })
+    if let Some(dir) = override_dir {
+        return Ok(dir.to_owned());
+    }
+    if let Some(xdg) = env.xdg_state_home.as_deref().filter(|p| p.is_absolute()) {
+        return Ok(xdg.join(APP_DIR_NAME));
+    }
+    let home = env
+        .home
+        .as_deref()
+        .filter(|p| !p.as_os_str().is_empty())
+        .ok_or(StoreError::NoStateDir)?;
+    if cfg!(target_os = "macos") {
+        Ok(home
+            .join("Library")
+            .join("Application Support")
+            .join(APP_DIR_NAME))
+    } else {
+        Ok(home.join(".local").join("state").join(APP_DIR_NAME))
+    }
+}
+
+fn create_private_dir(dir: &Path) -> Result<(), StoreError> {
+    if dir.is_dir() {
+        return Ok(());
+    }
+    DirBuilder::new()
+        .recursive(true)
+        .mode(PRIVATE_DIR_MODE)
+        .create(dir)
+        .map_err(|source| StoreError::CreateDir {
+            path: dir.to_owned(),
+            source,
+        })
+}
+
+fn ensure_private_file(path: &Path) -> Result<(), StoreError> {
+    OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .mode(PRIVATE_FILE_MODE)
+        .open(path)
+        .map_err(|source| StoreError::CreateFile {
+            path: path.to_owned(),
+            source,
+        })?;
+    let permissions_error = |source| StoreError::Permissions {
+        path: path.to_owned(),
+        source,
+    };
+    let current = fs::metadata(path).map_err(permissions_error)?.permissions();
+    if current.mode() & 0o777 != PRIVATE_FILE_MODE {
+        fs::set_permissions(path, fs::Permissions::from_mode(PRIVATE_FILE_MODE))
+            .map_err(permissions_error)?;
+    }
+    Ok(())
 }
 
 #[derive(Debug)]
@@ -148,10 +210,57 @@ pub struct Store {
 }
 
 impl Store {
-    pub fn open(path: &Path, _opts: &StoreOptions) -> Result<Self, StoreError> {
-        let _ = path;
-        Err(StoreError::NotImplemented {
-            operation: "open database",
+    /// Creates the directory (0700) and file (0600) if missing, enables WAL and
+    /// foreign keys, then migrates to the current schema. Refuses a database
+    /// written by a newer schema version without touching it.
+    pub fn open(path: &Path, opts: &StoreOptions) -> Result<Self, StoreError> {
+        if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
+            create_private_dir(parent)?;
+        }
+        ensure_private_file(path)?;
+
+        let mut conn = Connection::open(path).map_err(|source| StoreError::Open {
+            path: path.to_owned(),
+            source,
+        })?;
+        let configure = |pragma: &'static str| {
+            move |source| StoreError::Configure {
+                path: path.to_owned(),
+                pragma,
+                source,
+            }
+        };
+        conn.busy_timeout(opts.busy_timeout)
+            .map_err(configure("busy_timeout"))?;
+
+        let found = migrations::user_version(&conn).map_err(|source| StoreError::ReadVersion {
+            path: path.to_owned(),
+            source,
+        })?;
+        if found > SCHEMA_VERSION {
+            return Err(StoreError::NewerSchema {
+                path: path.to_owned(),
+                found,
+                supported: SCHEMA_VERSION,
+            });
+        }
+
+        let mode: String = conn
+            .pragma_update_and_check(None, "journal_mode", "WAL", |row| row.get(0))
+            .map_err(configure("journal_mode"))?;
+        if !mode.eq_ignore_ascii_case("wal") {
+            return Err(StoreError::JournalMode {
+                path: path.to_owned(),
+                mode,
+            });
+        }
+        conn.pragma_update(None, "foreign_keys", true)
+            .map_err(configure("foreign_keys"))?;
+
+        migrations::run(&mut conn, path)?;
+        Ok(Self {
+            path: path.to_owned(),
+            conn,
         })
     }
 
@@ -168,8 +277,9 @@ impl Store {
     }
 
     pub fn schema_version(&self) -> Result<u32, StoreError> {
-        Err(StoreError::NotImplemented {
-            operation: "read schema version",
+        migrations::user_version(&self.conn).map_err(|source| StoreError::ReadVersion {
+            path: self.path.clone(),
+            source,
         })
     }
 }
