@@ -3,6 +3,7 @@ pub mod hook;
 pub mod model;
 pub mod notify;
 pub mod session;
+pub mod store;
 pub mod tmux;
 #[cfg(feature = "tui")]
 pub mod tui;
