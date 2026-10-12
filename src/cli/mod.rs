@@ -256,7 +256,7 @@ pub struct RunOptions {
 
 /// Run one command; `state_dir` is the `--state-dir` override. `Hook`,
 /// `Dashboard`, `Migrate`, `List`, `Show`, `Reconcile`, `Watch`, `BootCheck`,
-/// `Restore` and `Respawn` are implemented; every other
+/// `Restore`, `Respawn` and `Summarize` are implemented; every other
 /// command reports `NotImplemented` until its task lands. Reads the store as it
 /// is; [`run_with`] adds the refresh pass the binary runs.
 pub fn run_in(cmd: Command, env: &Env, state_dir: Option<&Path>) -> Result<Output, Error> {

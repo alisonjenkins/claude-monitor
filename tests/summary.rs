@@ -596,7 +596,6 @@ mod summarize_cli {
     }
 
     #[test]
-    #[ignore = "implemented by T092"]
     fn no_endpoint_configured_is_refused_with_exit_2_and_a_clear_message() {
         let (h, id) = seeded();
         let fake = FakeEnv::new();
@@ -618,7 +617,6 @@ mod summarize_cli {
     }
 
     #[test]
-    #[ignore = "implemented by T092"]
     fn a_remote_endpoint_is_refused_before_anything_is_sent() {
         let (h, id) = seeded();
         let fake = FakeEnv::new();
@@ -637,7 +635,6 @@ mod summarize_cli {
     }
 
     #[test]
-    #[ignore = "implemented by T092"]
     fn summarizing_stores_labelled_model_text_and_leaves_verbatim_text_alone() {
         let (h, id) = seeded();
         let (addr, server) = fake_server(completion("Fixed the flaky test."));
@@ -675,7 +672,6 @@ mod summarize_cli {
     }
 
     #[test]
-    #[ignore = "implemented by T092"]
     fn an_unknown_session_is_refused() {
         let (h, _id) = seeded();
         let fake = FakeEnv::new();
@@ -688,7 +684,6 @@ mod summarize_cli {
     }
 
     #[test]
-    #[ignore = "implemented by T092"]
     fn a_model_that_is_down_is_refused_and_stores_nothing() {
         let (h, id) = seeded();
         let addr = TcpListener::bind("127.0.0.1:0")
@@ -730,7 +725,6 @@ mod summarize_cli {
     }
 
     #[test]
-    #[ignore = "implemented by T092"]
     fn the_binary_exits_2_with_a_json_error_when_no_endpoint_is_configured() {
         let (h, id) = seeded();
         let out = Process::new(env!("CARGO_BIN_EXE_claude-monitor"))

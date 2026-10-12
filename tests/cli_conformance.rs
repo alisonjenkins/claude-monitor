@@ -120,7 +120,6 @@ command_tests! {
     done => "done", "implemented by T110";
     undone => "undone", "implemented by T110";
     progress_bind => "progress-bind", "implemented by T088";
-    summarize => "summarize", "implemented by T092";
     serve => "serve", "implemented by T117";
     link => "link", "implemented by T100";
     export_cortexiphan => "export-cortexiphan", "implemented by T098";
@@ -199,6 +198,27 @@ mod reconcile {
         );
         assert!(result.is_ok(), "{result:?}");
         assert_contract("reconcile", &result);
+    }
+}
+
+/// The fake environment configures no summary model, so the example is
+/// refused (exit 2) before any session or network is touched; the state
+/// directory is temporary regardless.
+mod summarize {
+    use super::*;
+    use claude_monitor::cli::run_in;
+
+    #[test]
+    fn implemented() {
+        let state = tempfile::tempdir().unwrap();
+        let info = Command::all()
+            .iter()
+            .find(|info| info.name == "summarize")
+            .unwrap();
+        let fake = FakeEnv::new();
+        let result = run_in((info.example)(), &fake.env, Some(state.path()));
+        assert!(matches!(result, Err(Error::Refused { .. })), "{result:?}");
+        assert_contract("summarize", &result);
     }
 }
 
@@ -317,7 +337,7 @@ fn every_command_has_generated_tests_with_the_right_task() {
     for info in Command::all() {
         match info.name {
             "hook" | "dashboard" | "migrate" | "list" | "show" | "reconcile" | "watch"
-            | "boot-check" | "restore" | "respawn" => {}
+            | "boot-check" | "restore" | "respawn" | "summarize" => {}
             name => {
                 let reason = GENERATED
                     .iter()
@@ -332,7 +352,7 @@ fn every_command_has_generated_tests_with_the_right_task() {
             }
         }
     }
-    assert_eq!(GENERATED.len() + 10, Command::all().len());
+    assert_eq!(GENERATED.len() + 11, Command::all().len());
 }
 
 #[test]
