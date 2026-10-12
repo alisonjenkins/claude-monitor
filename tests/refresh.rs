@@ -32,6 +32,7 @@ impl Fx {
         let fake = FakeEnv::new();
         fake.vars.set("CLAUDE_CONFIG_DIR", "/cfg");
         fake.vars.set("COPILOT_HOME", "/cop");
+        fake.fs.add_dir(CWD);
         let store = Store::open_in_dir(dir.path(), &StoreOptions::default()).unwrap();
         Self {
             _dir: dir,
@@ -87,7 +88,6 @@ fn registry_author() -> Author {
 }
 
 #[test]
-#[ignore = "refresh not implemented"]
 fn a_live_session_nothing_else_knows_appears() {
     let fx = Fx::new();
     fx.registry(4242, "sess-new", "busy", true);
@@ -107,7 +107,6 @@ fn a_live_session_nothing_else_knows_appears() {
 }
 
 #[test]
-#[ignore = "refresh not implemented"]
 fn busy_becomes_working_for_a_discovered_session() {
     let fx = Fx::new();
     fx.transcript("sess-1");
@@ -123,7 +122,6 @@ fn busy_becomes_working_for_a_discovered_session() {
 }
 
 #[test]
-#[ignore = "refresh not implemented"]
 fn waiting_becomes_needs_permission() {
     let fx = Fx::new();
     fx.transcript("sess-1");
@@ -135,7 +133,6 @@ fn waiting_becomes_needs_permission() {
 }
 
 #[test]
-#[ignore = "refresh not implemented"]
 fn a_status_change_between_passes_updates_the_state() {
     let fx = Fx::new();
     fx.transcript("sess-1");
@@ -149,7 +146,6 @@ fn a_status_change_between_passes_updates_the_state() {
 }
 
 #[test]
-#[ignore = "refresh not implemented"]
 fn a_stale_registry_entry_is_ignored() {
     let fx = Fx::new();
     fx.transcript("sess-known");
@@ -167,7 +163,6 @@ fn a_stale_registry_entry_is_ignored() {
 }
 
 #[test]
-#[ignore = "refresh not implemented"]
 fn a_finished_session_is_never_touched() {
     let fx = Fx::new();
     let mut finished = Session::new("id-1", "claude", "sess-1", CWD, "2026-10-12T08:00:00Z");
@@ -185,7 +180,6 @@ fn a_finished_session_is_never_touched() {
 }
 
 #[test]
-#[ignore = "refresh not implemented"]
 fn a_session_without_a_pid_is_not_judged_by_processes() {
     let fx = Fx::new();
     let mut idle = Session::new("id-1", "claude", "sess-1", CWD, "2026-10-12T08:00:00Z");
@@ -198,7 +192,6 @@ fn a_session_without_a_pid_is_not_judged_by_processes() {
 }
 
 #[test]
-#[ignore = "refresh not implemented"]
 fn a_dead_pid_recorded_by_the_registry_is_then_interrupted() {
     let fx = Fx::new();
     fx.transcript("sess-1");
@@ -212,7 +205,6 @@ fn a_dead_pid_recorded_by_the_registry_is_then_interrupted() {
 }
 
 #[test]
-#[ignore = "refresh not implemented"]
 fn copilot_sessions_are_discovered_too() {
     let fx = Fx::new();
     fx.fake.fs.add_file(
@@ -231,7 +223,6 @@ fn copilot_sessions_are_discovered_too() {
 }
 
 #[test]
-#[ignore = "refresh not implemented"]
 fn a_second_run_writes_no_events() {
     let fx = Fx::new();
     fx.transcript("sess-1");
@@ -252,7 +243,6 @@ fn a_second_run_writes_no_events() {
 }
 
 #[test]
-#[ignore = "refresh not implemented"]
 fn missing_agent_directories_degrade_to_an_empty_pass() {
     let fx = Fx::new();
 
