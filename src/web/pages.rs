@@ -1,0 +1,797 @@
+//! The HTML of the web view (T116, `docs/web-design.md`). Pure functions from
+//! the JSON the CLI prints to markup: nothing here reads the store, and every
+//! string from a session is escaped by maud.
+
+use std::collections::HashMap;
+
+use maud::{html, Markup, DOCTYPE};
+use serde_json::Value;
+
+use crate::cli::age;
+
+/// What every page needs besides its content.
+#[derive(Debug, Clone, Copy)]
+pub struct Ctx<'a> {
+    /// Echoed into `<meta name="cc-csrf">` for the page's own requests.
+    pub csrf: &'a str,
+    pub now: &'a str,
+}
+
+/// A stored plan figure for an overview row.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RowProgress {
+    pub done: u32,
+    pub total: u32,
+    pub source: String,
+}
+
+/// The filter form's current values.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Filters {
+    pub state: String,
+    pub agent: String,
+    pub repo: String,
+    pub project: String,
+    pub text: String,
+    pub include_dismissed: bool,
+}
+
+const STATES: [&str; 6] = [
+    "working",
+    "needs_permission",
+    "idle",
+    "finished",
+    "interrupted",
+    "unknown",
+];
+
+const SHORT_ID: usize = 8;
+const TASK_FALLBACK: &str = "(no task recorded)";
+
+fn str_of<'a>(value: &'a Value, key: &str) -> Option<&'a str> {
+    value
+        .get(key)
+        .and_then(Value::as_str)
+        .filter(|text| !text.is_empty())
+}
+
+fn list_of<'a>(value: &'a Value, key: &str) -> &'a [Value] {
+    value
+        .get(key)
+        .and_then(Value::as_array)
+        .map_or(&[], Vec::as_slice)
+}
+
+/// A path segment safe to put in a URL.
+fn seg(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for byte in text.bytes() {
+        if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'.' | b'_' | b'~') {
+            out.push(char::from(byte));
+        } else {
+            out.push_str(&format!("%{byte:02X}"));
+        }
+    }
+    out
+}
+
+fn state_words(state: &str) -> String {
+    state.replace('_', " ")
+}
+
+fn short(id: &str) -> String {
+    id.chars().take(SHORT_ID).collect()
+}
+
+fn is_waiting(entry: &Value) -> bool {
+    let section = str_of(entry, "section").unwrap_or_default();
+    let state = str_of(entry, "state").unwrap_or_default();
+    section != "dismissed" && (state == "needs_permission" || state == "interrupted")
+}
+
+fn layout(ctx: &Ctx<'_>, title: &str, waiting: usize, region: &str, body: Markup) -> Markup {
+    let full_title = if waiting > 0 {
+        format!("({waiting}) {title}")
+    } else {
+        title.to_owned()
+    };
+    html! {
+        (DOCTYPE)
+        html lang="en" {
+            head {
+                meta charset="utf-8";
+                meta name="viewport" content="width=device-width, initial-scale=1";
+                meta name="color-scheme" content="light dark";
+                meta name="cc-csrf" content=(ctx.csrf);
+                title { (full_title) }
+                link rel="stylesheet" href="/assets/app.css";
+                script src="/assets/htmx.min.js" defer {}
+                script src="/assets/app.js" defer {}
+            }
+            body {
+                a.skip href=(format!("#{region}")) { "Skip to sessions" }
+                header.top {
+                    a.brand href="/" { "claude-monitor" }
+                    nav aria-label="Pages" {
+                        a href="/" { "Overview" }
+                        a href="/restore" { "Restore" }
+                        a href="/projects" { "Projects" }
+                        a href="/links" { "Links" }
+                    }
+                }
+                div #flash role="status" aria-live="polite" {}
+                main { (body) }
+            }
+        }
+    }
+}
+
+/// A region that re-reads `url` whenever the change feed says something
+/// changed, and swaps only itself.
+fn live(id: &str, url: &str, waiting: usize, inner: Markup) -> Markup {
+    html! {
+        div id=(id) data-waiting=(waiting)
+            hx-get=(url)
+            hx-trigger="cc-changed from:body delay:150ms"
+            hx-select=(format!("#{id}"))
+            hx-swap="outerHTML" {
+            (inner)
+        }
+    }
+}
+
+fn post_button(url: &str, label: &str, primary: bool) -> Markup {
+    html! {
+        button.btn.primary[primary] type="button" hx-post=(url) hx-swap="none" { (label) }
+    }
+}
+
+fn row_actions(entry: &Value) -> Markup {
+    let id = str_of(entry, "id").unwrap_or_default();
+    let state = str_of(entry, "state").unwrap_or_default();
+    let section = str_of(entry, "section").unwrap_or_default();
+    let base = format!("/sessions/{}", seg(id));
+    html! {
+        @if state == "interrupted" {
+            (post_button(&format!("{base}/respawn"), "Respawn", true))
+        } @else if section == "finished" {
+            (post_button(&format!("{base}/done"), "Mark done", false))
+        } @else if section == "done" {
+            (post_button(&format!("{base}/undone"), "Unmark done", false))
+        } @else if section == "dismissed" {
+            (post_button(&format!("{base}/undismiss"), "Undismiss", false))
+        }
+    }
+}
+
+fn progress_figure(progress: &RowProgress) -> Markup {
+    let percent = if progress.total == 0 {
+        0
+    } else {
+        progress
+            .done
+            .saturating_mul(100)
+            .checked_div(progress.total)
+            .unwrap_or(0)
+    };
+    html! {
+        p.meta {
+            span.figure.mono { (progress.done) " of " (progress.total) }
+            span.bar aria-hidden="true" { i style=(format!("width:{percent}%")) {} }
+            span.src.mono { (progress.source) }
+        }
+    }
+}
+
+fn row(ctx: &Ctx<'_>, entry: &Value, progress: &HashMap<String, RowProgress>) -> Markup {
+    let id = str_of(entry, "id").unwrap_or_default();
+    let state = str_of(entry, "state").unwrap_or_default();
+    let task = str_of(entry, "error")
+        .or_else(|| str_of(entry, "task_description"))
+        .unwrap_or(TASK_FALLBACK);
+    let place = match (str_of(entry, "repo"), str_of(entry, "branch")) {
+        (Some(repo), Some(branch)) => format!("{repo}/{branch}"),
+        (Some(repo), None) => repo.to_owned(),
+        _ => str_of(entry, "cwd").unwrap_or_default().to_owned(),
+    };
+    let ago = str_of(entry, "last_activity_at")
+        .map(|then| age(ctx.now, then))
+        .unwrap_or_else(|| "?".to_owned());
+    let flags: Vec<&str> = list_of(entry, "flags")
+        .iter()
+        .filter_map(Value::as_str)
+        .collect();
+    html! {
+        li.row id=(format!("s-{id}")) data-state=(state) {
+            span.state { i.dot {} (state_words(state)) }
+            div.what {
+                a.task href=(format!("/sessions/{}", seg(id))) { (task) }
+                @if let Some(left) = str_of(entry, "left_off") {
+                    p { (left) }
+                }
+                p.meta.mono {
+                    (place) " · " (short(id))
+                    @if let Some(project) = str_of(entry, "project") {
+                        " · "
+                        a href=(format!("/projects/{}", seg(project))) { (project) }
+                    }
+                    @for flag in &flags {
+                        span.flag { (flag) }
+                    }
+                }
+                @if let Some(figure) = progress.get(id) {
+                    (progress_figure(figure))
+                }
+            }
+            span.age.mono title=(str_of(entry, "last_activity_at").unwrap_or_default()) { (ago) }
+            div.actions { (row_actions(entry)) }
+        }
+    }
+}
+
+fn rows(ctx: &Ctx<'_>, entries: &[&Value], progress: &HashMap<String, RowProgress>) -> Markup {
+    html! {
+        ul.rows {
+            @for entry in entries { (row(ctx, entry, progress)) }
+        }
+    }
+}
+
+fn in_section<'a>(entries: &'a [Value], name: &str) -> Vec<&'a Value> {
+    entries
+        .iter()
+        .filter(|entry| str_of(entry, "section") == Some(name))
+        .collect()
+}
+
+fn section(
+    ctx: &Ctx<'_>,
+    name: &str,
+    heading: &str,
+    entries: &[&Value],
+    progress: &HashMap<String, RowProgress>,
+) -> Markup {
+    html! {
+        @if !entries.is_empty() {
+            section id=(format!("section-{name}")) {
+                h2 { (heading) span.count { "(" (entries.len()) ")" } }
+                (rows(ctx, entries, progress))
+            }
+        }
+    }
+}
+
+/// The sessions region shared by the overview and a project page: the
+/// waiting band first, then the calm sections.
+fn sessions_region(
+    ctx: &Ctx<'_>,
+    entries: &[Value],
+    progress: &HashMap<String, RowProgress>,
+    url: &str,
+) -> Markup {
+    let waiting: Vec<&Value> = entries.iter().filter(|e| is_waiting(e)).collect();
+    let interrupted = waiting
+        .iter()
+        .filter(|e| str_of(e, "state") == Some("interrupted"))
+        .count();
+    let active: Vec<&Value> = in_section(entries, "active")
+        .into_iter()
+        .filter(|e| !is_waiting(e))
+        .collect();
+    let finished = in_section(entries, "finished");
+    let done = in_section(entries, "done");
+    let unseen = in_section(entries, "unseen");
+    let dismissed = in_section(entries, "dismissed");
+    let inner = html! {
+        @if !waiting.is_empty() {
+            section #waiting aria-labelledby="waiting-h" {
+                h2 #waiting-h { "Waiting on you" span.count { "(" (waiting.len()) ")" } }
+                @if interrupted > 0 {
+                    p.lede {
+                        (interrupted) " interrupted. "
+                        a href="/restore" { "Review and restore them together" }
+                    }
+                }
+                (rows(ctx, &waiting, progress))
+            }
+        }
+        (section(ctx, "active", "Active", &active, progress))
+        (section(ctx, "finished", "Finished", &finished, progress))
+        (section(ctx, "done", "Done", &done, progress))
+        @if !unseen.is_empty() {
+            details id="section-unseen" class="section" {
+                summary { "Unseen sessions" span.count { "(" (unseen.len()) ")" } }
+                (rows(ctx, &unseen, progress))
+            }
+        }
+        (section(ctx, "dismissed", "Dismissed", &dismissed, progress))
+        @if entries.is_empty() {
+            p.muted { "No sessions match." }
+        }
+    };
+    live("sessions", url, waiting.len(), inner)
+}
+
+fn waiting_count(entries: &[Value]) -> usize {
+    entries.iter().filter(|e| is_waiting(e)).count()
+}
+
+fn filter_form(filters: &Filters) -> Markup {
+    html! {
+        form method="get" action="/sessions" class="filters" {
+            label { "State"
+                select name="state" {
+                    option value="" selected[filters.state.is_empty()] { "any" }
+                    @for state in STATES {
+                        option value=(state) selected[filters.state == state] { (state_words(state)) }
+                    }
+                }
+            }
+            label { "Agent" input type="text" name="agent" value=(filters.agent); }
+            label { "Repo" input type="text" name="repo" value=(filters.repo); }
+            label { "Project" input type="text" name="project" value=(filters.project); }
+            label { "Text" input type="text" name="text" value=(filters.text); }
+            label.check {
+                input type="checkbox" name="include_dismissed" value="true" checked[filters.include_dismissed];
+                "Include dismissed"
+            }
+            button.btn type="submit" { "Filter" }
+        }
+    }
+}
+
+pub fn overview(
+    ctx: &Ctx<'_>,
+    entries: &[Value],
+    progress: &HashMap<String, RowProgress>,
+    filters: &Filters,
+    url: &str,
+) -> String {
+    let body = html! {
+        h1 { "Sessions" }
+        (filter_form(filters))
+        (sessions_region(ctx, entries, progress, url))
+    };
+    layout(
+        ctx,
+        "claude-monitor",
+        waiting_count(entries),
+        "sessions",
+        body,
+    )
+    .into_string()
+}
+
+pub fn project(
+    ctx: &Ctx<'_>,
+    project: &Value,
+    notes: &[Value],
+    entries: &[Value],
+    progress: &HashMap<String, RowProgress>,
+    url: &str,
+) -> String {
+    let id = str_of(project, "id").unwrap_or_default();
+    let name = str_of(project, "name").unwrap_or_default();
+    let status = str_of(project, "status").unwrap_or_default();
+    let base = format!("/projects/{}", seg(id));
+    let body = html! {
+        h1 { (name) }
+        p.muted { "Status " strong { (status) } }
+        form hx-post=(base.clone()) hx-swap="none" class="inline" {
+            label { "Status"
+                select name="status" {
+                    @for option in ["active", "parked", "done", "archived"] {
+                        option value=(option) selected[status == option] { (option) }
+                    }
+                }
+            }
+            button.btn type="submit" { "Set status" }
+        }
+        form hx-post=(base.clone()) hx-swap="none" class="inline" {
+            label { "Rename" input type="text" name="name" value=(name); }
+            button.btn type="submit" { "Rename" }
+        }
+        (notes_panel(&format!("{base}/note"), notes))
+        (sessions_region(ctx, entries, progress, url))
+    };
+    layout(
+        ctx,
+        &format!("{name} · claude-monitor"),
+        waiting_count(entries),
+        "sessions",
+        body,
+    )
+    .into_string()
+}
+
+pub fn projects_index(ctx: &Ctx<'_>, projects: &[Value]) -> String {
+    let inner = html! {
+        h1 { "Projects" }
+        form hx-post="/projects" hx-swap="none" class="inline" data-reset="" {
+            label { "New project" input type="text" name="name" required; }
+            button.btn type="submit" { "Create" }
+        }
+        @if projects.is_empty() {
+            p.muted { "No projects yet." }
+        } @else {
+            ul.rows {
+                @for project in projects {
+                    @let id = str_of(project, "id").unwrap_or_default();
+                    li.row data-state="project" {
+                        span.state { (str_of(project, "status").unwrap_or_default()) }
+                        div.what {
+                            a.task href=(format!("/projects/{}", seg(id))) {
+                                (str_of(project, "name").unwrap_or_default())
+                            }
+                        }
+                        span {} span {}
+                    }
+                }
+            }
+        }
+    };
+    let body = live("content", "/projects", 0, inner);
+    layout(ctx, "Projects · claude-monitor", 0, "content", body).into_string()
+}
+
+fn notes_panel(post_url: &str, notes: &[Value]) -> Markup {
+    html! {
+        section.panel {
+            h2 { "Notes" }
+            @for note in notes {
+                p.verbatim {
+                    (str_of(note, "body").unwrap_or_default())
+                    " " span.muted.mono { (str_of(note, "created_at").unwrap_or_default()) }
+                }
+            }
+            form hx-post=(post_url) hx-swap="none" class="stack" data-reset="" {
+                label { "Add a note" textarea name="text" required {} }
+                div { button.btn type="submit" { "Add note" } }
+            }
+        }
+    }
+}
+
+fn lineage_links(label: &str, ids: &[&str]) -> Markup {
+    html! {
+        @if !ids.is_empty() {
+            dt { (label) }
+            dd {
+                @for id in ids {
+                    a.mono href=(format!("/sessions/{}", seg(id))) { (id) } " "
+                }
+            }
+        }
+    }
+}
+
+fn progress_panel(session_id: &str, detail: &Value) -> Markup {
+    let status = str_of(detail, "progress_status").unwrap_or("none");
+    let post = format!("/sessions/{}/progress-source", seg(session_id));
+    html! {
+        section.panel {
+            h2 { "Progress" }
+            @match status {
+                "bound" => {
+                    @if let Some(progress) = detail.get("progress") {
+                        p {
+                            span.figure.mono {
+                                (progress.get("done").and_then(Value::as_u64).unwrap_or(0))
+                                " of "
+                                (progress.get("total").and_then(Value::as_u64).unwrap_or(0))
+                            }
+                            span.src.mono { (str_of(progress, "source_label").unwrap_or_default()) }
+                        }
+                        @if progress.get("stale").and_then(Value::as_bool) == Some(true) {
+                            p.warn { "The source can no longer be read, so this figure may be out of date." }
+                        }
+                        @if let Some(current) = str_of(progress, "current") {
+                            p { "Current: " (current) }
+                        }
+                        @for phase in list_of(progress, "phases") {
+                            p.mono.muted {
+                                (str_of(phase, "name").unwrap_or_default()) " "
+                                (phase.get("done").and_then(Value::as_u64).unwrap_or(0)) "/"
+                                (phase.get("total").and_then(Value::as_u64).unwrap_or(0))
+                            }
+                        }
+                        (post_button_with(&post, "Show no progress", r#"{"source":"none"}"#))
+                    }
+                }
+                "pick_one" => {
+                    p.warn { "Several plans could be this session's. Choose one; no figure is guessed." }
+                    @for candidate in list_of(detail, "candidates") {
+                        @let path = str_of(candidate, "path").unwrap_or_default();
+                        div.inline {
+                            span.mono { (path) }
+                            span.muted.mono {
+                                (candidate.get("done").and_then(Value::as_u64).unwrap_or(0))
+                                " of "
+                                (candidate.get("total").and_then(Value::as_u64).unwrap_or(0))
+                            }
+                            (post_button_with(
+                                &post,
+                                "Use this plan",
+                                &serde_json::json!({ "path": path }).to_string(),
+                            ))
+                        }
+                    }
+                }
+                _ => {
+                    p.muted { "No plan found for this session." }
+                }
+            }
+        }
+    }
+}
+
+fn post_button_with(url: &str, label: &str, vals: &str) -> Markup {
+    html! {
+        button.btn.quiet type="button" hx-post=(url) hx-vals=(vals) hx-swap="none" { (label) }
+    }
+}
+
+pub fn session(ctx: &Ctx<'_>, detail: &Value) -> String {
+    let id = str_of(detail, "id").unwrap_or_default();
+    let state = str_of(detail, "state").unwrap_or_default();
+    let section_name = str_of(detail, "section").unwrap_or_default();
+    let base = format!("/sessions/{}", seg(id));
+    let flags: Vec<&str> = list_of(detail, "flags")
+        .iter()
+        .filter_map(Value::as_str)
+        .collect();
+    let parked = flags.contains(&"parked");
+    let dismissed = flags.contains(&"dismissed");
+    let resumed_by: Vec<&str> = list_of(detail, "resumed_by")
+        .iter()
+        .filter_map(Value::as_str)
+        .collect();
+    let resumed_from: Vec<&str> = str_of(detail, "resumed_from").into_iter().collect();
+    let forked_from: Vec<&str> = str_of(detail, "forked_from").into_iter().collect();
+    let generated = detail
+        .get("summaries")
+        .map_or(&[][..], |s| list_of(s, "generated"));
+    let notes = list_of(detail, "notes");
+    let waiting = usize::from(state == "needs_permission" || state == "interrupted");
+    let title = str_of(detail, "task_description").unwrap_or(id);
+    let inner = html! {
+        h1 { (title) }
+        p.state data-state=(state) { i.dot {} (state_words(state))
+            @if detail.get("running").and_then(Value::as_bool) == Some(true) { " (running)" }
+            @for flag in &flags { span.flag { (flag) } }
+        }
+        div.inline {
+            @if state == "interrupted" || section_name == "finished" || section_name == "done" {
+                (post_button(&format!("{base}/respawn"), "Respawn", state == "interrupted"))
+            }
+            @if section_name == "finished" {
+                (post_button(&format!("{base}/done"), "Mark done", false))
+            }
+            @if section_name == "done" {
+                (post_button(&format!("{base}/undone"), "Unmark done", false))
+            }
+            @if parked {
+                (post_button(&format!("{base}/unpark"), "Unpark", false))
+            } @else {
+                (post_button(&format!("{base}/park"), "Park", false))
+            }
+            @if dismissed {
+                (post_button(&format!("{base}/undismiss"), "Undismiss", false))
+            } @else {
+                (post_button(&format!("{base}/dismiss"), "Dismiss", false))
+            }
+        }
+        dl.facts {
+            dt { "Id" } dd.mono { (id) }
+            dt { "Agent" } dd { (str_of(detail, "agent_kind").unwrap_or_default()) }
+            @if let Some(repo) = str_of(detail, "repo") { dt { "Repo" } dd { (repo) } }
+            @if let Some(branch) = str_of(detail, "branch") { dt { "Branch" } dd.mono { (branch) } }
+            dt { "Directory" } dd.mono { (str_of(detail, "cwd").unwrap_or_default()) }
+            @if let Some(project) = str_of(detail, "project") {
+                dt { "Project" }
+                dd { a href=(format!("/projects/{}", seg(project))) { (project) } }
+            }
+            dt { "Last active" }
+            dd {
+                (str_of(detail, "last_activity_at").map(|t| age(ctx.now, t)).unwrap_or_default())
+                " ago " span.muted.mono { (str_of(detail, "last_activity_at").unwrap_or_default()) }
+            }
+            (lineage_links("Resumed from", &resumed_from))
+            (lineage_links("Forked from", &forked_from))
+            (lineage_links("Resumed by", &resumed_by))
+        }
+        @if let Some(task) = str_of(detail, "task_description") {
+            section.panel { h2 { "Task" } p.verbatim { (task) } }
+        }
+        @if let Some(left) = str_of(detail, "left_off") {
+            section.panel { h2 { "Left off" } p.verbatim { (left) } }
+        }
+        (progress_panel(id, detail))
+        @for summary in generated {
+            section.panel {
+                h2 { (str_of(summary, "label").unwrap_or("generated")) }
+                p.muted.mono {
+                    (str_of(summary, "model").unwrap_or("unknown model")) ", "
+                    (str_of(summary, "created_at").unwrap_or_default())
+                }
+                p.verbatim { (str_of(summary, "text").unwrap_or_default()) }
+            }
+        }
+        div.panel {
+            (post_button(&format!("{base}/summarize"), "Summarize with the local model", false))
+        }
+        (notes_panel(&format!("{base}/note"), notes))
+        section.panel {
+            h2 { "Project" }
+            form hx-post=(format!("{base}/group")) hx-swap="none" class="inline" data-reset="" {
+                label { "Move to project (- for none)" input type="text" name="project" required; }
+                button.btn type="submit" { "Move" }
+            }
+        }
+    };
+    let body = live("content", &base, waiting, inner);
+    layout(
+        ctx,
+        &format!("{} · claude-monitor", short(id)),
+        waiting,
+        "content",
+        body,
+    )
+    .into_string()
+}
+
+pub fn restore(ctx: &Ctx<'_>, preview: &Value, include_finished: bool) -> String {
+    let start = list_of(preview, "would_start");
+    let refuse = list_of(preview, "would_refuse");
+    let inner = html! {
+        h1 { "Restore" }
+        p.muted {
+            "Nothing starts until you confirm. Sessions open as windows in tmux session "
+            span.mono { (str_of(preview, "tmux_session").unwrap_or_default()) } "."
+        }
+        @if include_finished {
+            p { a href="/restore" { "Hide finished sessions" } }
+        } @else {
+            p { a href="/restore?include_finished=true" { "Include finished sessions" } }
+        }
+        @if start.is_empty() && refuse.is_empty() {
+            p { "Nothing to restore." }
+        }
+        @if !start.is_empty() {
+            form hx-post="/respawn" hx-swap="none" {
+                ul.rows {
+                    @for item in start {
+                        @let id = str_of(item, "session").unwrap_or_default();
+                        li.row data-state="interrupted" {
+                            span.state {
+                                input type="checkbox" name="ids" value=(id) checked
+                                    id=(format!("pick-{id}")) aria-label=(format!("Restore {id}"));
+                            }
+                            div.what {
+                                label for=(format!("pick-{id}")) {
+                                    a.task href=(format!("/sessions/{}", seg(id))) { (short(id)) }
+                                    " " span.muted { (str_of(item, "label").unwrap_or_default()) }
+                                }
+                                p.meta.mono {
+                                    (str_of(item, "mode").unwrap_or_default()) " in "
+                                    (str_of(item, "cwd").unwrap_or_default())
+                                }
+                                @for notice in list_of(item, "notices") {
+                                    p.warn { (notice.as_str().unwrap_or_default()) }
+                                }
+                            }
+                            span {} span {}
+                        }
+                    }
+                }
+                div.stack { button.btn.primary type="submit" { "Restore selected" } }
+            }
+        }
+        @if !refuse.is_empty() {
+            section.panel {
+                h2 { "Cannot be restored" }
+                @for item in refuse {
+                    div.warn {
+                        p {
+                            a.task href=(format!("/sessions/{}", seg(str_of(item, "session").unwrap_or_default()))) {
+                                (short(str_of(item, "session").unwrap_or_default()))
+                            }
+                            " " code { (str_of(item, "code").unwrap_or_default()) }
+                            ": " (str_of(item, "message").unwrap_or_default())
+                        }
+                        @for alternative in list_of(item, "alternatives") {
+                            p.muted {
+                                "Instead: " (str_of(alternative, "description").unwrap_or_default())
+                                " " code { (str_of(alternative, "command").unwrap_or_default()) }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    };
+    let url = if include_finished {
+        "/restore?include_finished=true"
+    } else {
+        "/restore"
+    };
+    let waiting = start.len();
+    let body = live("content", url, waiting, inner);
+    layout(ctx, "Restore · claude-monitor", waiting, "content", body).into_string()
+}
+
+pub fn links(ctx: &Ctx<'_>, stored: &[Value], check: Option<&Value>) -> String {
+    let checked: HashMap<&str, &Value> = check
+        .map(|c| list_of(c, "links"))
+        .unwrap_or_default()
+        .iter()
+        .filter_map(|link| Some((str_of(link, "id")?, link)))
+        .collect();
+    let inner = html! {
+        h1 { "Links" }
+        @match check {
+            Some(result) if str_of(result, "skipped").is_some() => {
+                p.muted { "Check skipped: " (str_of(result, "skipped").unwrap_or_default()) }
+            }
+            Some(_) => {}
+            None => {
+                p { a href="/links?check=1" { "Check the links against the remote graph" } }
+            }
+        }
+        @if stored.is_empty() {
+            p.muted { "No links yet." }
+        } @else {
+            table {
+                thead { tr { th { "Owner" } th { "Node" } th { "Kind" } th { "Last agreed" } th { "Check" } } }
+                tbody {
+                    @for link in stored {
+                        @let id = str_of(link, "id").unwrap_or_default();
+                        @let outcome = checked.get(id).and_then(|c| str_of(c, "outcome"));
+                        tr.warn[outcome == Some("disagree")] {
+                            td {
+                                @let owner = link.get("owner").cloned().unwrap_or(Value::Null);
+                                @let owner_id = str_of(&owner, "id").unwrap_or_default();
+                                @if str_of(&owner, "kind") == Some("project") {
+                                    a href=(format!("/projects/{}", seg(owner_id))) { (owner_id) }
+                                } @else {
+                                    a.mono href=(format!("/sessions/{}", seg(owner_id))) { (short(owner_id)) }
+                                }
+                            }
+                            td.mono { (str_of(link, "node_id").unwrap_or_default()) }
+                            td { (str_of(link, "kind").unwrap_or_default()) }
+                            td.mono { (str_of(link, "last_agreed_at").unwrap_or("never")) }
+                            td {
+                                @if let Some(outcome) = outcome {
+                                    (outcome.replace('_', " "))
+                                    @if outcome == "disagree" {
+                                        " (local "
+                                        (checked.get(id).and_then(|c| str_of(c, "local_status")).unwrap_or("?"))
+                                        ", remote "
+                                        (checked.get(id).and_then(|c| str_of(c, "remote_status")).unwrap_or("?"))
+                                        ")"
+                                    }
+                                } @else { span.muted { "not checked" } }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    };
+    let url = if check.is_some() {
+        "/links?check=1"
+    } else {
+        "/links"
+    };
+    let body = live("content", url, 0, inner);
+    layout(ctx, "Links · claude-monitor", 0, "content", body).into_string()
+}
+
+pub fn error(ctx: &Ctx<'_>, status: u16, message: &str) -> String {
+    let body = html! {
+        h1 { "Something stopped (" (status) ")" }
+        p.warn { (message) }
+        p { a href="/" { "Back to the overview" } }
+    };
+    layout(ctx, "claude-monitor", 0, "content", body).into_string()
+}

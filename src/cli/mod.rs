@@ -31,7 +31,7 @@ mod summarize;
 mod watch;
 
 pub use command::{Command, CommandInfo, ProjectAction};
-#[cfg(feature = "tui")]
+#[cfg(any(feature = "tui", feature = "web"))]
 pub(crate) use list::age;
 pub use output::Output;
 

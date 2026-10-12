@@ -51,7 +51,6 @@ fn has_section(html: &str, name: &str) -> bool {
 }
 
 #[test]
-#[ignore = "T119"]
 fn the_overview_is_html_with_no_external_host_and_its_own_assets() {
     let web = Plain::new();
     web.put("s-work", State::Working);
@@ -75,7 +74,6 @@ fn the_overview_is_html_with_no_external_host_and_its_own_assets() {
 }
 
 #[test]
-#[ignore = "T119"]
 fn the_assets_are_served_from_the_server_itself() {
     let web = Plain::new();
 
@@ -103,7 +101,6 @@ fn the_assets_are_served_from_the_server_itself() {
 }
 
 #[test]
-#[ignore = "T119"]
 fn an_asset_needs_the_token_like_every_other_route() {
     let web = Plain::new();
 
@@ -113,7 +110,6 @@ fn an_asset_needs_the_token_like_every_other_route() {
 }
 
 #[test]
-#[ignore = "T119"]
 fn sessions_waiting_on_the_user_are_lifted_into_their_own_band() {
     let web = Plain::new();
     web.put("s-work", State::Working);
@@ -138,7 +134,6 @@ fn sessions_waiting_on_the_user_are_lifted_into_their_own_band() {
 }
 
 #[test]
-#[ignore = "T119"]
 fn with_nothing_waiting_there_is_no_band_and_no_count() {
     let web = Plain::new();
     web.put("s-work", State::Working);
@@ -151,7 +146,6 @@ fn with_nothing_waiting_there_is_no_band_and_no_count() {
 }
 
 #[test]
-#[ignore = "T119"]
 fn the_calm_sections_hold_their_sessions_and_finished_is_never_collapsed() {
     let web = Plain::new();
     web.put("s-work", State::Working);
@@ -173,7 +167,6 @@ fn the_calm_sections_hold_their_sessions_and_finished_is_never_collapsed() {
 }
 
 #[test]
-#[ignore = "T119"]
 fn the_page_moves_a_session_to_the_done_section_after_it_is_marked_done() {
     let web = Plain::new();
     web.put("s-fin", State::Finished);
@@ -188,7 +181,6 @@ fn the_page_moves_a_session_to_the_done_section_after_it_is_marked_done() {
 }
 
 #[test]
-#[ignore = "T119"]
 fn dismissed_sessions_show_only_when_asked() {
     let web = Plain::new();
     web.put("s-fin", State::Finished);
@@ -202,7 +194,6 @@ fn dismissed_sessions_show_only_when_asked() {
 }
 
 #[test]
-#[ignore = "T119"]
 fn rows_show_the_verbatim_task_escaped_and_link_to_the_detail_page() {
     let web = Plain::new();
     web.put("s-fin", State::Finished);
@@ -219,7 +210,6 @@ fn rows_show_the_verbatim_task_escaped_and_link_to_the_detail_page() {
 }
 
 #[test]
-#[ignore = "T119"]
 fn the_filter_form_is_a_plain_get_and_filters_apply() {
     let web = Plain::new();
     web.put("s-work", State::Working);
@@ -235,7 +225,6 @@ fn the_filter_form_is_a_plain_get_and_filters_apply() {
 }
 
 #[test]
-#[ignore = "T119"]
 fn the_page_is_wired_for_live_updates_and_the_csrf_header() {
     let web = Plain::new();
     web.put("s-work", State::Working);
@@ -254,7 +243,6 @@ fn the_page_is_wired_for_live_updates_and_the_csrf_header() {
 }
 
 #[test]
-#[ignore = "T119"]
 fn the_session_page_has_the_verbatim_text_notes_lineage_and_the_right_actions() {
     let web = Plain::new();
     web.put("s-old", State::Finished);
@@ -290,7 +278,6 @@ fn the_session_page_has_the_verbatim_text_notes_lineage_and_the_right_actions() 
 }
 
 #[test]
-#[ignore = "T119"]
 fn an_unknown_session_page_is_a_404_page() {
     let web = Plain::new();
 
@@ -305,12 +292,11 @@ fn an_unknown_session_page_is_a_404_page() {
 }
 
 #[test]
-#[ignore = "T119"]
 fn progress_shows_its_figure_with_the_named_source() {
     let web = Plain::new();
     web.put("s-fin", State::Finished);
     let plan = web.dir.path().join("plan.md");
-    std::fs::write(&plan, "- [x] first\n- [ ] second\n").unwrap();
+    web.fake.fs.add_file(&plan, "- [x] first\n- [ ] second\n");
     web.cli(Command::ProgressBind {
         owner: "s-fin".to_owned(),
         file: Some(plan.clone()),
@@ -327,7 +313,6 @@ fn progress_shows_its_figure_with_the_named_source() {
 }
 
 #[test]
-#[ignore = "T119"]
 fn the_project_page_has_its_sections_and_only_its_own_done_sessions() {
     let web = Plain::new();
     web.put("in-a", State::Finished);
@@ -357,7 +342,6 @@ fn the_project_page_has_its_sections_and_only_its_own_done_sessions() {
 }
 
 #[test]
-#[ignore = "T119"]
 fn the_project_index_lists_projects() {
     let web = Plain::new();
     post(&web.rig, "/projects", &json!({"name": "alpha"}));
@@ -369,7 +353,6 @@ fn the_project_index_lists_projects() {
 }
 
 #[test]
-#[ignore = "T119"]
 fn the_links_page_lists_stored_links() {
     let web = Plain::new();
     web.put("s-fin", State::Finished);
@@ -386,7 +369,6 @@ fn the_links_page_lists_stored_links() {
 }
 
 #[test]
-#[ignore = "T119"]
 fn the_restore_page_previews_with_every_interrupted_session_selected() {
     let Some(fx) = Fixture::new() else { return };
     fx.add_session("int1", State::Interrupted, "a");
@@ -415,7 +397,6 @@ fn the_restore_page_previews_with_every_interrupted_session_selected() {
 }
 
 #[test]
-#[ignore = "T119"]
 fn the_restore_page_says_so_when_nothing_is_interrupted() {
     let web = Plain::new();
     web.put("s-work", State::Working);

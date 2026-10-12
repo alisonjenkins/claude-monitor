@@ -24,6 +24,7 @@ use crate::feed::{ChangeFeed, EventSource, SystemMonotonic};
 
 pub mod auth;
 pub mod events;
+pub mod pages;
 pub mod routes;
 
 pub use auth::Token;

@@ -4,19 +4,20 @@
 //! Every action runs the same library call as the CLI, so a refusal reads the
 //! same in both. Reads answer JSON; pages are added on top of the same data.
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 use axum::body::Bytes;
-use axum::extract::{FromRequest, Path, Query, Request, State};
+use axum::extract::{FromRequest, OriginalUri, Path, Query, Request, State};
 use axum::http::header::CONTENT_TYPE;
-use axum::http::{HeaderMap, HeaderName, HeaderValue, StatusCode};
+use axum::http::{HeaderMap, HeaderName, HeaderValue, StatusCode, Uri};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::Router;
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
 
-use super::AppState;
+use super::{pages, AppState};
 use crate::cli::migrate::open_viewer_store;
 use crate::cli::respawn::{plan_all, started_json, usage_error};
 use crate::cli::restore::candidates;
@@ -74,6 +75,10 @@ pub const COMMAND_ROUTES: &[CommandRoute] = &[
     route("unlink", "POST", "/sessions/{id}/unlink"),
     route("links-check", "GET", "/links"),
 ];
+
+const HTMX: &str = include_str!("assets/htmx.min.js");
+const APP_JS: &str = include_str!("assets/app.js");
+const APP_CSS: &str = include_str!("assets/app.css");
 
 /// Tells the open page that something changed, so its regions re-read.
 const CHANGED: &str = "cc-changed";
@@ -319,6 +324,18 @@ pub struct ListParams {
 }
 
 impl ListParams {
+    fn filters(&self) -> pages::Filters {
+        let text = |value: &Option<String>| value.clone().unwrap_or_default();
+        pages::Filters {
+            state: text(&self.state),
+            agent: text(&self.agent),
+            repo: text(&self.repo),
+            project: text(&self.project),
+            text: text(&self.text),
+            include_dismissed: self.include_dismissed.as_deref().is_some_and(truthy),
+        }
+    }
+
     fn command(self) -> Command {
         let states = blank(self.state)
             .map(|all| all.split(',').map(|s| s.trim().to_owned()).collect())
@@ -346,6 +363,19 @@ pub fn router() -> Router<AppState> {
         )
     };
     Router::new()
+        .route("/", get(sessions))
+        .route(
+            "/assets/htmx.min.js",
+            get(|| asset("text/javascript; charset=utf-8", HTMX)),
+        )
+        .route(
+            "/assets/app.js",
+            get(|| asset("text/javascript; charset=utf-8", APP_JS)),
+        )
+        .route(
+            "/assets/app.css",
+            get(|| asset("text/css; charset=utf-8", APP_CSS)),
+        )
         .route("/sessions", get(sessions))
         .route("/sessions/{id}", get(session_detail))
         .route(
@@ -390,20 +420,128 @@ pub fn router() -> Router<AppState> {
         .route("/links", get(links))
 }
 
+fn html_response(status: StatusCode, page: String) -> Response {
+    (status, [(CONTENT_TYPE, "text/html; charset=utf-8")], page).into_response()
+}
+
+/// The page for a failed read; JSON callers get the JSON error instead.
+fn settle(state: &AppState, json: bool, result: Result<Response, ApiError>) -> Response {
+    match result {
+        Ok(response) => response,
+        Err(error) if json => error.into_response(),
+        Err(error) => {
+            let ctx = pages::Ctx {
+                csrf: state.auth.token().as_str(),
+                now: &state.env.clock.now(),
+            };
+            let page = pages::error(&ctx, error.status.as_u16(), &error.message);
+            html_response(error.status, page)
+        }
+    }
+}
+
+/// Runs `render` with the page context, answering JSON when asked.
+fn page_or_json(
+    state: &AppState,
+    json: bool,
+    data: &Value,
+    render: impl FnOnce(&pages::Ctx<'_>) -> String,
+) -> Response {
+    if json {
+        return json_response(StatusCode::OK, data);
+    }
+    let ctx = pages::Ctx {
+        csrf: state.auth.token().as_str(),
+        now: &state.env.clock.now(),
+    };
+    html_response(StatusCode::OK, render(&ctx))
+}
+
+/// The stored plan figure of every session that has one, with its source.
+async fn progress_figures(
+    state: &AppState,
+) -> Result<HashMap<String, pages::RowProgress>, ApiError> {
+    let (env, dir) = (state.env.clone(), state.state_dir.clone());
+    blocking(move || -> Result<_, ApiError> {
+        let store = open_viewer_store(&env, Some(&dir))?;
+        let figures = store
+            .progress_figures()
+            .map_err(|e| ApiError::internal("read progress figures", e))?;
+        let mut out = HashMap::new();
+        for (id, (done, total)) in figures {
+            let source = store
+                .get_progress_binding(OwnerKind::Session, &id)
+                .map_err(|e| ApiError::internal("read progress binding", e))?
+                .map(|binding| binding.source.label())
+                .unwrap_or_default();
+            out.insert(
+                id,
+                pages::RowProgress {
+                    done,
+                    total,
+                    source,
+                },
+            );
+        }
+        Ok(out)
+    })
+    .await?
+}
+
+fn entries_of(listed: &Value) -> Vec<Value> {
+    listed
+        .get("sessions")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default()
+}
+
 async fn sessions(
     State(state): State<AppState>,
+    headers: HeaderMap,
+    OriginalUri(uri): OriginalUri,
     Query(params): Query<ListParams>,
+) -> Response {
+    let json = wants_json(&headers);
+    let result = sessions_view(&state, json, &uri, params).await;
+    settle(&state, json, result)
+}
+
+async fn sessions_view(
+    state: &AppState,
+    json: bool,
+    uri: &Uri,
+    params: ListParams,
 ) -> Result<Response, ApiError> {
-    let output = run(&state, params.command()).await?;
-    Ok(json_response(StatusCode::OK, &output_json(&output, false)))
+    let filters = params.filters();
+    let output = run(state, params.command()).await?;
+    let listed = output_json(&output, false);
+    let progress = if json {
+        HashMap::new()
+    } else {
+        progress_figures(state).await?
+    };
+    let url = uri.path_and_query().map_or("/", |pq| pq.as_str());
+    Ok(page_or_json(state, json, &listed, |ctx| {
+        pages::overview(ctx, &entries_of(&listed), &progress, &filters, url)
+    }))
 }
 
 async fn session_detail(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Path(id): Path<String>,
-) -> Result<Response, ApiError> {
-    let output = run(&state, Command::Show { session: id }).await?;
-    Ok(json_response(StatusCode::OK, &output_json(&output, false)))
+) -> Response {
+    let json = wants_json(&headers);
+    let result = async {
+        let output = run(&state, Command::Show { session: id }).await?;
+        let detail = output_json(&output, false);
+        Ok(page_or_json(&state, json, &detail, |ctx| {
+            pages::session(ctx, &detail)
+        }))
+    }
+    .await;
+    settle(&state, json, result)
 }
 
 async fn session_note(
@@ -488,7 +626,18 @@ pub struct CheckParams {
 
 async fn links(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Query(params): Query<CheckParams>,
+) -> Response {
+    let json = wants_json(&headers);
+    let result = links_view(&state, json, &params).await;
+    settle(&state, json, result)
+}
+
+async fn links_view(
+    state: &AppState,
+    json: bool,
+    params: &CheckParams,
 ) -> Result<Response, ApiError> {
     let (env, dir) = (state.env.clone(), state.state_dir.clone());
     let stored = blocking(move || -> Result<Vec<Value>, Error> {
@@ -504,10 +653,13 @@ async fn links(
     let mut body = Map::new();
     body.insert("links".to_owned(), json!(stored));
     if params.check.as_deref().is_some_and(truthy) {
-        let output = run(&state, Command::LinksCheck).await?;
+        let output = run(state, Command::LinksCheck).await?;
         body.insert("check".to_owned(), output_json(&output, false));
     }
-    Ok(json_response(StatusCode::OK, &Value::Object(body)))
+    let body = Value::Object(body);
+    Ok(page_or_json(state, json, &body, |ctx| {
+        pages::links(ctx, &stored, body.get("check"))
+    }))
 }
 
 fn find_project(store: &Store, key: &str) -> Result<Project, ApiError> {
@@ -519,16 +671,32 @@ fn find_project(store: &Store, key: &str) -> Result<Project, ApiError> {
         .ok_or_else(|| ApiError::unknown_project(key))
 }
 
-async fn projects(State(state): State<AppState>) -> Result<Response, ApiError> {
-    let (env, dir) = (state.env.clone(), state.state_dir.clone());
-    let all = blocking(move || -> Result<Vec<Project>, ApiError> {
-        let store = open_viewer_store(&env, Some(&dir))?;
-        store
-            .list_projects()
-            .map_err(|e| ApiError::internal("list projects", e))
-    })
-    .await??;
-    Ok(json_response(StatusCode::OK, &json!({ "projects": all })))
+async fn projects(State(state): State<AppState>, headers: HeaderMap) -> Response {
+    let json = wants_json(&headers);
+    let result = async {
+        let (env, dir) = (state.env.clone(), state.state_dir.clone());
+        let all = blocking(move || -> Result<Vec<Project>, ApiError> {
+            let store = open_viewer_store(&env, Some(&dir))?;
+            store
+                .list_projects()
+                .map_err(|e| ApiError::internal("list projects", e))
+        })
+        .await??;
+        let body = json!({ "projects": all });
+        Ok(page_or_json(&state, json, &body, |ctx| {
+            pages::projects_index(ctx, &entries_named(&body, "projects"))
+        }))
+    }
+    .await;
+    settle(&state, json, result)
+}
+
+fn entries_named(value: &Value, key: &str) -> Vec<Value> {
+    value
+        .get(key)
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default()
 }
 
 async fn project_create(
@@ -558,9 +726,22 @@ async fn project_named(state: &AppState, key: String) -> Result<Project, ApiErro
 
 async fn project_detail(
     State(state): State<AppState>,
+    headers: HeaderMap,
+    OriginalUri(uri): OriginalUri,
     Path(key): Path<String>,
+) -> Response {
+    let json = wants_json(&headers);
+    let result = project_view(&state, json, &uri, key).await;
+    settle(&state, json, result)
+}
+
+async fn project_view(
+    state: &AppState,
+    json: bool,
+    uri: &Uri,
+    key: String,
 ) -> Result<Response, ApiError> {
-    let project = project_named(&state, key).await?;
+    let project = project_named(state, key).await?;
     let notes = {
         let (env, dir, id) = (
             state.env.clone(),
@@ -577,7 +758,7 @@ async fn project_detail(
         .await??
     };
     let listed = run(
-        &state,
+        state,
         ListParams {
             project: Some(project.name.clone()),
             ..ListParams::default()
@@ -585,14 +766,24 @@ async fn project_detail(
         .command(),
     )
     .await?;
-    let sessions = output_json(&listed, false)
-        .get("sessions")
-        .cloned()
-        .unwrap_or_else(|| json!([]));
-    Ok(json_response(
-        StatusCode::OK,
-        &json!({ "project": project, "sessions": sessions, "notes": notes }),
-    ))
+    let entries = entries_of(&output_json(&listed, false));
+    let body = json!({ "project": project, "sessions": entries, "notes": notes });
+    let progress = if json {
+        HashMap::new()
+    } else {
+        progress_figures(state).await?
+    };
+    let url = uri.path_and_query().map_or("/", |pq| pq.as_str());
+    Ok(page_or_json(state, json, &body, |ctx| {
+        pages::project(
+            ctx,
+            &json!(project),
+            &entries_named(&body, "notes"),
+            &entries,
+            &progress,
+            url,
+        )
+    }))
 }
 
 async fn project_update(
@@ -783,20 +974,34 @@ pub struct RestoreParams {
 
 async fn restore(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Query(params): Query<RestoreParams>,
-) -> Result<Response, ApiError> {
-    let output = run(
-        &state,
-        Command::Restore {
-            all_interrupted: false,
-            include_finished: params.include_finished.as_deref().is_some_and(truthy),
-            fresh: false,
-            skip: Vec::new(),
-            yes: false,
-        },
-    )
-    .await?;
-    Ok(json_response(StatusCode::OK, &output_json(&output, false)))
+) -> Response {
+    let json = wants_json(&headers);
+    let include_finished = params.include_finished.as_deref().is_some_and(truthy);
+    let result = async {
+        let output = run(
+            &state,
+            Command::Restore {
+                all_interrupted: false,
+                include_finished,
+                fresh: false,
+                skip: Vec::new(),
+                yes: false,
+            },
+        )
+        .await?;
+        let preview = output_json(&output, false);
+        Ok(page_or_json(&state, json, &preview, |ctx| {
+            pages::restore(ctx, &preview, include_finished)
+        }))
+    }
+    .await;
+    settle(&state, json, result)
+}
+
+async fn asset(content_type: &'static str, body: &'static str) -> Response {
+    ([(CONTENT_TYPE, content_type)], body).into_response()
 }
 
 /// Whether the caller asked for JSON rather than a page.
