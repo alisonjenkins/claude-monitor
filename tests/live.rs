@@ -97,7 +97,6 @@ fn disk_only_env() -> FakeEnv {
 }
 
 #[test]
-#[ignore = "live loop not implemented"]
 fn a_wake_refreshes_the_store() {
     let dir = TempDir::new().unwrap();
     let fake = disk_only_env();
@@ -136,7 +135,6 @@ fn setting_stop_ends_the_loop_promptly() {
 }
 
 #[test]
-#[ignore = "live loop not implemented"]
 fn missing_directories_are_skipped_with_a_warning_each() {
     let fake = FakeEnv::new();
     fake.vars.set("CLAUDE_CONFIG_DIR", "/nowhere/cfg");
@@ -156,7 +154,6 @@ fn missing_directories_are_skipped_with_a_warning_each() {
 }
 
 #[test]
-#[ignore = "live loop not implemented"]
 fn existing_directories_are_watched_without_warnings() {
     let dir = TempDir::new().unwrap();
     for sub in ["cfg/sessions", "cfg/projects", "cop/session-state"] {
@@ -186,7 +183,6 @@ fn session(id: &str, state: State, pid: Option<u32>, start: Option<u64>) -> Sess
 }
 
 #[test]
-#[ignore = "live loop not implemented"]
 fn only_active_sessions_with_a_known_process_are_tracked() {
     let sessions = [
         session("a", State::Working, Some(10), Some(100)),
@@ -202,5 +198,60 @@ fn only_active_sessions_with_a_known_process_are_tracked() {
     assert_eq!(
         tracked.into_iter().collect::<Vec<_>>(),
         [(10, 100), (11, 101)]
+    );
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn a_corrupt_row_does_not_stop_exit_watches_being_registered() {
+    use claude_monitor::env::parse_proc_stat_start_time;
+    use claude_monitor::feed::ProcExitSource;
+    use std::process::{Command, Stdio};
+
+    let dir = TempDir::new().unwrap();
+    let store = Store::open_in_dir(dir.path(), &StoreOptions::default()).unwrap();
+    let mut child = Command::new("sleep")
+        .arg("30")
+        .stdin(Stdio::null())
+        .spawn()
+        .unwrap();
+    let pid = child.id();
+    let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).unwrap();
+    let start = parse_proc_stat_start_time(&stat).unwrap();
+    store
+        .upsert_session(&session("good", State::Working, Some(pid), Some(start)))
+        .unwrap();
+    store
+        .upsert_session(&session("bad", State::Working, None, None))
+        .unwrap();
+    let conn = store.connection();
+    conn.execute_batch("PRAGMA ignore_check_constraints = ON")
+        .unwrap();
+    conn.execute("UPDATE sessions SET state = 'bogus' WHERE id = 'bad'", [])
+        .unwrap();
+    conn.execute_batch("PRAGMA ignore_check_constraints = OFF")
+        .unwrap();
+    let source = ProcExitSource::new().unwrap();
+    let handle = source.handle();
+    let (tx, rx) = mpsc::channel();
+
+    let live = spawn_live(
+        store,
+        FakeEnv::new().env,
+        vec![Box::new(source)],
+        Some(handle),
+        move |_| {
+            let _ = tx.send(());
+        },
+    )
+    .unwrap();
+    child.kill().unwrap();
+
+    let woke = rx.recv_timeout(PATIENCE).is_ok();
+    drop(live);
+    child.wait().unwrap();
+    assert!(
+        woke,
+        "the exit of the good session's process never woke the loop"
     );
 }
