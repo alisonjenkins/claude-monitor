@@ -5,23 +5,84 @@
 use crossterm::event::KeyCode;
 
 use crate::env::Env;
+use crate::respawn::{plan_batch, start_one, tmux_session_for, Item, PlanFlags, SPAWN_FAILED};
 use crate::store::queries::{Overview, OverviewEntry, SectionName};
 use crate::store::Store;
 
+const NOTHING_SELECTED: &str = "nothing selected";
+const NOTHING_CAN_START: &str = "none of the selected sessions can start";
+const STILL_STARTING: &str = "still starting";
+
 /// Plan `ids` for the confirm screen. Reads the filesystem and process table;
 /// starts and writes nothing.
-pub fn preview_restore(_store: &Store, _env: &Env, _ids: &[String]) -> Vec<PreviewRow> {
-    Vec::new()
+pub fn preview_restore(store: &Store, env: &Env, ids: &[String]) -> Vec<PreviewRow> {
+    match plan_batch(store, env, ids, &PlanFlags::default()) {
+        Ok(planned) => planned
+            .into_iter()
+            .map(|(session, plan)| match plan {
+                Ok(plan) => PreviewRow::Start {
+                    session_id: session.id,
+                    mode: plan.mode.as_str().to_owned(),
+                    cwd: plan.launch.cwd.display().to_string(),
+                    notices: plan.notices,
+                },
+                Err(refusal) => PreviewRow::Refuse {
+                    session_id: session.id,
+                    code: refusal.code.as_str().to_owned(),
+                    message: refusal.message,
+                    alternatives: refusal
+                        .alternatives
+                        .into_iter()
+                        .map(|a| (a.description, a.command))
+                        .collect(),
+                },
+            })
+            .collect(),
+        Err(error) => ids
+            .iter()
+            .map(|id| PreviewRow::Refuse {
+                session_id: id.clone(),
+                code: SPAWN_FAILED.to_owned(),
+                message: error.to_string(),
+                alternatives: Vec::new(),
+            })
+            .collect(),
+    }
 }
 
 /// Start `ids` one after another, calling `emit` as each finishes. A failure
 /// to start one does not stop the others.
-pub fn run_restore(
-    _store: &Store,
-    _env: &Env,
-    _ids: &[String],
-    _emit: &mut dyn FnMut(RestoreResult),
-) {
+pub fn run_restore(store: &Store, env: &Env, ids: &[String], emit: &mut dyn FnMut(RestoreResult)) {
+    let planned = match plan_batch(store, env, ids, &PlanFlags::default()) {
+        Ok(planned) => planned,
+        Err(error) => {
+            for id in ids {
+                emit(RestoreResult::Refused {
+                    session_id: id.clone(),
+                    code: SPAWN_FAILED.to_owned(),
+                    message: error.to_string(),
+                });
+            }
+            return;
+        }
+    };
+    let tmux_session = tmux_session_for(env);
+    let now = env.clock.now();
+    for (session, plan) in planned {
+        emit(
+            match start_one(store, env, &session, plan, &tmux_session, &now) {
+                Item::Started(item) => RestoreResult::Started {
+                    session_id: item.started.session_id,
+                    pane: item.started.pane_id,
+                },
+                Item::Refused(refused) => RestoreResult::Refused {
+                    session_id: refused.session_id,
+                    code: refused.code.to_owned(),
+                    message: refused.message,
+                },
+            },
+        );
+    }
 }
 
 /// Where a row came from; decides whether it starts selected.
@@ -117,13 +178,121 @@ impl RestoreView {
         self.notice.as_deref()
     }
 
-    pub fn on_key(&mut self, _code: KeyCode) -> Step {
+    pub fn on_key(&mut self, code: KeyCode) -> Step {
+        self.notice = None;
+        match std::mem::take(&mut self.stage) {
+            Stage::Select => self.select_key(code),
+            Stage::Previewing => {
+                self.stage = if code == KeyCode::Esc {
+                    Stage::Select
+                } else {
+                    Stage::Previewing
+                };
+                Step::Stay
+            }
+            Stage::Confirm(rows) => self.confirm_key(code, rows),
+            running @ Stage::Running { .. } => {
+                self.stage = running;
+                self.notice = Some(STILL_STARTING.to_owned());
+                Step::Stay
+            }
+            Stage::Finished(results) => {
+                if matches!(code, KeyCode::Esc | KeyCode::Enter | KeyCode::Char('q')) {
+                    Step::Close
+                } else {
+                    self.stage = Stage::Finished(results);
+                    Step::Stay
+                }
+            }
+        }
+    }
+
+    fn select_key(&mut self, code: KeyCode) -> Step {
+        match code {
+            KeyCode::Esc | KeyCode::Char('q') => return Step::Close,
+            KeyCode::Char('j') | KeyCode::Down => self.move_cursor(true),
+            KeyCode::Char('k') | KeyCode::Up => self.move_cursor(false),
+            KeyCode::Char(' ') => self.toggle(),
+            KeyCode::Char('a') => self.select_all_interrupted(),
+            KeyCode::Char('n') => self.select_none(),
+            KeyCode::Enter => {
+                let ids = self.selected_ids();
+                if ids.is_empty() {
+                    self.notice = Some(NOTHING_SELECTED.to_owned());
+                } else {
+                    self.stage = Stage::Previewing;
+                    return Step::Preview(ids);
+                }
+            }
+            _ => {}
+        }
         Step::Stay
     }
 
-    pub fn on_preview(&mut self, _rows: Vec<PreviewRow>) {}
+    fn confirm_key(&mut self, code: KeyCode, rows: Vec<PreviewRow>) -> Step {
+        match code {
+            KeyCode::Esc => {
+                self.stage = Stage::Select;
+                Step::Stay
+            }
+            KeyCode::Enter => {
+                let ids: Vec<String> = rows
+                    .iter()
+                    .filter_map(|row| match row {
+                        PreviewRow::Start { session_id, .. } => Some(session_id.clone()),
+                        PreviewRow::Refuse { .. } => None,
+                    })
+                    .collect();
+                if ids.is_empty() {
+                    self.notice = Some(NOTHING_CAN_START.to_owned());
+                    self.stage = Stage::Confirm(rows);
+                    return Step::Stay;
+                }
+                let refused: Vec<RestoreResult> = rows
+                    .iter()
+                    .filter_map(|row| match row {
+                        PreviewRow::Refuse {
+                            session_id,
+                            code,
+                            message,
+                            ..
+                        } => Some(RestoreResult::Refused {
+                            session_id: session_id.clone(),
+                            code: code.clone(),
+                            message: message.clone(),
+                        }),
+                        PreviewRow::Start { .. } => None,
+                    })
+                    .collect();
+                self.stage = Stage::Running {
+                    total: rows.len(),
+                    results: refused,
+                };
+                Step::Start(ids)
+            }
+            _ => {
+                self.stage = Stage::Confirm(rows);
+                Step::Stay
+            }
+        }
+    }
 
-    pub fn on_result(&mut self, _result: RestoreResult) {}
+    /// The plans arrived: show them, unless the user backed out meanwhile.
+    pub fn on_preview(&mut self, rows: Vec<PreviewRow>) {
+        if self.stage == Stage::Previewing {
+            self.stage = Stage::Confirm(rows);
+        }
+    }
+
+    /// One session finished starting; the last one completes the view.
+    pub fn on_result(&mut self, result: RestoreResult) {
+        if let Stage::Running { total, results } = &mut self.stage {
+            results.push(result);
+            if results.len() >= *total {
+                self.stage = Stage::Finished(std::mem::take(results));
+            }
+        }
+    }
 
     /// Rows for the interrupted, finished and unseen sections. Dismissed,
     /// done and active sessions are not offered.

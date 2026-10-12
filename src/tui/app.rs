@@ -6,7 +6,7 @@ use std::path::Path;
 
 use crossterm::event::{KeyCode, KeyModifiers};
 
-use super::restore::{PreviewRow, RestoreResult, RestoreView};
+use super::restore::{PreviewRow, RestoreResult, RestoreView, Step};
 use crate::model::State;
 use crate::store::queries::{Overview, OverviewEntry, OverviewQuery, Section, SectionName};
 use crate::store::Store;
@@ -229,6 +229,27 @@ impl App {
         self.keep_selection(current.unwrap_or(0));
     }
 
+    fn open_restore(&mut self) {
+        if let Some(snapshot) = &self.snapshot {
+            self.restore = Some(RestoreView::from_overview(&snapshot.overview));
+        }
+    }
+
+    fn on_restore_key(&mut self, code: KeyCode) -> Vec<Effect> {
+        let Some(view) = self.restore.as_mut() else {
+            return Vec::new();
+        };
+        match view.on_key(code) {
+            Step::Stay => Vec::new(),
+            Step::Close => {
+                self.restore = None;
+                Vec::new()
+            }
+            Step::Preview(ids) => vec![Effect::PreviewRestore { ids }],
+            Step::Start(ids) => vec![Effect::StartRestore { ids }],
+        }
+    }
+
     fn on_key(&mut self, code: KeyCode, modifiers: KeyModifiers) -> Vec<Effect> {
         if code == KeyCode::Char('c') && modifiers.contains(KeyModifiers::CONTROL) {
             return vec![Effect::Quit];
@@ -238,7 +259,11 @@ impl App {
             return Vec::new();
         }
         self.status = None;
+        if self.restore.is_some() {
+            return self.on_restore_key(code);
+        }
         match code {
+            KeyCode::Char('R') => self.open_restore(),
             KeyCode::Char('q') | KeyCode::Esc => return vec![Effect::Quit],
             KeyCode::Char('j') | KeyCode::Down => self.move_selection(true),
             KeyCode::Char('k') | KeyCode::Up => self.move_selection(false),
@@ -321,7 +346,18 @@ pub fn update(mut app: App, msg: Msg) -> (App, Vec<Effect>) {
             app.status = Some(message);
             Vec::new()
         }
-        Msg::RestorePreview(_) | Msg::RestoreResult(_) => Vec::new(),
+        Msg::RestorePreview(rows) => {
+            if let Some(view) = app.restore.as_mut() {
+                view.on_preview(rows);
+            }
+            Vec::new()
+        }
+        Msg::RestoreResult(result) => {
+            if let Some(view) = app.restore.as_mut() {
+                view.on_result(result);
+            }
+            Vec::new()
+        }
     };
     (app, effects)
 }

@@ -16,11 +16,13 @@ use crossterm::ExecutableCommand;
 use ratatui::prelude::*;
 
 use super::app::{update, App, Effect, Msg, Snapshot};
+use super::restore::{preview_restore, run_restore, RestoreResult};
 use super::view::{state_label, view};
 use crate::cli::migrate::open_viewer_store;
 use crate::env::Env;
 use crate::feed::{ChangeFeed, EventSource, FsWatcherSource, Monotonic, SystemMonotonic};
 use crate::live::{build_sources, spawn_live, LiveThread};
+use crate::respawn::SPAWN_FAILED;
 use crate::store::{Store, StoreOptions};
 use crate::tmux;
 
@@ -149,6 +151,7 @@ fn run_loop<S: EventSource>(
 ) -> Result<()> {
     let (mut app, _) = reload(App::new(), store, &env.clock.now());
     let mut last_reload = Instant::now();
+    let (restore_tx, restore_rx) = mpsc::channel::<Msg>();
 
     loop {
         terminal.draw(|frame| view(&app, frame))?;
@@ -160,6 +163,9 @@ fn run_loop<S: EventSource>(
                 LiveSignal::Changed => live_changed = true,
                 LiveSignal::Warning(line) => queue.push_back(Msg::Failed(line)),
             }
+        }
+        while let Ok(msg) = restore_rx.try_recv() {
+            queue.push_back(msg);
         }
         match event::poll(TICK) {
             Ok(true) => match event::read() {
@@ -188,10 +194,13 @@ fn run_loop<S: EventSource>(
         }
 
         for effect in effects {
-            match perform(&effect, env) {
+            match perform(&effect, env, store, &restore_tx) {
                 Done::Quit => return Ok(()),
                 Done::Failed(message) => {
                     app = update(app, Msg::Failed(message)).0;
+                }
+                Done::Answer(msg) => {
+                    app = update(app, msg).0;
                 }
                 Done::Ok => {}
             }
@@ -203,12 +212,51 @@ enum Done {
     Ok,
     Quit,
     Failed(String),
+    Answer(Msg),
 }
 
-fn perform(effect: &Effect, env: &Env) -> Done {
+/// Starts run off the UI thread so a slow `git worktree add` or tmux call
+/// never freezes the redraw; each result comes back as it finishes.
+fn start_restore(env: &Env, store: &Store, ids: Vec<String>, results: &mpsc::Sender<Msg>) -> Done {
+    let path = store.path().to_owned();
+    let env = env.clone();
+    let tx = results.clone();
+    let worker_ids = ids.clone();
+    let spawned = std::thread::Builder::new()
+        .name("restore".to_owned())
+        .spawn(move || match Store::open(&path, &StoreOptions::viewer()) {
+            Ok(store) => run_restore(&store, &env, &worker_ids, &mut |result| {
+                let _ = tx.send(Msg::RestoreResult(result));
+            }),
+            Err(error) => refuse_all(&worker_ids, &format!("cannot open the store: {error}"), &tx),
+        });
+    match spawned {
+        Ok(_) => Done::Ok,
+        Err(error) => {
+            let detail = format!("cannot start a worker: {error}");
+            refuse_all(&ids, &detail, results);
+            Done::Failed(detail)
+        }
+    }
+}
+
+fn refuse_all(ids: &[String], detail: &str, results: &mpsc::Sender<Msg>) {
+    for id in ids {
+        let _ = results.send(Msg::RestoreResult(RestoreResult::Refused {
+            session_id: id.clone(),
+            code: SPAWN_FAILED.to_owned(),
+            message: detail.to_owned(),
+        }));
+    }
+}
+
+fn perform(effect: &Effect, env: &Env, store: &Store, restore_tx: &mpsc::Sender<Msg>) -> Done {
     match effect {
         Effect::Quit => Done::Quit,
-        Effect::PreviewRestore { .. } | Effect::StartRestore { .. } => Done::Ok,
+        Effect::PreviewRestore { ids } => {
+            Done::Answer(Msg::RestorePreview(preview_restore(store, env, ids)))
+        }
+        Effect::StartRestore { ids } => start_restore(env, store, ids.clone(), restore_tx),
         Effect::JumpToPane { pane } => match tmux::switch_to_pane(pane) {
             Ok(()) => Done::Ok,
             Err(e) => Done::Failed(format!("switch failed: {e:#}")),

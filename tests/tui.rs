@@ -1016,7 +1016,6 @@ mod restore_flow {
     }
 
     #[test]
-    #[ignore = "T074 restore flow"]
     fn r_opens_the_view_with_interrupted_sessions_selected() {
         let w = two_interrupted_one_finished();
         let app = w.keys(w.app(), &[R]);
@@ -1031,7 +1030,6 @@ mod restore_flow {
     }
 
     #[test]
-    #[ignore = "T074 restore flow"]
     fn the_help_line_offers_restore() {
         let w = two_interrupted_one_finished();
         let text = wide(&w.app());
@@ -1039,7 +1037,6 @@ mod restore_flow {
     }
 
     #[test]
-    #[ignore = "T074 restore flow"]
     fn enter_shows_the_summary_and_starts_nothing() {
         let w = two_interrupted_one_finished();
         let app = w.keys(w.app(), &[R, KeyCode::Enter]);
@@ -1054,7 +1051,6 @@ mod restore_flow {
     }
 
     #[test]
-    #[ignore = "T074 restore flow"]
     fn enter_enter_starts_only_the_selected_sessions() {
         let w = two_interrupted_one_finished();
         // Deselect i2, select the finished f1.
@@ -1080,7 +1076,6 @@ mod restore_flow {
     }
 
     #[test]
-    #[ignore = "T074 restore flow"]
     fn deselecting_does_not_dismiss_or_change_the_state() {
         let w = two_interrupted_one_finished();
         let app = w.keys(w.app(), &[R, DOWN, SPACE, KeyCode::Enter, KeyCode::Enter]);
@@ -1092,7 +1087,6 @@ mod restore_flow {
     }
 
     #[test]
-    #[ignore = "T074 restore flow"]
     fn escape_cancels_without_starting_anything() {
         let w = two_interrupted_one_finished();
 
@@ -1107,7 +1101,6 @@ mod restore_flow {
     }
 
     #[test]
-    #[ignore = "T074 restore flow"]
     fn keys_in_the_view_do_not_quit_the_dashboard() {
         let w = two_interrupted_one_finished();
         let app = w.app();
@@ -1117,7 +1110,6 @@ mod restore_flow {
     }
 
     #[test]
-    #[ignore = "T074 restore flow"]
     fn enter_with_nothing_selected_does_nothing() {
         let w = two_interrupted_one_finished();
         let app = w.keys(w.app(), &[R, KeyCode::Char('n')]);
@@ -1127,7 +1119,6 @@ mod restore_flow {
     }
 
     #[test]
-    #[ignore = "T074 restore flow"]
     fn the_summary_shows_refusals_with_their_alternatives() {
         let w = World::new();
         w.add("ok1", State::Interrupted, true);
@@ -1145,7 +1136,6 @@ mod restore_flow {
     }
 
     #[test]
-    #[ignore = "T074 restore flow"]
     fn each_result_shows_as_it_arrives() {
         let w = two_interrupted_one_finished();
         let app = w.keys(w.app(), &[R, KeyCode::Enter]);

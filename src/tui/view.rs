@@ -3,10 +3,11 @@
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Paragraph};
+use ratatui::widgets::{Block, Borders, Paragraph, Wrap};
 use ratatui::Frame;
 
 use super::app::App;
+use super::restore::{Group, PreviewRow, RestoreResult, RestoreRow, RestoreView, Stage};
 use crate::cli::age;
 use crate::model::State;
 use crate::store::queries::{Flag, OverviewEntry, SectionName};
@@ -230,11 +231,18 @@ fn title_line(app: &App) -> String {
 
 fn help_line(app: &App) -> Line<'static> {
     let mut spans = Vec::new();
-    if let Some(status) = app.status() {
+    let notice = app
+        .status()
+        .or_else(|| app.restore().and_then(RestoreView::notice));
+    if let Some(status) = notice {
         spans.push(Span::styled(status.to_owned(), Style::default().fg(RED)));
         spans.push(Span::raw("  "));
     }
     let key = Style::default().fg(MAUVE);
+    if let Some(restore) = app.restore() {
+        spans.extend(restore_help(restore.stage(), key));
+        return Line::from(spans);
+    }
     spans.extend([
         Span::styled(" j/k", key),
         Span::raw(" navigate  "),
@@ -244,6 +252,8 @@ fn help_line(app: &App) -> Line<'static> {
         Span::raw(" hide  "),
         Span::styled("u", key),
         Span::raw(" unseen  "),
+        Span::styled("R", key),
+        Span::raw(" restore  "),
         Span::styled("q", key),
         Span::raw(" quit"),
     ]);
@@ -289,12 +299,208 @@ pub fn view(app: &App, frame: &mut Frame) {
 
 fn render_body(app: &App, frame: &mut Frame, area: Rect) {
     let inner_width = usize::from(area.width.saturating_sub(BORDER_ROWS));
-    let (lines, selected_line) = body_lines(app, inner_width);
+    let (lines, selected_line, title, wrap) = match (app.restore(), app.snapshot()) {
+        (Some(restore), Some(snapshot)) => {
+            let (lines, selected) = restore_lines(restore, &snapshot.now, inner_width);
+            // Refusal messages are long; the sessions list truncates instead.
+            let wrap = !matches!(restore.stage(), Stage::Select);
+            (lines, selected, " Restore ", wrap)
+        }
+        _ => {
+            let (lines, selected) = body_lines(app, inner_width);
+            (lines, selected, " Sessions ", false)
+        }
+    };
     let offset = scroll_offset(selected_line, area.height.saturating_sub(BORDER_ROWS));
+    let paragraph = Paragraph::new(lines)
+        .scroll((offset, 0))
+        .block(block(title));
     frame.render_widget(
-        Paragraph::new(lines)
-            .scroll((offset, 0))
-            .block(block(" Sessions ")),
+        if wrap {
+            paragraph.wrap(Wrap { trim: false })
+        } else {
+            paragraph
+        },
         area,
     );
+}
+
+fn group_title(group: Group) -> &'static str {
+    match group {
+        Group::Interrupted => "Interrupted",
+        Group::Finished => "Finished",
+        Group::Unseen => "Unseen",
+    }
+}
+
+fn restore_help(stage: &Stage, key: Style) -> Vec<Span<'static>> {
+    match stage {
+        Stage::Select => vec![
+            Span::styled(" j/k", key),
+            Span::raw(" move  "),
+            Span::styled("Space", key),
+            Span::raw(" toggle  "),
+            Span::styled("a", key),
+            Span::raw(" all interrupted  "),
+            Span::styled("n", key),
+            Span::raw(" none  "),
+            Span::styled("Enter", key),
+            Span::raw(" review  "),
+            Span::styled("Esc", key),
+            Span::raw(" cancel"),
+        ],
+        Stage::Previewing => vec![Span::styled(" Esc", key), Span::raw(" cancel")],
+        Stage::Confirm(_) => vec![
+            Span::styled(" Enter", key),
+            Span::raw(" start  "),
+            Span::styled("Esc", key),
+            Span::raw(" back"),
+        ],
+        Stage::Running { .. } => vec![Span::raw(" starting…")],
+        Stage::Finished(_) => vec![Span::styled(" Esc", key), Span::raw(" close")],
+    }
+}
+
+fn heading(text: String) -> Line<'static> {
+    Line::from(Span::styled(
+        text,
+        Style::default().fg(MAUVE).add_modifier(Modifier::BOLD),
+    ))
+}
+
+fn dim(text: String) -> Line<'static> {
+    Line::from(Span::styled(text, Style::default().fg(SUBTEXT0)))
+}
+
+fn restore_row(row: &RestoreRow, now: &str, at_cursor: bool, width: usize) -> Line<'static> {
+    let entry = &row.entry;
+    let plain = Style::default();
+    let segments = vec![
+        (
+            if at_cursor { "> " } else { "  " }.to_owned(),
+            Style::default().fg(PEACH),
+        ),
+        (if row.selected { "[x] " } else { "[ ] " }.to_owned(), plain),
+        (padded(&entry.agent_kind, AGENT_WIDTH), plain),
+        (
+            format!("{:>AGE_WIDTH$}  ", age(now, &entry.last_activity_at)),
+            Style::default().fg(SUBTEXT0),
+        ),
+        (location(entry), plain),
+        ("  ".to_owned(), plain),
+        (
+            entry
+                .task_description
+                .as_deref()
+                .map(one_line)
+                .unwrap_or_default(),
+            Style::default().fg(SUBTEXT0),
+        ),
+    ];
+    let line = fit(segments, width);
+    if at_cursor {
+        line.style(Style::default().bg(SURFACE0).add_modifier(Modifier::BOLD))
+    } else {
+        line
+    }
+}
+
+fn restore_lines(view: &RestoreView, now: &str, width: usize) -> (Vec<Line<'static>>, usize) {
+    match view.stage() {
+        Stage::Select => select_lines(view, now, width),
+        Stage::Previewing => (note("Planning…"), 0),
+        Stage::Confirm(rows) => (confirm_lines(rows), 0),
+        Stage::Running { total, results } => (result_lines(results, Some(*total)), 0),
+        Stage::Finished(results) => (result_lines(results, None), 0),
+    }
+}
+
+fn select_lines(view: &RestoreView, now: &str, width: usize) -> (Vec<Line<'static>>, usize) {
+    if view.rows().is_empty() {
+        return (note("Nothing to restore."), 0);
+    }
+    let mut lines = Vec::new();
+    let mut cursor_line = 0;
+    let mut group = None;
+    for (index, row) in view.rows().iter().enumerate() {
+        if group != Some(row.group) {
+            group = Some(row.group);
+            let count = view.rows().iter().filter(|r| r.group == row.group).count();
+            lines.push(heading(format!("{} ({count})", group_title(row.group))));
+        }
+        let at_cursor = index == view.cursor();
+        if at_cursor {
+            cursor_line = lines.len();
+        }
+        lines.push(restore_row(row, now, at_cursor, width));
+    }
+    (lines, cursor_line)
+}
+
+fn confirm_lines(rows: &[PreviewRow]) -> Vec<Line<'static>> {
+    let starts: Vec<&PreviewRow> = rows
+        .iter()
+        .filter(|r| matches!(r, PreviewRow::Start { .. }))
+        .collect();
+    let mut lines = vec![heading(format!("Will start ({})", starts.len()))];
+    for row in &starts {
+        if let PreviewRow::Start {
+            session_id,
+            mode,
+            cwd,
+            notices,
+        } = row
+        {
+            lines.push(Line::from(format!("  {session_id}  {mode}  {cwd}")));
+            lines.extend(notices.iter().map(|n| dim(format!("      note: {n}"))));
+        }
+    }
+    let refused = rows.len().saturating_sub(starts.len());
+    if refused > 0 {
+        lines.push(heading(format!("Refused ({refused})")));
+    }
+    for row in rows {
+        if let PreviewRow::Refuse {
+            session_id,
+            code,
+            message,
+            alternatives,
+        } = row
+        {
+            lines.push(Line::from(Span::styled(
+                format!("  {session_id}  {code}: {message}"),
+                Style::default().fg(RED),
+            )));
+            for (description, command) in alternatives {
+                lines.push(dim(format!("      instead: {description}")));
+                lines.push(dim(format!("        {command}")));
+            }
+        }
+    }
+    lines
+}
+
+fn result_lines(results: &[RestoreResult], pending_of: Option<usize>) -> Vec<Line<'static>> {
+    let title = match pending_of {
+        Some(total) => format!("Starting {} of {total}", results.len()),
+        None => "Done".to_owned(),
+    };
+    let mut lines = vec![heading(title)];
+    for result in results {
+        lines.push(match result {
+            RestoreResult::Started { session_id, pane } => Line::from(Span::styled(
+                format!("  {session_id}  started in pane {pane}"),
+                Style::default().fg(GREEN),
+            )),
+            RestoreResult::Refused {
+                session_id,
+                code,
+                message,
+            } => Line::from(Span::styled(
+                format!("  {session_id}  refused {code}: {message}"),
+                Style::default().fg(RED),
+            )),
+        });
+    }
+    lines
 }
