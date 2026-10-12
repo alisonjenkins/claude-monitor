@@ -537,7 +537,8 @@ fn progress_panel(session_id: &str, detail: &Value) -> Markup {
 /// the page; nothing changes until the panel's own Confirm is pressed.
 fn confirm_button(url: &str, label: &str) -> Markup {
     html! {
-        button.btn.quiet type="button" hx-get=(url) hx-target="#confirm-slot" hx-swap="innerHTML" {
+        button.btn.quiet type="button" hx-get=(url) hx-target="#confirm-slot" hx-swap="innerHTML"
+            hx-select="unset" {
             (label)
         }
     }

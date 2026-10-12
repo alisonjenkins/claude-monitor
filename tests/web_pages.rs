@@ -565,7 +565,6 @@ mod confirmation_panel {
     }
 
     #[test]
-    #[ignore = "the button still inherits the live region's hx-select"]
     fn the_dismiss_button_opts_out_of_the_live_region_hx_select() {
         let web = Plain::new();
         web.put("s-new", State::Idle);
