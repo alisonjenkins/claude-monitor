@@ -285,6 +285,8 @@ fn help_lines(app: &App) -> Vec<Line<'static>> {
             ("f", "state"),
             ("a", "agent"),
             ("S", "dismissed"),
+            ("d", "hide"),
+            ("u", "unseen"),
         ],
     ));
     let second = keys_help(
@@ -293,9 +295,12 @@ fn help_lines(app: &App) -> Vec<Line<'static>> {
             ("D", "done"),
             ("U", "undone"),
             ("x", "dismiss"),
+            ("P", "park"),
             ("n", "note"),
-            ("d", "hide"),
-            ("u", "unseen"),
+            ("g", "group"),
+            ("b", "progress"),
+            ("s", "summarize"),
+            ("l", "link"),
             ("R", "restore"),
             ("q", "quit"),
         ],

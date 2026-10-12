@@ -27,7 +27,6 @@ fn tagged_actions() -> BTreeSet<&'static str> {
 }
 
 #[test]
-#[ignore = "I2: the new dashboard keys"]
 fn every_tui_action_of_a_command_has_a_key_binding() {
     let mut missing = Vec::new();
     for info in Command::all() {
@@ -68,7 +67,6 @@ fn every_binding_names_a_real_tui_action_and_keys_are_unique() {
 }
 
 #[test]
-#[ignore = "I2: the new dashboard keys"]
 fn the_help_lists_every_key_that_carries_a_command() {
     let snapshot = Snapshot {
         overview: Overview {
