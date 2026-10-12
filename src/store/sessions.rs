@@ -1,4 +1,4 @@
-use rusqlite::{params, Row};
+use rusqlite::{params, OptionalExtension, Row};
 
 use super::Store;
 use crate::model::{Session, State};
@@ -9,6 +9,8 @@ const COLUMNS: &str = "id, agent_kind, agent_session_id, resumed_from, forked_fr
      parked, dismissed, done_at";
 
 const END_REASON_CLEAR: &str = "clear";
+/// Bound on how far `chain_head` walks, so a corrupt cycle cannot loop forever.
+const MAX_CHAIN_HOPS: usize = 4096;
 
 #[derive(Debug, thiserror::Error)]
 pub enum SessionsError {
@@ -272,14 +274,48 @@ impl Store {
     /// `resumed_from` successors only, so a fork is never the head of the
     /// original's chain.
     pub fn chain_head(&self, id: &str) -> Result<String, SessionsError> {
-        Ok(id.to_owned())
+        let read = |source| SessionsError::Read {
+            operation: "follow session chain",
+            source,
+        };
+        let mut stmt = self
+            .connection()
+            .prepare_cached(
+                "SELECT id FROM sessions WHERE resumed_from = ?1 ORDER BY rowid DESC LIMIT 1",
+            )
+            .map_err(read)?;
+        let mut head = id.to_owned();
+        for _ in 0..MAX_CHAIN_HOPS {
+            let next: Option<String> = stmt
+                .query_row(params![head], |row| row.get(0))
+                .optional()
+                .map_err(read)?;
+            match next {
+                Some(next) if next != head => head = next,
+                _ => break,
+            }
+        }
+        Ok(head)
     }
 
     /// Marks `child_id` as a fork of `parent_id`. Returns whether the row
     /// changed: `false` when the child is unknown, already has a parent, or
     /// would be its own parent.
-    pub fn record_fork(&self, _parent_id: &str, _child_id: &str) -> Result<bool, SessionsError> {
-        Ok(false)
+    pub fn record_fork(&self, parent_id: &str, child_id: &str) -> Result<bool, SessionsError> {
+        if parent_id == child_id {
+            return Ok(false);
+        }
+        self.connection()
+            .execute(
+                "UPDATE sessions SET forked_from = ?1 WHERE id = ?2 AND forked_from IS NULL \
+                 AND EXISTS (SELECT 1 FROM sessions WHERE id = ?1)",
+                params![parent_id, child_id],
+            )
+            .map(|changed| changed > 0)
+            .map_err(|source| SessionsError::Write {
+                id: child_id.into(),
+                source,
+            })
     }
 
     fn query_one(

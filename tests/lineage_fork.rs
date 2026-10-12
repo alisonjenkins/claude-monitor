@@ -64,7 +64,6 @@ impl Harness {
 }
 
 #[test]
-#[ignore = "T067: chain_head and record_fork"]
 fn a_fork_is_a_separate_session_outside_the_chain() {
     let h = Harness::new();
     h.feed("%1", "SessionStart-startup", "a");
@@ -90,7 +89,6 @@ fn a_fork_is_a_separate_session_outside_the_chain() {
 }
 
 #[test]
-#[ignore = "T067: chain_head and record_fork"]
 fn a_fork_starts_its_own_chain() {
     let h = Harness::new();
     h.feed("%1", "SessionStart-startup", "a");
@@ -106,7 +104,6 @@ fn a_fork_starts_its_own_chain() {
 }
 
 #[test]
-#[ignore = "T067: chain_head and record_fork"]
 fn chain_head_follows_several_clears() {
     let h = Harness::new();
     h.feed("%1", "SessionStart-startup", "a");
