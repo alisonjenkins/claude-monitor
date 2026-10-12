@@ -14,11 +14,13 @@ use crate::store::Store;
 pub mod claude;
 pub mod copilot;
 pub mod fs;
+pub mod proc_exit;
 pub mod registry;
 
 pub use claude::{ClaudeProjectsSource, ClaudeSourceError};
 pub use copilot::{CopilotSessionsSource, CopilotSourceError};
 pub use fs::{FsSourceError, FsWatcherSource};
+pub use proc_exit::{ProcExitError, ProcExitHandle, ProcExitSource};
 pub use registry::{ClaudeRegistrySource, RegistrySourceError};
 
 /// Start-anchored: a fire comes this long after the first wake of a group. A
