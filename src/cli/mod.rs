@@ -14,6 +14,7 @@ pub mod migrate;
 mod output;
 mod reconcile;
 mod show;
+mod watch;
 
 pub use command::{Command, CommandInfo, ProjectAction};
 #[cfg(feature = "tui")]
@@ -93,6 +94,8 @@ enum Commands {
         #[arg(long, value_name = "ID")]
         session: Option<String>,
     },
+    /// Log one line per session state change until interrupted (SIGINT or SIGTERM)
+    Watch,
 }
 
 impl Cli {
@@ -142,6 +145,7 @@ impl Cli {
                 pane: pane.clone(),
                 session: session.clone(),
             },
+            Some(Commands::Watch) => Command::Watch,
         }
     }
 }
@@ -160,7 +164,7 @@ pub struct RunOptions {
 }
 
 /// Run one command; `state_dir` is the `--state-dir` override. `Hook`,
-/// `Dashboard`, `Migrate`, `List`, `Show` and `Reconcile` are implemented; every other
+/// `Dashboard`, `Migrate`, `List`, `Show`, `Reconcile` and `Watch` are implemented; every other
 /// command reports `NotImplemented` until its task lands. Reads the store as it
 /// is; [`run_with`] adds the refresh pass the binary runs.
 pub fn run_in(cmd: Command, env: &Env, state_dir: Option<&Path>) -> Result<Output, Error> {
@@ -202,6 +206,7 @@ pub fn run_with(
         ),
         Command::Show { session } => show::run(env, state_dir, &session),
         Command::Reconcile { pane, session } => reconcile::run(env, state_dir, pane, session),
+        Command::Watch => watch::run(env, state_dir),
         Command::Hook { agent } => {
             hook::run(agent.as_deref(), state_dir, env);
             Ok(Output::empty())
@@ -275,6 +280,12 @@ mod tests {
         assert!(!cli.run_options().refresh);
         let cli = Cli::try_parse_from(["claude-monitor", "--no-refresh"]).unwrap();
         assert!(!cli.run_options().refresh);
+    }
+
+    #[test]
+    fn watch_subcommand_maps_to_watch() {
+        let cli = Cli::try_parse_from(["claude-monitor", "watch"]).unwrap();
+        assert_eq!(cli.command(), Command::Watch);
     }
 
     #[test]
@@ -393,8 +404,8 @@ mod tests {
     #[test]
     fn unimplemented_commands_report_not_implemented_with_exit_1() {
         let fake = FakeEnv::new();
-        let err = run(Command::Watch, &fake.env).unwrap_err();
-        assert!(matches!(&err, Error::NotImplemented(name) if name == "watch"));
+        let err = run(Command::LinksCheck, &fake.env).unwrap_err();
+        assert!(matches!(&err, Error::NotImplemented(name) if name == "links-check"));
         assert_eq!(err.exit_code(), 1);
     }
 }

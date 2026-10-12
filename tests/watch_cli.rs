@@ -48,7 +48,6 @@ fn line_containing(rx: &Receiver<String>, needle: &str) -> String {
 }
 
 #[test]
-#[ignore = "the watch subcommand is not wired"]
 fn watch_logs_a_live_agent_and_exits_on_sigterm() {
     let home = TempDir::new().unwrap();
     let sessions = home.path().join(".claude/sessions");

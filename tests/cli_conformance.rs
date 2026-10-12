@@ -11,9 +11,10 @@
 //!
 //! Rule: the task that implements a command removes that command's
 //! `#[ignore]` (its reason names the task) and makes `implemented` pass.
-//! `hook`, `dashboard`, `migrate`, `list`, `show` and `reconcile` exist and
-//! are not ignored; `migrate`, `list`, `show` and `reconcile` have their own
-//! tests because they need a temporary store.
+//! `hook`, `dashboard`, `migrate`, `list`, `show`, `reconcile` and `watch`
+//! exist and are not ignored; `migrate`, `list`, `show` and `reconcile` have
+//! their own tests because they need a temporary store, and `watch` runs until
+//! signalled, so `tests/watch_cli.rs` drives the real binary.
 
 // Panicking with a message on a failed check is the failure mode of a test.
 #![allow(
@@ -108,7 +109,6 @@ macro_rules! command_tests {
 }
 
 command_tests! {
-    watch => "watch", "implemented by T060";
     restore => "restore", "implemented by T073";
     respawn => "respawn", "implemented by T073";
     boot_check => "boot-check", "implemented by T075";
@@ -259,7 +259,7 @@ mod dashboard {
 fn every_command_has_generated_tests_with_the_right_task() {
     for info in Command::all() {
         match info.name {
-            "hook" | "dashboard" | "migrate" | "list" | "show" | "reconcile" => {}
+            "hook" | "dashboard" | "migrate" | "list" | "show" | "reconcile" | "watch" => {}
             name => {
                 let reason = GENERATED
                     .iter()
@@ -274,7 +274,7 @@ fn every_command_has_generated_tests_with_the_right_task() {
             }
         }
     }
-    assert_eq!(GENERATED.len() + 6, Command::all().len());
+    assert_eq!(GENERATED.len() + 7, Command::all().len());
 }
 
 #[test]
