@@ -34,6 +34,12 @@ pub struct Cli {
     #[arg(long, global = true, value_name = "PATH")]
     state_dir: Option<PathBuf>,
 
+    /// Skip the refresh pass that list, show and the dashboard run first
+    /// (finding Claude and Copilot sessions on disk, reading Claude's live
+    /// session registry, marking dead sessions interrupted); show the store as is
+    #[arg(long, global = true)]
+    no_refresh: bool,
+
     #[command(subcommand)]
     command: Option<Commands>,
 }
@@ -96,6 +102,12 @@ impl Cli {
 
     pub fn state_dir(&self) -> Option<&PathBuf> {
         self.state_dir.as_ref()
+    }
+
+    pub fn run_options(&self) -> RunOptions {
+        RunOptions {
+            refresh: !self.no_refresh,
+        }
     }
 
     pub fn command(&self) -> Command {
@@ -253,6 +265,16 @@ mod tests {
         assert_eq!(cli.command(), Command::Dashboard);
         assert!(!cli.json());
         assert!(cli.state_dir().is_none());
+    }
+
+    #[test]
+    fn refresh_is_on_unless_no_refresh_is_given() {
+        let cli = Cli::try_parse_from(["claude-monitor", "list"]).unwrap();
+        assert!(cli.run_options().refresh);
+        let cli = Cli::try_parse_from(["claude-monitor", "list", "--no-refresh"]).unwrap();
+        assert!(!cli.run_options().refresh);
+        let cli = Cli::try_parse_from(["claude-monitor", "--no-refresh"]).unwrap();
+        assert!(!cli.run_options().refresh);
     }
 
     #[test]
