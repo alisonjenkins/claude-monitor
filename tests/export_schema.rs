@@ -63,7 +63,6 @@ fn edit(mut record: Value, path: &[&str], value: Value) -> Value {
 }
 
 #[test]
-#[ignore = "implemented by T099"]
 fn the_checked_in_schema_matches_the_generated_one() {
     let on_disk = std::fs::read_to_string(checked_in()).unwrap();
     assert_eq!(
@@ -75,7 +74,6 @@ fn the_checked_in_schema_matches_the_generated_one() {
 }
 
 #[test]
-#[ignore = "implemented by T099"]
 fn the_schema_is_draft_2020_12_and_names_every_record_kind() {
     let schema = generate();
     assert_eq!(
@@ -99,7 +97,6 @@ fn the_schema_is_draft_2020_12_and_names_every_record_kind() {
 }
 
 #[test]
-#[ignore = "implemented by T099"]
 fn every_required_field_is_a_declared_property_and_no_extras_are_allowed() {
     let schema = generate();
     for (name, def) in schema["$defs"].as_object().unwrap() {
@@ -115,7 +112,6 @@ fn every_required_field_is_a_declared_property_and_no_extras_are_allowed() {
 }
 
 #[test]
-#[ignore = "implemented by T099"]
 fn valid_records_pass() {
     validate_record(&project()).unwrap();
     validate_record(&session()).unwrap();
@@ -128,7 +124,6 @@ fn valid_records_pass() {
 }
 
 #[test]
-#[ignore = "implemented by T099"]
 fn records_that_break_the_wire_format_fail() {
     let cases = [
         (
@@ -187,7 +182,6 @@ fn records_that_break_the_wire_format_fail() {
 }
 
 #[test]
-#[ignore = "implemented by T099"]
 fn a_missing_required_field_fails_and_the_error_names_it() {
     let mut record = project();
     record.as_object_mut().unwrap().remove("author");
