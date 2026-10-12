@@ -65,7 +65,6 @@ impl Rig {
 }
 
 #[test]
-#[ignore = "implemented by T089"]
 fn nothing_changes_so_nothing_wakes() {
     let rig = rig();
     let plan = rig.file("todo.md", "- [ ] one\n");
@@ -76,7 +75,6 @@ fn nothing_changes_so_nothing_wakes() {
 }
 
 #[test]
-#[ignore = "implemented by T089"]
 fn editing_a_bound_file_wakes() {
     let rig = rig();
     let plan = rig.file("todo.md", "- [ ] one\n");
@@ -89,7 +87,6 @@ fn editing_a_bound_file_wakes() {
 }
 
 #[test]
-#[ignore = "implemented by T089"]
 fn an_atomic_replace_wakes() {
     let rig = rig();
     let plan = rig.file("todo.md", "- [ ] one\n");
@@ -103,7 +100,6 @@ fn an_atomic_replace_wakes() {
 }
 
 #[test]
-#[ignore = "implemented by T089"]
 fn removing_a_bound_file_wakes() {
     let rig = rig();
     let plan = rig.file("todo.md", "- [ ] one\n");
@@ -116,7 +112,6 @@ fn removing_a_bound_file_wakes() {
 }
 
 #[test]
-#[ignore = "implemented by T089"]
 fn a_neighbouring_file_does_not_wake() {
     let rig = rig();
     let plan = rig.file("todo.md", "- [ ] one\n");
@@ -129,7 +124,6 @@ fn a_neighbouring_file_does_not_wake() {
 }
 
 #[test]
-#[ignore = "implemented by T089"]
 fn a_binding_made_while_running_is_picked_up() {
     let rig = rig();
     let first = rig.file("a/todo.md", "- [ ] one\n");
@@ -162,7 +156,6 @@ fn a_binding_made_while_running_is_picked_up() {
 }
 
 #[test]
-#[ignore = "implemented by T089"]
 fn an_unwatchable_path_is_skipped_with_a_warning() {
     let rig = rig();
     let plan = rig.file("todo.md", "- [ ] one\n");
@@ -183,7 +176,6 @@ fn an_unwatchable_path_is_skipped_with_a_warning() {
 }
 
 #[test]
-#[ignore = "implemented by T089"]
 fn an_agent_todo_binding_has_no_file_to_watch() {
     let rig = rig();
     rig.store
