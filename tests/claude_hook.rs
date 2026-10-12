@@ -28,7 +28,6 @@ fn state_after(hook: &ParsedHook) -> State {
 }
 
 #[test]
-#[ignore = "T023"]
 fn session_start_sources() {
     for (name, source) in [
         ("SessionStart-startup", StartSource::Startup),
@@ -43,7 +42,6 @@ fn session_start_sources() {
 }
 
 #[test]
-#[ignore = "T023"]
 fn user_prompt_submit_is_working_with_prompt_text() {
     let hook = one("UserPromptSubmit");
     assert_eq!(hook.event, Event::UserPromptSubmit);
@@ -52,7 +50,6 @@ fn user_prompt_submit_is_working_with_prompt_text() {
 }
 
 #[test]
-#[ignore = "T023"]
 fn tool_events_are_working() {
     for (name, event) in [
         ("PreToolUse-Read", Event::PreToolUse),
@@ -66,7 +63,6 @@ fn tool_events_are_working() {
 }
 
 #[test]
-#[ignore = "T023"]
 fn tool_search_is_not_work() {
     for name in ["PreToolUse-Read", "PostToolUse-Read"] {
         let mut raw = fixture(name);
@@ -76,7 +72,6 @@ fn tool_search_is_not_work() {
 }
 
 #[test]
-#[ignore = "T023"]
 fn permission_request_needs_permission_without_tool_use_id() {
     let raw = fixture("PermissionRequest");
     assert!(raw.get("tool_use_id").is_none());
@@ -87,7 +82,6 @@ fn permission_request_needs_permission_without_tool_use_id() {
 }
 
 #[test]
-#[ignore = "T023"]
 fn notification_permission_prompt_needs_permission() {
     let hook = one("Notification-permission_prompt");
     assert_eq!(
@@ -99,7 +93,6 @@ fn notification_permission_prompt_needs_permission() {
 }
 
 #[test]
-#[ignore = "T023"]
 fn notification_idle_prompt_is_idle() {
     let hook = one("Notification-idle_prompt");
     assert_eq!(
@@ -114,7 +107,6 @@ fn notification_idle_prompt_is_idle() {
 }
 
 #[test]
-#[ignore = "T023"]
 fn other_notification_types_are_ignored() {
     let mut raw = fixture("Notification-idle_prompt");
     raw["notification_type"] = json!("auth_success");
@@ -122,7 +114,6 @@ fn other_notification_types_are_ignored() {
 }
 
 #[test]
-#[ignore = "T023"]
 fn stop_is_idle_with_full_last_assistant_message() {
     let raw = fixture("Stop");
     let expected = raw["last_assistant_message"].as_str().unwrap().to_owned();
@@ -133,7 +124,6 @@ fn stop_is_idle_with_full_last_assistant_message() {
 }
 
 #[test]
-#[ignore = "T023"]
 fn session_end_keeps_raw_reason() {
     for (name, reason) in [
         ("SessionEnd-other", "other"),
@@ -153,7 +143,6 @@ fn session_end_keeps_raw_reason() {
 }
 
 #[test]
-#[ignore = "T023"]
 fn only_reason_clear_is_a_lineage_continuation() {
     for (name, continuation) in [
         ("SessionEnd-other", false),
@@ -170,7 +159,6 @@ fn only_reason_clear_is_a_lineage_continuation() {
 }
 
 #[test]
-#[ignore = "T023"]
 fn unknown_extra_fields_are_ignored() {
     let mut raw = fixture("UserPromptSubmit");
     raw["brand_new_field"] = json!({"nested": [1, 2, 3]});
@@ -180,7 +168,6 @@ fn unknown_extra_fields_are_ignored() {
 }
 
 #[test]
-#[ignore = "T023"]
 fn missing_session_id_or_event_name_is_a_silent_no_op() {
     let mut no_id = fixture("Stop");
     no_id.as_object_mut().unwrap().remove("session_id");
@@ -198,7 +185,6 @@ fn missing_session_id_or_event_name_is_a_silent_no_op() {
 }
 
 #[test]
-#[ignore = "T023"]
 fn unknown_event_name_is_ignored() {
     let mut raw = fixture("Stop");
     raw["hook_event_name"] = json!("SomethingNew");
@@ -206,7 +192,6 @@ fn unknown_event_name_is_ignored() {
 }
 
 #[test]
-#[ignore = "T023"]
 fn malformed_session_id_names_the_field() {
     let mut raw = fixture("Stop");
     raw["session_id"] = json!(42);
@@ -222,7 +207,6 @@ fn malformed_session_id_names_the_field() {
 }
 
 #[test]
-#[ignore = "T023"]
 fn malformed_optional_field_names_the_field() {
     let mut raw = fixture("UserPromptSubmit");
     raw["prompt"] = json!(["not", "text"]);
