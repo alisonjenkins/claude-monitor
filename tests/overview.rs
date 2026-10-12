@@ -100,7 +100,6 @@ fn three_worktrees(fx: &Fixture) {
 }
 
 #[test]
-#[ignore = "T031"]
 fn mixed_states_land_in_exactly_one_of_active_interrupted_finished() {
     let fx = Fixture::new();
     three_worktrees(&fx);
@@ -125,7 +124,6 @@ fn mixed_states_land_in_exactly_one_of_active_interrupted_finished() {
 }
 
 #[test]
-#[ignore = "T031"]
 fn needs_permission_sorts_first_then_most_recent_activity() {
     let fx = Fixture::new();
     three_worktrees(&fx);
@@ -138,7 +136,6 @@ fn needs_permission_sorts_first_then_most_recent_activity() {
 }
 
 #[test]
-#[ignore = "T031"]
 fn entries_carry_repo_branch_running_and_description() {
     let fx = Fixture::new();
     fx.put_with("s1", State::Working, "2026-10-12T11:00:00Z", |s| {
@@ -179,7 +176,6 @@ fn entries_carry_repo_branch_running_and_description() {
 }
 
 #[test]
-#[ignore = "T031"]
 fn flags_mark_missing_worktree_parked_and_unknown_state() {
     let fx = Fixture::new();
     fx.put_with("gone", State::Interrupted, "2026-10-12T11:00:00Z", |s| {
@@ -217,7 +213,6 @@ fn flags_mark_missing_worktree_parked_and_unknown_state() {
 }
 
 #[test]
-#[ignore = "T031"]
 fn state_filter_keeps_only_the_listed_states() {
     let fx = Fixture::new();
     three_worktrees(&fx);
@@ -229,7 +224,6 @@ fn state_filter_keeps_only_the_listed_states() {
 }
 
 #[test]
-#[ignore = "T031"]
 fn agent_filter_matches_the_agent_kind() {
     let fx = Fixture::new();
     fx.put("c1", State::Working, "2026-10-12T11:00:00Z");
@@ -244,7 +238,6 @@ fn agent_filter_matches_the_agent_kind() {
 }
 
 #[test]
-#[ignore = "T031"]
 fn repo_filter_matches_the_repository_name() {
     let fx = Fixture::new();
     three_worktrees(&fx);
@@ -259,7 +252,6 @@ fn repo_filter_matches_the_repository_name() {
 }
 
 #[test]
-#[ignore = "T031"]
 fn text_filter_searches_task_description_and_cwd_ignoring_case() {
     let fx = Fixture::new();
     fx.put_with("by-task", State::Working, "2026-10-12T11:00:00Z", |s| {
@@ -277,7 +269,6 @@ fn text_filter_searches_task_description_and_cwd_ignoring_case() {
 }
 
 #[test]
-#[ignore = "T031"]
 fn dismissed_sessions_are_hidden_unless_requested() {
     let fx = Fixture::new();
     fx.put("shown", State::Working, "2026-10-12T11:00:00Z");
@@ -302,7 +293,6 @@ fn dismissed_sessions_are_hidden_unless_requested() {
 }
 
 #[test]
-#[ignore = "T031"]
 fn old_finished_sessions_collapse_unless_expanded() {
     let fx = Fixture::new();
     fx.put("recent", State::Finished, "2026-10-10T12:00:00Z");
@@ -336,7 +326,6 @@ fn old_finished_sessions_collapse_unless_expanded() {
 }
 
 #[test]
-#[ignore = "T031"]
 fn an_undecodable_row_degrades_instead_of_failing_the_query() {
     let fx = Fixture::new();
     fx.put("good", State::Working, "2026-10-12T11:00:00Z");

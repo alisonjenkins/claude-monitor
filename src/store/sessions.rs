@@ -30,7 +30,7 @@ pub enum SessionsError {
     },
 }
 
-fn parse_state(value: &str) -> Option<State> {
+pub fn parse_state(value: &str) -> Option<State> {
     Some(match value {
         "working" => State::Working,
         "needs_permission" => State::NeedsPermission,
