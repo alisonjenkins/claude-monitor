@@ -170,6 +170,7 @@
                   copilot,
                   tmuxHooks,
                   watch ? false,
+                  bootCheck ? false,
                 }:
                 home-manager.lib.homeManagerConfiguration {
                   pkgs = hmPkgs;
@@ -183,6 +184,7 @@
                       programs.claude-monitor.copilot.enable = copilot;
                       programs.claude-monitor.tmuxHooks.enable = tmuxHooks;
                       programs.claude-monitor.watch.enable = watch;
+                      programs.claude-monitor.bootCheck.enable = bootCheck;
                       programs.tmux.enable = true;
                     }
                   ];
@@ -301,6 +303,37 @@
                     watchOn.Install.WantedBy != [ "default.target" ]
                   ) "watch service is not wanted by default.target"
                 );
+              # boot-check unit: absent by default; when enabled on Linux it is a
+              # oneshot user unit running the store-path binary's `boot-check`
+              # at login.
+              bootCheckServiceName = "claude-monitor-boot-check";
+              hasBootCheckService = cfg: builtins.hasAttr bootCheckServiceName cfg.config.systemd.user.services;
+              bootCheckOn =
+                (mkHmConfigWith {
+                  copilot = false;
+                  tmuxHooks = false;
+                  bootCheck = true;
+                }).config.systemd.user.services.${bootCheckServiceName};
+              bootCheckProblems =
+                pkgs.lib.optional (
+                  hasBootCheckService hmConfig
+                ) "boot-check unit generated with bootCheck.enable = false"
+                ++ pkgs.lib.optionals pkgs.stdenv.hostPlatform.isLinux (
+                  let
+                    exec = builtins.unsafeDiscardStringContext (
+                      builtins.head (pkgs.lib.toList bootCheckOn.Service.ExecStart)
+                    );
+                  in
+                  pkgs.lib.optional (
+                    !(pkgs.lib.hasPrefix "/nix/store/" exec && pkgs.lib.hasSuffix "/bin/claude-monitor boot-check" exec)
+                  ) "boot-check unit ExecStart is not the store-path `claude-monitor boot-check`"
+                  ++ pkgs.lib.optional (
+                    bootCheckOn.Service.Type != "oneshot"
+                  ) "boot-check unit is not a oneshot"
+                  ++ pkgs.lib.optional (
+                    bootCheckOn.Install.WantedBy != [ "default.target" ]
+                  ) "boot-check unit is not wanted by default.target"
+                );
               expectedEvents = [
                 "SessionStart"
                 "UserPromptSubmit"
@@ -321,6 +354,8 @@
               throw "claude-monitor hm-module: ${builtins.concatStringsSep "; " tmuxProblems}"
             else if watchProblems != [ ] then
               throw "claude-monitor hm-module: ${builtins.concatStringsSep "; " watchProblems}"
+            else if bootCheckProblems != [ ] then
+              throw "claude-monitor hm-module: ${builtins.concatStringsSep "; " bootCheckProblems}"
             else
               hmPkgs.runCommand "claude-monitor-hm-module-check" { } "touch $out";
         }
