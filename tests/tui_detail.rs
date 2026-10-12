@@ -219,7 +219,6 @@ mod page {
     use super::*;
 
     #[test]
-    #[ignore = "T093: detail page not built yet"]
     fn i_asks_for_the_selected_sessions_detail_and_shows_loading() {
         let (app, effects) = press(loaded(&["s1", "s2"], &[]), KeyCode::Char('i'));
         assert_eq!(
@@ -234,7 +233,6 @@ mod page {
     }
 
     #[test]
-    #[ignore = "T093: detail page not built yet"]
     fn i_with_no_sessions_does_nothing() {
         let (app, effects) = press(loaded(&[], &[]), KeyCode::Char('i'));
         assert!(effects.is_empty());
@@ -242,7 +240,6 @@ mod page {
     }
 
     #[test]
-    #[ignore = "T093: detail page not built yet"]
     fn the_page_shows_the_figure_bar_source_current_item_and_phase_counts() {
         let text = render(&opened(bound(false)));
         assert!(text.contains("1 of 4"), "{text}");
@@ -255,13 +252,11 @@ mod page {
     }
 
     #[test]
-    #[ignore = "T093: detail page not built yet"]
     fn a_stale_figure_is_marked() {
         assert!(render(&opened(bound(true))).contains("stale"));
     }
 
     #[test]
-    #[ignore = "T093: detail page not built yet"]
     fn verbatim_and_generated_summaries_are_apart_and_the_generated_one_is_labelled() {
         let text = render(&opened(bound(false)));
         let task = text.find("fix the build").expect(&text);
@@ -272,7 +267,6 @@ mod page {
     }
 
     #[test]
-    #[ignore = "T093: detail page not built yet"]
     fn pick_one_shows_the_candidates_and_the_bind_hint() {
         let candidates = vec![
             Candidate {
@@ -298,7 +292,6 @@ mod page {
     }
 
     #[test]
-    #[ignore = "T093: detail page not built yet"]
     fn no_plan_shows_no_progress_block_but_still_the_summaries() {
         let text = render(&opened(ProgressView::None));
         assert!(!text.contains("progress "), "{text}");
@@ -306,7 +299,6 @@ mod page {
     }
 
     #[test]
-    #[ignore = "T093: detail page not built yet"]
     fn esc_closes_the_page_and_a_second_esc_quits() {
         let (app, effects) = press(opened(bound(false)), KeyCode::Esc);
         assert!(effects.is_empty());
@@ -316,7 +308,6 @@ mod page {
     }
 
     #[test]
-    #[ignore = "T093: detail page not built yet"]
     fn row_keys_do_nothing_while_the_page_is_open() {
         let app = {
             let (app, _) = press(loaded(&["s1", "s2"], &[]), KeyCode::Char('i'));
@@ -331,7 +322,6 @@ mod page {
     }
 
     #[test]
-    #[ignore = "T093: detail page not built yet"]
     fn a_refresh_while_open_asks_for_the_detail_again() {
         let (_, effects) = update(
             opened(bound(false)),
@@ -343,7 +333,6 @@ mod page {
     }
 
     #[test]
-    #[ignore = "T093: detail page not built yet"]
     fn a_detail_for_another_session_is_dropped() {
         let (app, _) = press(loaded(&["s1"], &[]), KeyCode::Char('i'));
         let mut other = detail(bound(false));

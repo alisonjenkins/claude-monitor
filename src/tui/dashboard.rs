@@ -18,6 +18,7 @@ use ratatui::prelude::*;
 use super::app::{update, App, Effect, Msg, Snapshot};
 use super::restore::{preview_restore, run_restore, RestoreResult};
 use super::view::{state_label, view};
+use crate::cli::detail::SessionDetail;
 use crate::cli::migrate::open_viewer_store;
 use crate::env::Env;
 use crate::feed::{ChangeFeed, EventSource, FsWatcherSource, Monotonic, SystemMonotonic};
@@ -250,6 +251,18 @@ fn refuse_all(ids: &[String], detail: &str, results: &mpsc::Sender<Msg>) {
     }
 }
 
+fn load_detail(env: &Env, store: &Store, id: &str) -> Done {
+    let session = match store.get_session(id) {
+        Ok(Some(session)) => session,
+        Ok(None) => return Done::Failed(format!("session {id} no longer exists")),
+        Err(e) => return Done::Failed(format!("cannot read session {id}: {e}")),
+    };
+    match SessionDetail::load(store, env, &session) {
+        Ok(detail) => Done::Answer(Msg::Detail(detail)),
+        Err(e) => Done::Failed(format!("cannot read the detail of {id}: {e}")),
+    }
+}
+
 fn perform(effect: &Effect, env: &Env, store: &Store, restore_tx: &mpsc::Sender<Msg>) -> Done {
     match effect {
         Effect::Quit => Done::Quit,
@@ -257,7 +270,7 @@ fn perform(effect: &Effect, env: &Env, store: &Store, restore_tx: &mpsc::Sender<
             Done::Answer(Msg::RestorePreview(preview_restore(store, env, ids)))
         }
         Effect::StartRestore { ids } => start_restore(env, store, ids.clone(), restore_tx),
-        Effect::LoadDetail { .. } => Done::Ok,
+        Effect::LoadDetail { id } => load_detail(env, store, id),
         Effect::JumpToPane { pane } => match tmux::switch_to_pane(pane) {
             Ok(()) => Done::Ok,
             Err(e) => Done::Failed(format!("switch failed: {e:#}")),

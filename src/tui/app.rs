@@ -281,7 +281,12 @@ impl App {
         if self.restore.is_some() {
             return self.on_restore_key(code);
         }
+        if self.detail.is_some() {
+            self.on_detail_key(code);
+            return Vec::new();
+        }
         match code {
+            KeyCode::Char('i') => return self.open_detail(),
             KeyCode::Char('R') => self.open_restore(),
             KeyCode::Char('q') | KeyCode::Esc => return vec![Effect::Quit],
             KeyCode::Char('j') | KeyCode::Down => self.move_selection(true),
@@ -330,7 +335,33 @@ impl App {
         let previous = self.selected_index();
         self.snapshot = Some(snapshot);
         self.keep_selection(previous.unwrap_or(0));
+        let mut effects = effects;
+        if let Some(open) = &self.detail {
+            effects.push(Effect::LoadDetail {
+                id: open.id().to_owned(),
+            });
+        }
         effects
+    }
+
+    fn open_detail(&mut self) -> Vec<Effect> {
+        let Some(id) = self.selected.clone() else {
+            return Vec::new();
+        };
+        self.detail = Some(DetailView::loading(&id));
+        vec![Effect::LoadDetail { id }]
+    }
+
+    fn on_detail_key(&mut self, code: KeyCode) {
+        if matches!(code, KeyCode::Esc | KeyCode::Char('q' | 'i')) {
+            self.detail = None;
+        }
+    }
+
+    fn on_detail(&mut self, detail: SessionDetail) {
+        if let Some(open) = self.detail.as_mut().filter(|open| open.id() == detail.id) {
+            open.set(detail);
+        }
     }
 }
 
@@ -377,7 +408,10 @@ pub fn update(mut app: App, msg: Msg) -> (App, Vec<Effect>) {
             }
             Vec::new()
         }
-        Msg::Detail(_) => Vec::new(),
+        Msg::Detail(detail) => {
+            app.on_detail(detail);
+            Vec::new()
+        }
     };
     (app, effects)
 }

@@ -7,6 +7,7 @@ use ratatui::widgets::{Block, Borders, Paragraph, Wrap};
 use ratatui::Frame;
 
 use super::app::App;
+use super::detail::detail_lines;
 use super::restore::{Group, PreviewRow, RestoreResult, RestoreRow, RestoreView, Stage};
 use crate::cli::age;
 use crate::model::State;
@@ -18,7 +19,7 @@ const SUBTEXT0: Color = Color::Rgb(108, 112, 134);
 const SURFACE0: Color = Color::Rgb(49, 50, 68);
 const PEACH: Color = Color::Rgb(250, 179, 135);
 const YELLOW: Color = Color::Rgb(249, 226, 175);
-const GREEN: Color = Color::Rgb(166, 227, 161);
+pub(super) const GREEN: Color = Color::Rgb(166, 227, 161);
 const RED: Color = Color::Rgb(243, 139, 168);
 
 const TITLE_HEIGHT: u16 = 3;
@@ -254,11 +255,17 @@ fn help_line(app: &App) -> Line<'static> {
         spans.extend(restore_help(restore.stage(), key));
         return Line::from(spans);
     }
+    if app.detail().is_some() {
+        spans.extend([Span::styled(" Esc", key), Span::raw(" close")]);
+        return Line::from(spans);
+    }
     spans.extend([
         Span::styled(" j/k", key),
         Span::raw(" navigate  "),
         Span::styled("Enter", key),
         Span::raw(" jump  "),
+        Span::styled("i", key),
+        Span::raw(" detail  "),
         Span::styled("d", key),
         Span::raw(" hide  "),
         Span::styled("u", key),
@@ -310,8 +317,12 @@ pub fn view(app: &App, frame: &mut Frame) {
 
 fn render_body(app: &App, frame: &mut Frame, area: Rect) {
     let inner_width = usize::from(area.width.saturating_sub(BORDER_ROWS));
-    let (lines, selected_line, title, wrap) = match (app.restore(), app.snapshot()) {
-        (Some(restore), Some(snapshot)) => {
+    let (lines, selected_line, title, wrap) = match (app.detail(), app.restore(), app.snapshot()) {
+        (Some(open), _, _) => {
+            let entry = app.visible().into_iter().find(|e| e.id == open.id());
+            (detail_lines(open, entry), 0, " Detail ", true)
+        }
+        (None, Some(restore), Some(snapshot)) => {
             let (lines, selected) = restore_lines(restore, &snapshot.now, inner_width);
             // Refusal messages are long; the sessions list truncates instead.
             let wrap = !matches!(restore.stage(), Stage::Select);
@@ -372,14 +383,14 @@ fn restore_help(stage: &Stage, key: Style) -> Vec<Span<'static>> {
     }
 }
 
-fn heading(text: String) -> Line<'static> {
+pub(super) fn heading(text: String) -> Line<'static> {
     Line::from(Span::styled(
         text,
         Style::default().fg(MAUVE).add_modifier(Modifier::BOLD),
     ))
 }
 
-fn dim(text: String) -> Line<'static> {
+pub(super) fn dim(text: String) -> Line<'static> {
     Line::from(Span::styled(text, Style::default().fg(SUBTEXT0)))
 }
 
