@@ -1,8 +1,13 @@
 use serde_json::Value;
 
-use super::{claude_discover, AgentKind, DiscoverError, ParseError, ParsedHook, SessionStub};
+use super::{
+    claude_discover, standard_launch, AgentKind, DiscoverError, Launch, LaunchError, LaunchMode,
+    LauncherConfig, ParseError, ParsedHook, Precondition, SessionStub,
+};
 use crate::env::Env;
-use crate::model::{Event, NotificationKind, StartSource};
+use crate::model::{Event, NotificationKind, Session, StartSource};
+
+const PROGRAM: &str = "claude";
 
 const TOOL_SEARCH: &str = "ToolSearch";
 const UNKNOWN_END_REASON: &str = "unknown";
@@ -18,6 +23,30 @@ impl AgentKind for ClaudeKind {
 
     fn discover(&self, env: &Env) -> Result<Vec<SessionStub>, DiscoverError> {
         claude_discover::scan(env).map(|report| report.stubs)
+    }
+
+    fn launch(
+        &self,
+        session: &Session,
+        mode: LaunchMode,
+        cfg: &LauncherConfig,
+    ) -> Result<Launch, LaunchError> {
+        standard_launch(self.id(), PROGRAM, session, mode, cfg)
+    }
+
+    /// The transcript sits in the project directory of the cwd the session
+    /// started in, named by the encoding Claude Code uses for it.
+    fn resume_preconditions(&self, session: &Session, env: &Env) -> Vec<Precondition> {
+        let Ok(projects) = claude_discover::projects_dir(env) else {
+            return Vec::new();
+        };
+        let transcript = projects
+            .join(encode_cwd(&session.cwd))
+            .join(format!("{}.jsonl", session.agent_session_id));
+        vec![Precondition {
+            description: "the conversation transcript exists".to_owned(),
+            required_path: transcript,
+        }]
     }
 
     /// Payload shapes are those confirmed on Claude Code 2.1.293
@@ -98,6 +127,14 @@ impl AgentKind for ClaudeKind {
         };
         Ok(vec![parsed])
     }
+}
+
+/// Claude Code's project directory name for a cwd: every character that is
+/// not an ASCII letter or digit becomes `-`.
+fn encode_cwd(cwd: &str) -> String {
+    cwd.chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+        .collect()
 }
 
 /// A string field that may be absent or null; any other type is an error.

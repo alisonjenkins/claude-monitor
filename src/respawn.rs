@@ -6,9 +6,9 @@
 //! It never creates a directory, runs git or starts a process; the executor
 //! does that, and only for what the plan lists.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
-use crate::agents::{AgentKind, Launch, LaunchMode, LauncherConfig};
+use crate::agents::{AgentKind, Launch, LaunchError, LaunchMode, LauncherConfig, Precondition};
 use crate::env::Env;
 use crate::model::Session;
 
@@ -102,15 +102,250 @@ pub fn plan_respawn(session: &Session, env: &Env, options: &Options) -> Result<P
 }
 
 /// [`plan_respawn`] for an explicit agent kind.
+///
+/// Checks run in this order and the first failure is the refusal: usage
+/// (`--in` needs `--fresh`), already running, tmux installed, target
+/// directory, launcher, then the kind's resume preconditions (only when the
+/// conversation is to be resumed).
 pub fn plan_respawn_with(
-    _kind: &dyn AgentKind,
-    _session: &Session,
-    _env: &Env,
-    _options: &Options,
+    kind: &dyn AgentKind,
+    session: &Session,
+    env: &Env,
+    options: &Options,
 ) -> Result<Plan, Refusal> {
-    Err(Refusal {
-        code: RefusalCode::InvalidOptions,
-        message: "respawn planning is not implemented".to_owned(),
-        alternatives: Vec::new(),
+    if options.in_dir.is_some() && !options.fresh {
+        return Err(refuse(
+            RefusalCode::InvalidOptions,
+            "--in only applies together with --fresh".to_owned(),
+        ));
+    }
+    if is_running(session, env) {
+        let place = session
+            .tmux_pane
+            .as_deref()
+            .map_or_else(String::new, |pane| format!(" in tmux pane {pane}"));
+        return Err(refuse(
+            RefusalCode::AlreadyRunning,
+            format!("session {} is already running{place}", session.id),
+        ));
+    }
+    if !env.tmux.is_installed() {
+        return Err(refuse(
+            RefusalCode::NoTmux,
+            "tmux is not installed, so there is nowhere to host the session".to_owned(),
+        ));
+    }
+
+    let mut target = session.clone();
+    let mut notices = Vec::new();
+    if let Some(dir) = &options.in_dir {
+        target.cwd = dir.to_string_lossy().into_owned();
+    }
+    if !env.fs.exists(Path::new(&target.cwd)) {
+        return Err(missing_directory(session, &target, env, options));
+    }
+    if options.in_dir.is_some() {
+        notices.push(format!(
+            "starting a new session in {}, not the recorded {}",
+            target.cwd, session.cwd
+        ));
+    }
+
+    let mut mode = if options.fresh {
+        notices.push(NOT_RESTORED.to_owned());
+        LaunchMode::Fresh
+    } else {
+        LaunchMode::Resume
+    };
+    let launch = match kind.launch(&target, mode, &options.launcher) {
+        Ok(launch) => launch,
+        Err(LaunchError::ResumeUnsupported { kind: id }) if mode == LaunchMode::Resume => {
+            mode = LaunchMode::Fresh;
+            notices.push(format!("{id} cannot resume a conversation; {NOT_RESTORED}"));
+            kind.launch(&target, mode, &options.launcher)
+                .map_err(|e| no_launcher(session, &e))?
+        }
+        Err(e) => return Err(no_launcher(session, &e)),
+    };
+
+    if mode == LaunchMode::Resume {
+        for precondition in kind.resume_preconditions(session, env) {
+            if !env.fs.exists(&precondition.required_path) {
+                return Err(missing_transcript(session, &precondition));
+            }
+        }
+    }
+
+    Ok(Plan {
+        session_id: session.id.clone(),
+        mode,
+        launch,
+        setup: Vec::new(),
+        notices,
     })
+}
+
+const NOT_RESTORED: &str = "the previous conversation is not restored";
+
+fn refuse(code: RefusalCode, message: String) -> Refusal {
+    Refusal {
+        code,
+        message,
+        alternatives: Vec::new(),
+    }
+}
+
+/// Alive means the recorded process still exists with the recorded start
+/// time; a recycled pid does not count.
+fn is_running(session: &Session, env: &Env) -> bool {
+    match (session.pid, session.pid_start) {
+        (Some(pid), Some(start)) => env.processes.is_alive(pid, start),
+        _ => false,
+    }
+}
+
+fn no_launcher(session: &Session, error: &LaunchError) -> Refusal {
+    refuse(
+        RefusalCode::NoLauncher,
+        format!("cannot launch session {}: {error}", session.id),
+    )
+}
+
+fn missing_transcript(session: &Session, precondition: &Precondition) -> Refusal {
+    let path = precondition.required_path.display();
+    let mut refusal = refuse(
+        RefusalCode::MissingTranscript,
+        format!(
+            "cannot resume session {}: {} but {path} is missing",
+            session.id, precondition.description
+        ),
+    );
+    refusal.alternatives.push(Alternative {
+        description: format!("start a fresh session; {NOT_RESTORED}"),
+        command: format!("claude-monitor respawn {} --fresh", session.id),
+    });
+    refusal
+}
+
+/// The refusal for a target directory that does not exist. When the missing
+/// path is the recorded worktree and its branch is also gone, that is the
+/// more useful thing to report.
+fn missing_directory(session: &Session, target: &Session, env: &Env, options: &Options) -> Refusal {
+    let recorded_worktree = options.in_dir.is_none();
+    if recorded_worktree {
+        if let (Some(repo), Some(branch)) = (&session.repo_root, &session.branch) {
+            if !branch_exists(env, Path::new(repo), branch) {
+                return refuse(
+                    RefusalCode::BranchGone,
+                    format!(
+                        "directory {} does not exist and branch `{branch}` no longer exists in {repo}",
+                        target.cwd
+                    ),
+                );
+            }
+        }
+    }
+    refuse(
+        RefusalCode::MissingDirectory,
+        format!("directory {} does not exist", target.cwd),
+    )
+}
+
+/// Whether `branch` is a local branch of the repository at `repo`, read from
+/// `.git/refs/heads` and `.git/packed-refs`. A repository whose `.git` is not
+/// a directory (itself a linked worktree) cannot be read this way; its
+/// branches count as existing so that `git worktree add` reports the truth.
+fn branch_exists(env: &Env, repo: &Path, branch: &str) -> bool {
+    let git = repo.join(".git");
+    match env.fs.metadata(&git) {
+        Ok(meta) if meta.is_dir => {}
+        Ok(_) => return true,
+        Err(_) => return false,
+    }
+    if env.fs.exists(&git.join("refs/heads").join(branch)) {
+        return true;
+    }
+    let wanted = format!("refs/heads/{branch}");
+    env.fs
+        .read_to_string(&git.join("packed-refs"))
+        .is_ok_and(|packed| {
+            packed
+                .lines()
+                .any(|line| line.split_whitespace().nth(1) == Some(wanted.as_str()))
+        })
+}
+
+/// Why a launcher template could not be expanded.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum TemplateError {
+    #[error("the template is empty")]
+    Empty,
+    #[error("the template has an unterminated {quote} quote")]
+    UnterminatedQuote { quote: char },
+}
+
+/// Split a launcher template into words (single and double quotes group,
+/// nothing else is special), then replace `{session_id}`, `{cwd}` and `{name}`
+/// in each word. Substituting after splitting keeps a value with spaces in
+/// one argument. The first word is the program.
+pub fn expand_template(
+    template: &str,
+    session: &Session,
+) -> Result<(String, Vec<String>), TemplateError> {
+    let name = session_name(session);
+    let mut words = split_words(template)?.into_iter().map(|word| {
+        word.replace("{session_id}", &session.agent_session_id)
+            .replace("{cwd}", &session.cwd)
+            .replace("{name}", &name)
+    });
+    let program = words.next().ok_or(TemplateError::Empty)?;
+    Ok((program, words.collect()))
+}
+
+/// What `{name}` stands for: the branch, else the directory's last component,
+/// else the internal session id.
+fn session_name(session: &Session) -> String {
+    session
+        .branch
+        .clone()
+        .or_else(|| {
+            Path::new(&session.cwd)
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+        })
+        .unwrap_or_else(|| session.id.clone())
+}
+
+fn split_words(text: &str) -> Result<Vec<String>, TemplateError> {
+    let mut words = Vec::new();
+    let mut current = String::new();
+    let mut in_word = false;
+    let mut quote: Option<char> = None;
+    for c in text.chars() {
+        match (quote, c) {
+            (Some(q), c) if c == q => quote = None,
+            (Some(_), c) => current.push(c),
+            (None, '\'' | '"') => {
+                quote = Some(c);
+                in_word = true;
+            }
+            (None, c) if c.is_whitespace() => {
+                if in_word {
+                    words.push(std::mem::take(&mut current));
+                    in_word = false;
+                }
+            }
+            (None, c) => {
+                current.push(c);
+                in_word = true;
+            }
+        }
+    }
+    if let Some(quote) = quote {
+        return Err(TemplateError::UnterminatedQuote { quote });
+    }
+    if in_word {
+        words.push(current);
+    }
+    Ok(words)
 }

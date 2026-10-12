@@ -176,6 +176,38 @@ pub trait AgentKind: Send + Sync {
     }
 }
 
+/// The launch every kind shares: `<program> --resume <id>` to resume, bare
+/// `<program>` for a fresh start, in the session's recorded directory. A
+/// configured template replaces the resume command only; a fresh start never
+/// has a session id to put in it.
+pub(crate) fn standard_launch(
+    kind: &'static str,
+    program: &str,
+    session: &Session,
+    mode: LaunchMode,
+    cfg: &LauncherConfig,
+) -> Result<Launch, LaunchError> {
+    let cwd = PathBuf::from(&session.cwd);
+    let (program, args) = match (mode, cfg.template.as_deref()) {
+        (LaunchMode::Fresh, _) => (program.to_owned(), Vec::new()),
+        (LaunchMode::Resume, None) => (
+            program.to_owned(),
+            vec!["--resume".to_owned(), session.agent_session_id.clone()],
+        ),
+        (LaunchMode::Resume, Some(template)) => crate::respawn::expand_template(template, session)
+            .map_err(|detail| LaunchError::BadTemplate {
+                kind,
+                detail: detail.to_string(),
+            })?,
+    };
+    Ok(Launch {
+        program,
+        args,
+        cwd,
+        env: Vec::new(),
+    })
+}
+
 /// The agent kinds that exist, in registration order.
 pub fn kinds() -> Vec<Box<dyn AgentKind>> {
     vec![Box::new(claude::ClaudeKind), Box::new(copilot::CopilotKind)]

@@ -43,7 +43,6 @@ fn refusal(result: Result<Plan, Refusal>) -> Refusal {
 }
 
 #[test]
-#[ignore = "T068"]
 fn interrupted_claude_session_resumes_in_its_recorded_directory() {
     let fake = ready();
     let plan = plan(&fake, &session(State::Interrupted), &Options::default()).unwrap();
@@ -56,7 +55,6 @@ fn interrupted_claude_session_resumes_in_its_recorded_directory() {
 }
 
 #[test]
-#[ignore = "T068"]
 fn copilot_session_resumes_with_its_session_id() {
     let fake = FakeEnv::new();
     fake.vars.set("HOME", "/home/u");
@@ -71,7 +69,6 @@ fn copilot_session_resumes_with_its_session_id() {
 }
 
 #[test]
-#[ignore = "T068"]
 fn copilot_session_without_its_state_directory_is_refused() {
     let fake = FakeEnv::new();
     fake.vars.set("HOME", "/home/u");
@@ -83,7 +80,6 @@ fn copilot_session_without_its_state_directory_is_refused() {
 }
 
 #[test]
-#[ignore = "T068"]
 fn missing_directory_is_refused_and_names_the_path() {
     let fake = ready();
     let mut s = session(State::Interrupted);
@@ -96,7 +92,6 @@ fn missing_directory_is_refused_and_names_the_path() {
 }
 
 #[test]
-#[ignore = "T068"]
 fn missing_transcript_is_refused_and_offers_a_fresh_start() {
     let fake = FakeEnv::new();
     fake.vars.set("HOME", "/home/u");
@@ -112,7 +107,6 @@ fn missing_transcript_is_refused_and_offers_a_fresh_start() {
 }
 
 #[test]
-#[ignore = "T068"]
 fn gone_branch_with_a_missing_worktree_is_refused_as_branch_gone() {
     let fake = ready();
     let mut s = session(State::Interrupted);
@@ -123,7 +117,6 @@ fn gone_branch_with_a_missing_worktree_is_refused_as_branch_gone() {
 }
 
 #[test]
-#[ignore = "T068"]
 fn live_process_means_already_running() {
     let fake = ready();
     fake.processes.spawn(4242, 99);
@@ -137,7 +130,6 @@ fn live_process_means_already_running() {
 }
 
 #[test]
-#[ignore = "T068"]
 fn recycled_pid_is_not_running() {
     let fake = ready();
     fake.processes.spawn(4242, 100);
@@ -148,7 +140,6 @@ fn recycled_pid_is_not_running() {
 }
 
 #[test]
-#[ignore = "T068"]
 fn unknown_agent_kind_has_no_launcher() {
     let fake = ready();
     let mut s = session(State::Interrupted);
@@ -158,7 +149,6 @@ fn unknown_agent_kind_has_no_launcher() {
 }
 
 #[test]
-#[ignore = "T068"]
 fn unusable_launcher_template_has_no_launcher() {
     let fake = ready();
     let options = Options {
@@ -172,7 +162,6 @@ fn unusable_launcher_template_has_no_launcher() {
 }
 
 #[test]
-#[ignore = "T068"]
 fn missing_tmux_is_refused() {
     let fake = ready();
     fake.tmux.set_available(false);
@@ -185,7 +174,6 @@ fn missing_tmux_is_refused() {
 }
 
 #[test]
-#[ignore = "T068"]
 fn launcher_template_fills_session_id_cwd_and_name() {
     let fake = ready();
     let options = Options {
@@ -205,7 +193,6 @@ fn launcher_template_fills_session_id_cwd_and_name() {
 }
 
 #[test]
-#[ignore = "T068"]
 fn explicit_fresh_starts_without_resume_and_says_so() {
     let fake = FakeEnv::new();
     fake.fs.add_dir(CWD);
@@ -256,7 +243,6 @@ impl AgentKind for NoResume {
 }
 
 #[test]
-#[ignore = "T068"]
 fn agent_without_resume_starts_fresh_with_a_notice() {
     let fake = FakeEnv::new();
     fake.fs.add_dir(CWD);
@@ -274,7 +260,6 @@ fn agent_without_resume_starts_fresh_with_a_notice() {
 }
 
 #[test]
-#[ignore = "T068"]
 fn finished_session_plans_exactly_like_an_interrupted_one() {
     let fake = ready();
     let interrupted = plan(&fake, &session(State::Interrupted), &Options::default());
@@ -287,7 +272,6 @@ fn finished_session_plans_exactly_like_an_interrupted_one() {
 }
 
 #[test]
-#[ignore = "T068"]
 fn in_dir_without_fresh_is_a_usage_error() {
     let fake = ready();
     let options = Options {
