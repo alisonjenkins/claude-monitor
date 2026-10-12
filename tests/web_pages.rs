@@ -409,6 +409,139 @@ fn the_restore_page_says_so_when_nothing_is_interrupted() {
     assert!(!html.contains("hx-post=\"/respawn\""));
 }
 
+mod respawn_through_the_restore_preview {
+    use super::*;
+
+    fn json_page(rig: &Rig, path: &str) -> Response {
+        Request::get(path)
+            .header("Cookie", rig.cookie())
+            .header("Accept", "application/json")
+            .send(rig.addr())
+    }
+
+    #[test]
+    #[ignore = "the Respawn button still starts a session directly"]
+    fn the_overview_button_links_to_the_preview_instead_of_starting() {
+        let web = Plain::new();
+        web.put("s-int", State::Interrupted);
+
+        let html = page(&web.rig, "/").body;
+
+        assert!(html.contains("href=\"/restore?session=s-int\""), "{html}");
+        assert!(
+            !html.contains("hx-post=\"/sessions/s-int/respawn\""),
+            "{html}"
+        );
+    }
+
+    #[test]
+    #[ignore = "the Respawn button still starts a session directly"]
+    fn the_session_page_button_links_to_the_preview_too() {
+        let web = Plain::new();
+        web.put("s-int", State::Interrupted);
+        web.put("s-fin", State::Finished);
+
+        for id in ["s-int", "s-fin"] {
+            let html = page(&web.rig, &format!("/sessions/{id}")).body;
+
+            assert!(
+                html.contains(&format!("href=\"/restore?session={id}\"")),
+                "{html}"
+            );
+            assert!(
+                !html.contains(&format!("hx-post=\"/sessions/{id}/respawn\"")),
+                "{html}"
+            );
+        }
+    }
+
+    #[test]
+    #[ignore = "the Respawn button still starts a session directly"]
+    fn the_preview_is_for_that_one_session_and_starts_nothing() {
+        let Some(fx) = Fixture::new() else { return };
+        fx.add_session("int1", State::Interrupted, "a");
+        fx.add_session("int2", State::Interrupted, "b");
+        let rig = Rig::start_on(&fx.state_dir, fx.env.clone());
+
+        let html = page(&rig, "/restore?session=int1").body;
+
+        assert!(
+            html.contains("name=\"ids\" value=\"int1\" checked"),
+            "{html}"
+        );
+        assert!(!html.contains("value=\"int2\""), "{html}");
+        assert!(html.contains("Respawn"), "{html}");
+        assert!(html.contains("hx-post=\"/respawn\""), "{html}");
+        assert!(
+            html.contains("href=\"/sessions/int1\""),
+            "cancel link: {html}"
+        );
+        assert!(!html.contains("Include finished"), "{html}");
+        assert!(!fx.server_has_sessions(), "previewing starts nothing");
+    }
+
+    #[test]
+    #[ignore = "the Respawn button still starts a session directly"]
+    fn a_finished_session_can_be_previewed_too() {
+        let Some(fx) = Fixture::new() else { return };
+        fx.add_session("fin1", State::Finished, "c");
+        let rig = Rig::start_on(&fx.state_dir, fx.env.clone());
+
+        let html = page(&rig, "/restore?session=fin1").body;
+
+        assert!(
+            html.contains("name=\"ids\" value=\"fin1\" checked"),
+            "{html}"
+        );
+        assert!(!fx.server_has_sessions());
+    }
+
+    #[test]
+    #[ignore = "the Respawn button still starts a session directly"]
+    fn a_session_that_cannot_start_shows_its_refusal_and_no_confirm_form() {
+        let Some(fx) = Fixture::new() else { return };
+        let gone = fx.add_session("gone", State::Interrupted, "gone-dir");
+        std::fs::remove_dir_all(&gone.cwd).unwrap();
+        let rig = Rig::start_on(&fx.state_dir, fx.env.clone());
+
+        let html = page(&rig, "/restore?session=gone").body;
+
+        assert!(html.contains("missing_directory"), "{html}");
+        assert!(!html.contains("hx-post=\"/respawn\""), "{html}");
+    }
+
+    #[test]
+    #[ignore = "the Respawn button still starts a session directly"]
+    fn json_lists_only_that_session() {
+        let Some(fx) = Fixture::new() else { return };
+        fx.add_session("int1", State::Interrupted, "a");
+        fx.add_session("int2", State::Interrupted, "b");
+        let rig = Rig::start_on(&fx.state_dir, fx.env.clone());
+
+        let body = json_page(&rig, "/restore?session=int1").json();
+
+        let start = body["would_start"].as_array().unwrap();
+        assert_eq!(start.len(), 1, "{body}");
+        assert_eq!(start[0]["session"], "int1");
+        assert_eq!(body["executed"], false);
+    }
+
+    #[test]
+    #[ignore = "the Respawn button still starts a session directly"]
+    fn an_unknown_session_is_a_404_page() {
+        let web = Plain::new();
+
+        let response = page(&web.rig, "/restore?session=nope");
+
+        assert_eq!(response.status, 404);
+        assert!(
+            response.body.contains("no session matches"),
+            "{}",
+            response.body
+        );
+    }
+}
+
 mod confirmation_panel {
     use super::*;
 
