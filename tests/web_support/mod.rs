@@ -220,6 +220,9 @@ impl Stream {
                 return None;
             }
             let line = line.trim_end_matches(['\r', '\n']).to_owned();
+            if line == "0" {
+                return None;
+            }
             if is_chunk_size(&line) {
                 continue;
             }
