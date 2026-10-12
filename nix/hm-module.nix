@@ -210,6 +210,19 @@ in
           Install.WantedBy = [ "default.target" ];
         };
 
+    launchd.agents.claude-monitor-boot-check =
+      lib.mkIf (cfg.bootCheck.enable && pkgs.stdenv.hostPlatform.isDarwin)
+        {
+          enable = true;
+          config = {
+            ProgramArguments = [
+              "${cfg.package}/bin/claude-monitor"
+              "boot-check"
+            ];
+            RunAtLoad = true;
+          };
+        };
+
     # Merged into the upstream home-manager `programs.claude-code.settings`
     # option (JSON-value type: attrsOf recurses, listOf concatenates), so this
     # adds one hook group per event alongside whatever the user's own config
