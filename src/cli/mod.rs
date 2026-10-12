@@ -13,6 +13,7 @@ mod command;
 mod list;
 pub mod migrate;
 mod output;
+mod progress;
 mod reconcile;
 mod respawn;
 mod restore;
@@ -335,6 +336,11 @@ pub fn run_with(
         ),
         Command::BootCheck { banner } => boot_check::run(env, state_dir, banner),
         Command::Summarize { target } => summarize::run(env, state_dir, &target),
+        Command::ProgressBind {
+            owner,
+            file,
+            source,
+        } => progress::run(env, state_dir, &owner, file, source),
         Command::Hook { agent, event } => {
             hook::run(agent.as_deref(), event.as_deref(), state_dir, env);
             Ok(Output::empty())
