@@ -467,3 +467,87 @@ mod endpoint {
         drop(TcpStream::connect(addr).err());
     }
 }
+
+mod storage {
+    use claude_monitor::store::summaries::GENERATED_LABEL;
+
+    use super::*;
+
+    const PROMPT: &str = "Fix the flaky test";
+    const LEFT_OFF: &str = "Test now passes";
+
+    fn seeded() -> (Harness, Store, String) {
+        let h = Harness::new();
+        h.event("UserPromptSubmit", json!({"prompt": PROMPT}));
+        h.event("Stop", json!({"last_assistant_message": LEFT_OFF}));
+        let store = Store::open_in_dir(&h.state_dir, &StoreOptions::viewer()).unwrap();
+        let id = h.session().id;
+        (h, store, id)
+    }
+
+    #[test]
+    #[ignore = "implemented by T091"]
+    fn model_text_is_stored_with_model_timestamp_and_label() {
+        let (_h, store, id) = seeded();
+        let made = store
+            .insert_model_summary("session", &id, "A short summary.", "tiny-model", T0)
+            .unwrap();
+        assert_eq!(made.label(), Some(GENERATED_LABEL));
+        assert_eq!(GENERATED_LABEL, "generated");
+
+        let listed = store.list_summaries("session", &id).unwrap();
+        assert_eq!(listed, vec![made]);
+        let row = &listed[0];
+        assert_eq!(row.body, "A short summary.");
+        assert_eq!(row.model.as_deref(), Some("tiny-model"));
+        assert_eq!(row.created_at, T0);
+        assert!(row.model_written);
+    }
+
+    #[test]
+    #[ignore = "implemented by T091"]
+    fn model_text_never_overwrites_the_verbatim_text() {
+        let (h, store, id) = seeded();
+        store
+            .insert_model_summary("session", &id, "Rewritten by a model", "m", T0)
+            .unwrap();
+        store
+            .insert_model_summary("session", &id, "Rewritten again", "m", T0)
+            .unwrap();
+        let session = h.session();
+        assert_eq!(session.task_description.as_deref(), Some(PROMPT));
+        assert_eq!(session.left_off.as_deref(), Some(LEFT_OFF));
+    }
+
+    #[test]
+    #[ignore = "implemented by T091"]
+    fn summaries_accumulate_newest_first_and_stay_with_their_owner() {
+        let (_h, store, id) = seeded();
+        store
+            .insert_model_summary("session", &id, "first", "m", "2026-10-12T10:00:00Z")
+            .unwrap();
+        store
+            .insert_model_summary("session", &id, "second", "m", "2026-10-12T10:05:00Z")
+            .unwrap();
+        store
+            .insert_model_summary("session", "other", "not mine", "m", "2026-10-12T10:09:00Z")
+            .unwrap();
+        store
+            .insert_model_summary("project", &id, "wrong kind", "m", "2026-10-12T10:09:00Z")
+            .unwrap();
+        let bodies: Vec<String> = store
+            .list_summaries("session", &id)
+            .unwrap()
+            .into_iter()
+            .map(|s| s.body)
+            .collect();
+        assert_eq!(bodies, ["second", "first"]);
+    }
+
+    #[test]
+    #[ignore = "implemented by T091"]
+    fn nothing_is_generated_without_an_explicit_request() {
+        let (_h, store, id) = seeded();
+        assert!(store.list_summaries("session", &id).unwrap().is_empty());
+    }
+}

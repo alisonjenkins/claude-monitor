@@ -13,6 +13,7 @@ pub mod queries;
 pub mod respawn;
 mod schema;
 pub mod sessions;
+pub mod summaries;
 
 pub use migrations::SCHEMA_VERSION;
 
