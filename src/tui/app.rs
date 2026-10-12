@@ -14,6 +14,7 @@ use super::restore::{PreviewRow, RestoreResult, RestoreView, Step};
 use crate::cli::detail::SessionDetail;
 use crate::export::links::Check;
 use crate::model::State;
+use crate::notify::is_notifiable;
 use crate::store::queries::{Overview, OverviewEntry, OverviewQuery, Section, SectionName};
 use crate::store::Store;
 
@@ -634,10 +635,6 @@ fn snapshot_agents(snapshot: &Snapshot) -> impl Iterator<Item = &str> {
         .iter()
         .flat_map(|section| section.sessions.iter())
         .map(|entry| entry.agent_kind.as_str())
-}
-
-fn is_notifiable(state: State) -> bool {
-    matches!(state, State::NeedsPermission | State::Idle)
 }
 
 /// The repository name, else the last part of the working directory.

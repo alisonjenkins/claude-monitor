@@ -8,6 +8,7 @@ pub mod feed;
 pub mod hook;
 pub mod live;
 pub mod model;
+pub mod notify;
 pub mod progress;
 pub mod reconcile;
 pub mod refresh;

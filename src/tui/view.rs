@@ -30,16 +30,7 @@ const AGENT_WIDTH: usize = 8;
 const AGE_WIDTH: usize = 4;
 const ELLIPSIS: &str = "…";
 
-pub fn state_label(state: State) -> &'static str {
-    match state {
-        State::Working => "WORKING",
-        State::NeedsPermission => "PERMISSION",
-        State::Idle => "IDLE",
-        State::Finished => "FINISHED",
-        State::Interrupted => "INTERRUPTED",
-        State::Unknown => "UNKNOWN",
-    }
-}
+pub use crate::notify::state_label;
 
 fn is_degraded(entry: &OverviewEntry) -> bool {
     entry.error.is_some() || entry.flags.contains(&Flag::Degraded)

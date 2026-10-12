@@ -19,13 +19,14 @@ use super::app::{update, App, Effect, Msg, Snapshot};
 use super::links::spawn_check;
 use super::organise;
 use super::restore::{preview_restore, run_restore, RestoreResult};
-use super::view::{state_label, view};
+use super::view::view;
 use crate::cli::detail::SessionDetail;
 use crate::cli::migrate::open_viewer_store;
 use crate::env::Env;
 use crate::export::links::LOOKUP_TIMEOUT;
 use crate::feed::{ChangeFeed, EventSource, FsWatcherSource, Monotonic, SystemMonotonic};
 use crate::live::{build_sources_with_files, spawn_live, LiveThread};
+use crate::notify;
 use crate::respawn::SPAWN_FAILED;
 use crate::store::{Store, StoreOptions};
 use crate::tmux;
@@ -36,8 +37,6 @@ const TICK: Duration = Duration::from_millis(100);
 
 /// Reload even without a wake, in case the file watcher lost one.
 const SAFETY_NET: Duration = Duration::from_secs(5);
-
-const NOTIFICATION_SUMMARY: &str = "Claude Code";
 
 fn restore_terminal() {
     let _ = disable_raw_mode();
@@ -289,8 +288,8 @@ fn perform(effect: &Effect, env: &Env, store: &Store, restore_tx: &mpsc::Sender<
             Err(e) => Done::Failed(format!("switch failed: {e:#}")),
         },
         Effect::Notify { project, state } => {
-            let body = format!("{project}: {}", state_label(*state));
-            match env.notifier.send(NOTIFICATION_SUMMARY, &body) {
+            let body = notify::body(project, *state);
+            match env.notifier.send(notify::SUMMARY, &body) {
                 Ok(()) => Done::Ok,
                 Err(e) => Done::Failed(format!("notification failed: {e}")),
             }
