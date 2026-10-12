@@ -8,6 +8,8 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+use std::thread::JoinHandle;
 use std::time::Duration;
 
 use crate::agents::{claude_discover, claude_registry, copilot_discover};
@@ -151,6 +153,51 @@ pub fn run_live(
                 sync_registrations(store, handle, &mut registered);
             }
             on_refresh(&report);
+        }
+    }
+}
+
+/// A [`run_live`] loop on its own thread; dropping it stops and joins the loop.
+#[derive(Debug)]
+pub struct LiveThread {
+    stop: Arc<AtomicBool>,
+    handle: Option<JoinHandle<()>>,
+}
+
+/// Runs [`run_live`] on a new thread that owns `store`.
+pub fn spawn_live(
+    store: Store,
+    env: Env,
+    sources: Vec<Box<dyn EventSource + Send>>,
+    proc_exit: Option<ProcExitHandle>,
+    mut on_refresh: impl FnMut(&RefreshReport) + Send + 'static,
+) -> std::io::Result<LiveThread> {
+    let stop = Arc::new(AtomicBool::new(false));
+    let flag = Arc::clone(&stop);
+    let handle = std::thread::Builder::new()
+        .name("live-refresh".to_owned())
+        .spawn(move || {
+            run_live(
+                &store,
+                &env,
+                sources,
+                proc_exit.as_ref(),
+                &flag,
+                &mut on_refresh,
+            );
+        })?;
+    Ok(LiveThread {
+        stop,
+        handle: Some(handle),
+    })
+}
+
+impl Drop for LiveThread {
+    fn drop(&mut self) {
+        self.stop.store(true, Ordering::Release);
+        if let Some(handle) = self.handle.take() {
+            // A panicked loop has nothing left to report here.
+            let _ = handle.join();
         }
     }
 }

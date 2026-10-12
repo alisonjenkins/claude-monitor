@@ -14,7 +14,7 @@ use std::time::{Duration, Instant};
 
 use claude_monitor::env::Env;
 use claude_monitor::feed::{EventSource, FakeHandle, FakeSource};
-use claude_monitor::live::{build_sources, run_live, tracked_processes};
+use claude_monitor::live::{build_sources, run_live, spawn_live, tracked_processes};
 use claude_monitor::model::{Session, State};
 use claude_monitor::store::{Store, StoreOptions};
 use claude_monitor::testing::{FakeEnv, FakeVars};
@@ -172,6 +172,31 @@ fn existing_directories_are_watched_without_warnings() {
 
     assert!(built.warnings.is_empty(), "{:?}", built.warnings);
     assert!(built.sources.len() >= 4);
+}
+
+#[test]
+fn a_spawned_loop_refreshes_and_is_joined_on_drop() {
+    let dir = TempDir::new().unwrap();
+    let fake = disk_only_env();
+    let store = Store::open_in_dir(dir.path(), &StoreOptions::default()).unwrap();
+    let (source, wake) = FakeSource::new();
+    let (tx, rx) = mpsc::channel();
+
+    let live = spawn_live(
+        store,
+        fake.env.clone(),
+        vec![Box::new(source)],
+        None,
+        move |r| {
+            let _ = tx.send(r.changed());
+        },
+    )
+    .unwrap();
+    wake.wake();
+
+    assert_eq!(rx.recv_timeout(PATIENCE), Ok(true));
+    drop(live);
+    assert!(wake.is_closed(), "the loop's sources were not dropped");
 }
 
 fn session(id: &str, state: State, pid: Option<u32>, start: Option<u64>) -> Session {
