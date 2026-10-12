@@ -4,6 +4,7 @@
 use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 
+use super::links::LinksState;
 use super::view::{dim, heading, state_label, GREEN};
 use crate::cli::detail::SessionDetail;
 use crate::progress::binding::ProgressView;
@@ -17,6 +18,7 @@ const BAR_CELLS: usize = 20;
 pub struct DetailView {
     id: String,
     detail: Option<SessionDetail>,
+    links: LinksState,
 }
 
 impl DetailView {
@@ -24,7 +26,12 @@ impl DetailView {
         Self {
             id: id.to_owned(),
             detail: None,
+            links: LinksState::Idle,
         }
+    }
+
+    pub fn links(&self) -> &LinksState {
+        &self.links
     }
 
     pub fn id(&self) -> &str {

@@ -9,6 +9,7 @@ use crossterm::event::{KeyCode, KeyModifiers};
 use super::detail::DetailView;
 use super::restore::{PreviewRow, RestoreResult, RestoreView, Step};
 use crate::cli::detail::SessionDetail;
+use crate::export::links::Check;
 use crate::model::State;
 use crate::store::queries::{Overview, OverviewEntry, OverviewQuery, Section, SectionName};
 use crate::store::Store;
@@ -60,6 +61,12 @@ pub enum Msg {
     RestoreResult(RestoreResult),
     /// The answer to [`Effect::LoadDetail`].
     Detail(SessionDetail),
+    /// The answer to [`Effect::CheckLinks`]: the session's links compared with
+    /// their remote nodes, or why the check could not run.
+    LinksChecked {
+        id: String,
+        result: Result<Check, String>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -74,6 +81,11 @@ pub enum Effect {
     },
     /// Read this session's detail and answer with [`Msg::Detail`].
     LoadDetail {
+        id: String,
+    },
+    /// Compare this session's links with their remote nodes off the UI thread
+    /// and answer with [`Msg::LinksChecked`].
+    CheckLinks {
         id: String,
     },
     JumpToPane {
@@ -412,6 +424,7 @@ pub fn update(mut app: App, msg: Msg) -> (App, Vec<Effect>) {
             app.on_detail(detail);
             Vec::new()
         }
+        Msg::LinksChecked { .. } => Vec::new(),
     };
     (app, effects)
 }
