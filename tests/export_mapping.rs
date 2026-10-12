@@ -35,7 +35,6 @@ fn text_fixture() -> Fixture {
 }
 
 #[test]
-#[ignore = "implemented by T097"]
 fn project_statuses_map_to_cortexiphan_vocabulary() {
     let fix = Fixture::new();
     for (id, status) in [
@@ -62,7 +61,6 @@ fn project_statuses_map_to_cortexiphan_vocabulary() {
 }
 
 #[test]
-#[ignore = "implemented by T097"]
 fn step_statuses_map_one_to_one_and_each_step_is_part_of_the_project() {
     let fix = Fixture::new();
     fix.project("p1", "alpha", "active", Some("b1"));
@@ -98,7 +96,6 @@ fn step_statuses_map_one_to_one_and_each_step_is_part_of_the_project() {
 }
 
 #[test]
-#[ignore = "implemented by T097"]
 fn step_title_carries_the_plan_id_once() {
     let fix = Fixture::new();
     fix.project("p1", "alpha", "active", Some("b1"));
@@ -119,7 +116,6 @@ fn step_title_carries_the_plan_id_once() {
 }
 
 #[test]
-#[ignore = "implemented by T097"]
 fn event_authors_map_to_cortexiphan_author_types() {
     let fix = Fixture::new();
     fix.project("p-user", "u", "active", None);
@@ -163,7 +159,6 @@ fn event_authors_map_to_cortexiphan_author_types() {
 }
 
 #[test]
-#[ignore = "implemented by T097"]
 fn the_last_event_decides_author_and_updated_at() {
     let fix = Fixture::new();
     fix.project("p1", "alpha", "active", None);
@@ -181,7 +176,6 @@ fn the_last_event_decides_author_and_updated_at() {
 }
 
 #[test]
-#[ignore = "implemented by T097"]
 fn an_entity_without_events_is_attributed_to_the_connector() {
     let fix = Fixture::new();
     fix.project("p1", "alpha", "active", None);
@@ -195,7 +189,6 @@ fn an_entity_without_events_is_attributed_to_the_connector() {
 }
 
 #[test]
-#[ignore = "implemented by T097"]
 fn every_record_has_the_external_key_and_an_author() {
     let records = project20().records(&options());
     assert!(!records.is_empty());
@@ -216,7 +209,6 @@ fn every_record_has_the_external_key_and_an_author() {
 }
 
 #[test]
-#[ignore = "implemented by T097"]
 fn entity_ids_are_the_external_ids() {
     let records = project20().records(&options());
     by_id(&records, "project", "proj-20");
@@ -227,7 +219,6 @@ fn entity_ids_are_the_external_ids() {
 }
 
 #[test]
-#[ignore = "implemented by T097"]
 fn keys_do_not_depend_on_status_time_or_other_entities() {
     let fix = project20();
     let ids = |records: &[Value]| -> Vec<(String, String)> {
@@ -254,7 +245,6 @@ fn keys_do_not_depend_on_status_time_or_other_entities() {
 }
 
 #[test]
-#[ignore = "implemented by T097"]
 fn repeated_exports_are_byte_identical() {
     let fix = project20();
     assert_eq!(fix.export(&options()), fix.export(&options()));
@@ -262,7 +252,6 @@ fn repeated_exports_are_byte_identical() {
 }
 
 #[test]
-#[ignore = "implemented by T097"]
 fn records_are_sorted_by_kind_then_external_id() {
     let records = project20().records(&options());
     let keys: Vec<_> = records
@@ -280,7 +269,6 @@ fn records_are_sorted_by_kind_then_external_id() {
 }
 
 #[test]
-#[ignore = "implemented by T097"]
 fn no_conversation_text_by_default() {
     let fix = text_fixture();
     let out = fix.export(&options());
@@ -297,7 +285,29 @@ fn no_conversation_text_by_default() {
 }
 
 #[test]
-#[ignore = "implemented by T097"]
+fn a_corrupt_session_row_does_not_stop_the_export() {
+    let fix = Fixture::new();
+    fix.project("p1", "alpha", "active", None);
+    fix.session("s1", Some("p1"), |_| {});
+    fix.session("bad", Some("p1"), |_| {});
+    let conn = fix.store.connection();
+    conn.execute_batch("PRAGMA ignore_check_constraints = ON")
+        .unwrap();
+    conn.execute("UPDATE sessions SET state = 'bogus' WHERE id = 'bad'", [])
+        .unwrap();
+    conn.execute_batch("PRAGMA ignore_check_constraints = OFF")
+        .unwrap();
+
+    let records = fix.records(&options());
+
+    let ids: Vec<_> = of_kind(&records, "session")
+        .iter()
+        .map(|r| r["external"]["id"].as_str().unwrap().to_owned())
+        .collect();
+    assert_eq!(ids, ["s1"]);
+}
+
+#[test]
 fn include_text_adds_the_session_text_and_summaries() {
     let fix = text_fixture();
     let records = fix.records(&with_text());
@@ -318,7 +328,6 @@ fn include_text_adds_the_session_text_and_summaries() {
 }
 
 #[test]
-#[ignore = "implemented by T097"]
 fn user_notes_export_as_memory_without_the_flag() {
     let fix = text_fixture();
     let records = fix.records(&options());
@@ -329,7 +338,6 @@ fn user_notes_export_as_memory_without_the_flag() {
 }
 
 #[test]
-#[ignore = "implemented by T097"]
 fn timestamps_are_iso8601_utc() {
     let fix = project20();
     for record in fix.records(&options()) {
@@ -348,7 +356,6 @@ fn timestamps_are_iso8601_utc() {
 }
 
 #[test]
-#[ignore = "implemented by T097"]
 fn sessions_and_lineage_are_exported_with_edges() {
     let records = project20().records(&options());
     let session = &by_id(&records, "session", "sess-b")["node"];
@@ -375,7 +382,6 @@ fn sessions_and_lineage_are_exported_with_edges() {
 }
 
 #[test]
-#[ignore = "implemented by T097"]
 fn project_repos_come_from_member_sessions_with_this_machine_as_the_clone_host() {
     let records = project20().records(&options());
     let repos = by_id(&records, "project", "proj-20")["node"]["repos"].clone();
@@ -397,7 +403,6 @@ fn project_repos_come_from_member_sessions_with_this_machine_as_the_clone_host()
 }
 
 #[test]
-#[ignore = "implemented by T097"]
 fn project_filter_selects_by_name_or_id_and_keeps_only_its_records() {
     let fix = project20();
     fix.project("other", "other-project", "active", None);
@@ -419,7 +424,6 @@ fn project_filter_selects_by_name_or_id_and_keeps_only_its_records() {
 }
 
 #[test]
-#[ignore = "implemented by T097"]
 fn an_unknown_project_is_an_error() {
     let fix = project20();
     let mut opts = options();
@@ -429,7 +433,6 @@ fn an_unknown_project_is_an_error() {
 }
 
 #[test]
-#[ignore = "implemented by T097"]
 fn an_empty_store_exports_nothing() {
     assert_eq!(Fixture::new().export(&options()), "");
 }

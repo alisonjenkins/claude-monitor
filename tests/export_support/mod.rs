@@ -56,6 +56,11 @@ impl Fixture {
     pub fn new() -> Self {
         let dir = TempDir::new().unwrap();
         let store = Store::open_in_dir(dir.path(), &StoreOptions::default()).unwrap();
+        // A project and its binding reference each other, so rows go in any order.
+        store
+            .connection()
+            .pragma_update(None, "foreign_keys", false)
+            .unwrap();
         Self { dir, store }
     }
 
