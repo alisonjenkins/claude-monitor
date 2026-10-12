@@ -115,6 +115,10 @@ impl AgentKind for ClaudeKind {
                 let mut h = hook(Event::Stop)?;
                 h.last_assistant_message =
                     opt_str(raw, "last_assistant_message")?.map(str::to_owned);
+                h.transcript_path = raw
+                    .get("transcript_path")
+                    .and_then(Value::as_str)
+                    .map(str::to_owned);
                 h
             }
             "SessionEnd" => {

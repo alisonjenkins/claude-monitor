@@ -14,6 +14,7 @@ use crate::store::events::{EventsError, NewEvent};
 use crate::store::respawn::RespawnError;
 use crate::store::sessions::SessionsError;
 use crate::store::{resolve_state_dir, StateDirEnv, Store, StoreError, StoreOptions};
+use crate::summary;
 
 pub const LOG_FILE_NAME: &str = "hook.log";
 pub const DEFAULT_AGENT: &str = "claude";
@@ -201,6 +202,15 @@ fn apply(
     hook: &ParsedHook,
     now: &str,
 ) -> Result<(), HookError> {
+    // Read before taking the write lock so a slow disk never holds it.
+    let left_off = matches!(hook.event, Event::Stop)
+        .then(|| {
+            summary::left_off(
+                hook.last_assistant_message.as_deref(),
+                hook.transcript_path.as_deref().map(Path::new),
+            )
+        })
+        .flatten();
     // The guard only issues BEGIN IMMEDIATE / COMMIT; the Store methods below
     // run on the same connection, so they are inside the transaction.
     let tx = Transaction::new_unchecked(store.connection(), TransactionBehavior::Immediate)
@@ -244,10 +254,8 @@ fn apply(
             .filter(|prompt| !prompt.trim().is_empty())
             .map(str::to_owned);
     }
-    if matches!(hook.event, Event::Stop) {
-        if let Some(message) = &hook.last_assistant_message {
-            session.left_off = Some(message.clone());
-        }
+    if left_off.is_some() {
+        session.left_off = left_off;
     }
 
     store.upsert_session(&session)?;

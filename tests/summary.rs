@@ -107,7 +107,6 @@ mod verbatim {
     }
 
     #[test]
-    #[ignore = "implemented by T090"]
     fn stop_without_a_message_falls_back_to_the_transcript_tail() {
         let h = Harness::new();
         write_transcript(
@@ -154,7 +153,6 @@ mod verbatim {
     }
 
     #[test]
-    #[ignore = "implemented by T090"]
     fn tail_skips_tool_only_and_sidechain_messages() {
         let tool_only = json!({
             "type": "assistant",
@@ -185,7 +183,6 @@ mod verbatim {
     }
 
     #[test]
-    #[ignore = "implemented by T090"]
     fn tail_read_is_bounded_by_the_cap() {
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("big.jsonl");
@@ -205,7 +202,6 @@ mod verbatim {
     }
 
     #[test]
-    #[ignore = "implemented by T090"]
     fn tail_window_that_cuts_a_line_in_half_ignores_the_partial_line() {
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("cut.jsonl");
