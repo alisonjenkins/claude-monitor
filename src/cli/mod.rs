@@ -84,6 +84,10 @@ enum Commands {
         /// Agent kind whose payload shape is on stdin (default: claude)
         #[arg(long, value_name = "KIND")]
         agent: Option<String>,
+        /// Event name to use when the payload carries none (Copilot's native
+        /// payloads do not), for example sessionStart or preToolUse
+        #[arg(long, value_name = "NAME")]
+        event: Option<String>,
     },
     /// Mark sessions whose process, tmux pane or boot is gone as interrupted
     Reconcile {
@@ -116,8 +120,9 @@ impl Cli {
     pub fn command(&self) -> Command {
         match &self.command {
             None => Command::Dashboard,
-            Some(Commands::Hook { agent }) => Command::Hook {
+            Some(Commands::Hook { agent, event: _ }) => Command::Hook {
                 agent: agent.clone(),
+                event: None,
             },
             Some(Commands::List {
                 states,
@@ -207,7 +212,7 @@ pub fn run_with(
         Command::Show { session } => show::run(env, state_dir, &session),
         Command::Reconcile { pane, session } => reconcile::run(env, state_dir, pane, session),
         Command::Watch => watch::run(env, state_dir),
-        Command::Hook { agent } => {
+        Command::Hook { agent, event: _ } => {
             hook::run(agent.as_deref(), state_dir, env);
             Ok(Output::empty())
         }
@@ -291,7 +296,13 @@ mod tests {
     #[test]
     fn hook_subcommand_maps_to_hook() {
         let cli = Cli::try_parse_from(["claude-monitor", "hook"]).unwrap();
-        assert_eq!(cli.command(), Command::Hook { agent: None });
+        assert_eq!(
+            cli.command(),
+            Command::Hook {
+                agent: None,
+                event: None
+            }
+        );
     }
 
     #[test]
@@ -300,7 +311,29 @@ mod tests {
         assert_eq!(
             cli.command(),
             Command::Hook {
-                agent: Some("copilot".to_owned())
+                agent: Some("copilot".to_owned()),
+                event: None
+            }
+        );
+    }
+
+    #[test]
+    #[ignore = "T062c: --event is parsed but not yet passed on"]
+    fn hook_event_flag_is_passed_through() {
+        let cli = Cli::try_parse_from([
+            "claude-monitor",
+            "hook",
+            "--agent",
+            "copilot",
+            "--event",
+            "preToolUse",
+        ])
+        .unwrap();
+        assert_eq!(
+            cli.command(),
+            Command::Hook {
+                agent: Some("copilot".to_owned()),
+                event: Some("preToolUse".to_owned())
             }
         );
     }

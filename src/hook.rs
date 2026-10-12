@@ -123,6 +123,12 @@ enum HookError {
     Commit(rusqlite::Error),
 }
 
+/// `input` with `hook_event_name` set to `event` when the payload is a JSON
+/// object without a non-null `hook_event_name`. Anything else is returned as is.
+pub fn inject_event(input: &str, _event: Option<&str>) -> String {
+    input.to_owned()
+}
+
 /// Ingest one hook payload. Never fails and never prints to stdout: errors go
 /// to `<state-dir>/hook.log` and the update is dropped.
 pub fn ingest(ctx: &HookContext<'_>, input: &str) {

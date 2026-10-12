@@ -150,7 +150,12 @@ mod hook {
 
     #[test]
     fn is_not_a_tui_action() {
-        let info = Command::Hook { agent: None }.info().unwrap();
+        let info = Command::Hook {
+            agent: None,
+            event: None,
+        }
+        .info()
+        .unwrap();
         assert!(!info.is_interactive());
     }
 }

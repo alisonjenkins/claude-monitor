@@ -29,6 +29,7 @@ pub enum Command {
     },
     Hook {
         agent: Option<String>,
+        event: Option<String>,
     },
     Reconcile {
         pane: Option<String>,
@@ -167,7 +168,10 @@ const ALL: &[CommandInfo] = &[
         name: "hook",
         tui_action: None,
         implemented_by: "existing",
-        example: || Command::Hook { agent: None },
+        example: || Command::Hook {
+            agent: None,
+            event: None,
+        },
     },
     CommandInfo {
         name: "reconcile",
