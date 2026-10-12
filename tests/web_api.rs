@@ -351,7 +351,6 @@ fn project_status(rig: &Rig, id: &str) -> String {
 }
 
 #[test]
-#[ignore = "I4: project marker and summarize routes"]
 fn a_project_is_parked_unparked_dismissed_and_undismissed() {
     let web = Plain::new();
     let id = post(&web.rig, "/projects", &json!({"name": "alpha"})).json()["project"]["id"]
@@ -375,7 +374,6 @@ fn a_project_is_parked_unparked_dismissed_and_undismissed() {
 }
 
 #[test]
-#[ignore = "I4: project marker and summarize routes"]
 fn a_project_marker_route_for_an_unknown_project_is_a_404() {
     let web = Plain::new();
 
@@ -387,7 +385,6 @@ fn a_project_marker_route_for_an_unknown_project_is_a_404() {
 }
 
 #[test]
-#[ignore = "I4: project marker and summarize routes"]
 fn summarizing_a_project_without_a_model_is_refused_like_a_session() {
     let web = Plain::new();
     let id = post(&web.rig, "/projects", &json!({"name": "alpha"})).json()["project"]["id"]

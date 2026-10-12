@@ -67,6 +67,11 @@ pub const COMMAND_ROUTES: &[CommandRoute] = &[
     route("unpark", "POST", "/sessions/{id}/unpark"),
     route("dismiss", "POST", "/sessions/{id}/dismiss"),
     route("undismiss", "POST", "/sessions/{id}/undismiss"),
+    route("park", "POST", "/projects/{id}/park"),
+    route("unpark", "POST", "/projects/{id}/unpark"),
+    route("dismiss", "POST", "/projects/{id}/dismiss"),
+    route("undismiss", "POST", "/projects/{id}/undismiss"),
+    route("summarize", "POST", "/projects/{id}/summarize"),
     route("done", "POST", "/sessions/{id}/done"),
     route("undone", "POST", "/sessions/{id}/undone"),
     route("progress-bind", "POST", "/sessions/{id}/progress-source"),
@@ -362,6 +367,14 @@ pub fn router() -> Router<AppState> {
             },
         )
     };
+    let project = |action: fn(String) -> Command| {
+        post(
+            move |State(state): State<AppState>, Path(key): Path<String>| async move {
+                let project = project_named(&state, key).await?;
+                act(&state, action(project.name)).await
+            },
+        )
+    };
     Router::new()
         .route("/", get(sessions))
         .route(
@@ -417,6 +430,26 @@ pub fn router() -> Router<AppState> {
         .route("/projects", get(projects).post(project_create))
         .route("/projects/{id}", get(project_detail).post(project_update))
         .route("/projects/{id}/note", post(project_note))
+        .route(
+            "/projects/{id}/park",
+            project(|target| Command::Park { target }),
+        )
+        .route(
+            "/projects/{id}/unpark",
+            project(|target| Command::Unpark { target }),
+        )
+        .route(
+            "/projects/{id}/dismiss",
+            project(|target| Command::Dismiss { target }),
+        )
+        .route(
+            "/projects/{id}/undismiss",
+            project(|target| Command::Undismiss { target }),
+        )
+        .route(
+            "/projects/{id}/summarize",
+            project(|target| Command::Summarize { target }),
+        )
         .route("/links", get(links))
 }
 
