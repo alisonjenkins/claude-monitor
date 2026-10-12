@@ -4,6 +4,7 @@ pub mod env;
 pub mod error;
 pub mod feed;
 pub mod hook;
+pub mod live;
 pub mod model;
 pub mod reconcile;
 pub mod refresh;
