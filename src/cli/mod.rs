@@ -419,6 +419,70 @@ mod tests {
     }
 
     #[test]
+    fn restore_flags_map_to_the_restore_command() {
+        let cli = Cli::try_parse_from(["claude-monitor", "restore"]).unwrap();
+        assert_eq!(
+            cli.command(),
+            Command::Restore {
+                all_interrupted: false,
+                include_finished: false,
+                fresh: false,
+                skip: vec![],
+                yes: false,
+            }
+        );
+        let cli = Cli::try_parse_from([
+            "claude-monitor",
+            "restore",
+            "--all-interrupted",
+            "--include-finished",
+            "--fresh",
+            "--skip",
+            "a",
+            "--skip",
+            "b",
+            "--yes",
+        ])
+        .unwrap();
+        assert_eq!(
+            cli.command(),
+            Command::Restore {
+                all_interrupted: true,
+                include_finished: true,
+                fresh: true,
+                skip: vec!["a".to_owned(), "b".to_owned()],
+                yes: true,
+            }
+        );
+    }
+
+    #[test]
+    fn respawn_takes_sessions_and_flags() {
+        assert!(Cli::try_parse_from(["claude-monitor", "respawn"]).is_err());
+        let cli = Cli::try_parse_from([
+            "claude-monitor",
+            "respawn",
+            "a",
+            "b",
+            "--fresh",
+            "--in",
+            "/repo",
+            "--recreate-worktree",
+            "--yes",
+        ])
+        .unwrap();
+        assert_eq!(
+            cli.command(),
+            Command::Respawn {
+                sessions: vec!["a".to_owned(), "b".to_owned()],
+                fresh: true,
+                in_dir: Some(PathBuf::from("/repo")),
+                recreate_worktree: true,
+            }
+        );
+    }
+
+    #[test]
     fn hook_subcommand_maps_to_hook() {
         let cli = Cli::try_parse_from(["claude-monitor", "hook"]).unwrap();
         assert_eq!(
