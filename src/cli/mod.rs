@@ -11,6 +11,7 @@ use crate::store::{resolve_state_dir, StateDirEnv};
 
 mod boot_check;
 mod command;
+pub mod detail;
 mod done;
 mod list;
 mod markers;
