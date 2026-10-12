@@ -30,6 +30,21 @@ pub struct Source {
     pub path: Option<String>,
 }
 
+impl Source {
+    /// Path plus kind (FR-015a), for showing next to a figure.
+    pub fn label(&self) -> String {
+        let kind = match self.kind {
+            SourceKind::AgentTodo => "agent todo list",
+            SourceKind::SpeckitTasks => "spec-kit tasks",
+            SourceKind::MarkdownChecklist => "Markdown checklist",
+        };
+        match (self.kind, self.path.as_deref()) {
+            (SourceKind::AgentTodo, _) | (_, None) => kind.to_string(),
+            (_, Some(path)) => format!("{path} ({kind})"),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Item {
     pub ordinal: u32,
@@ -64,15 +79,7 @@ impl Progress {
 
     /// The named source of the figure (FR-015a): path plus kind.
     pub fn source_label(&self) -> String {
-        let kind = match self.source.kind {
-            SourceKind::AgentTodo => "agent todo list",
-            SourceKind::SpeckitTasks => "spec-kit tasks",
-            SourceKind::MarkdownChecklist => "Markdown checklist",
-        };
-        match (self.source.kind, self.source.path.as_deref()) {
-            (SourceKind::AgentTodo, _) | (_, None) => kind.to_string(),
-            (_, Some(path)) => format!("{path} ({kind})"),
-        }
+        self.source.label()
     }
 
     /// Rebuilds a figure from stored steps; `None` when there are none.
