@@ -7,6 +7,8 @@ use std::path::Path;
 use crossterm::event::{KeyCode, KeyModifiers};
 
 use super::detail::DetailView;
+use super::filter::Filter;
+use super::projects::{flat, Part};
 use super::restore::{PreviewRow, RestoreResult, RestoreView, Step};
 use crate::cli::detail::SessionDetail;
 use crate::export::links::Check;
@@ -99,8 +101,21 @@ pub enum Effect {
     Quit,
 }
 
+/// A single-line input that takes over the keys until Enter or Esc.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Prompt {
+    /// Typing narrows the list as it goes; Esc clears the text.
+    Filter,
+    /// A note for this session; Enter saves it.
+    Note { id: String, text: String },
+}
+
 #[derive(Debug, Clone)]
 pub struct App {
+    /// Toggled with `p`: rows are laid out under their project.
+    grouped: bool,
+    filter: Filter,
+    prompt: Option<Prompt>,
     snapshot: Option<Snapshot>,
     selected: Option<String>,
     /// Hidden with `d`: the session id and the state it was in. UI-local, so a
@@ -119,6 +134,9 @@ pub struct App {
 impl App {
     pub fn new() -> Self {
         Self {
+            grouped: false,
+            filter: Filter::default(),
+            prompt: None,
             snapshot: None,
             selected: None,
             hidden: HashSet::new(),
@@ -128,6 +146,24 @@ impl App {
             restore: None,
             detail: None,
         }
+    }
+
+    pub fn grouped(&self) -> bool {
+        self.grouped
+    }
+
+    pub fn filter(&self) -> &Filter {
+        &self.filter
+    }
+
+    pub fn prompt(&self) -> Option<&Prompt> {
+        self.prompt.as_ref()
+    }
+
+    /// The titled runs of rows in display order: the sections, or the
+    /// project groups when grouped.
+    pub fn parts(&self) -> Vec<Part<'_>> {
+        flat(self.sections())
     }
 
     pub fn detail(&self) -> Option<&DetailView> {
