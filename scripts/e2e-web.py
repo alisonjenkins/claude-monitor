@@ -60,6 +60,26 @@ def shot(page, name):
     page.screenshot(path=os.path.join(OUT, f"{name}.png"), full_page=True)
 
 
+FINISHED = "[id$='-section-finished']"
+DONE = "[id$='-section-done']"
+
+
+def project_id(name):
+    listed = ctx.request.get(f"{BASE}/projects", headers={"Accept": "application/json"}).json()
+    for project in listed["projects"]:
+        if project["name"] == name:
+            return project["id"]
+    raise KeyError(name)
+
+
+def tree_json():
+    return ctx.request.get(f"{BASE}/", headers={"Accept": "application/json"}).json()
+
+
+def project_of(session_id):
+    return next(s.get("project") for s in tree_json()["sessions"] if s["id"] == session_id)
+
+
 def curl(*args):
     out = subprocess.run(
         ["curl", "-s", "-o", "/dev/null", "-w", "%{http_code}", *args],
@@ -90,20 +110,21 @@ with sync_playwright() as pw:
     waiting = page.locator("#waiting")
     check("Waiting-on-you band present", waiting.count() == 1)
     check("band lists needs_permission row",
-          waiting.locator(f"#s-{ID[2]}[data-state=needs_permission]").count() == 1)
+          waiting.locator(f"#w-{ID[2]}[data-state=needs_permission]").count() == 1)
     check("band lists interrupted row",
-          waiting.locator(f"#s-{ID[3]}[data-state=interrupted]").count() == 1)
+          waiting.locator(f"#w-{ID[3]}[data-state=interrupted]").count() == 1)
+    check("band row names its project", "alpha" in waiting.locator(f"#w-{ID[2]}").inner_text())
     check("band holds exactly those two", waiting.locator("li.row").count() == 2)
     band = page.evaluate(
         """() => { const s = e => { const c = getComputedStyle(e); return [c.backgroundColor,
         c.borderLeftWidth + ' ' + c.borderLeftColor, c.borderTopWidth + ' ' + c.borderTopColor,
         c.boxShadow].join(' | '); };
-        return [s(document.querySelector('#waiting')), s(document.querySelector('#section-finished'))]; }"""
+        return [s(document.querySelector('#waiting')), s(document.querySelector('[id$=-section-finished]'))]; }"""
     )
     check("band styled differently from the Finished section", band[0] != band[1], f"{band[0]} vs {band[1]}")
     check("finished rows visible",
-          page.locator(f"#section-finished #s-{ID[4]}").is_visible()
-          and page.locator(f"#section-finished #s-{ID[6]}").is_visible())
+          page.locator(f"{FINISHED} #s-{ID[4]}").is_visible()
+          and page.locator(f"{FINISHED} #s-{ID[6]}").is_visible())
     unseen = page.locator("#section-unseen")
     check("unseen section is collapsed",
           unseen.count() == 1 and unseen.get_attribute("open") is None
@@ -116,18 +137,18 @@ with sync_playwright() as pw:
     note("== 2. mark done")
     row6 = page.locator(f"#s-{ID[6]}")
     row6.get_by_role("button", name="Mark done").click()
-    page.wait_for_selector(f"#section-done #s-{ID[6]}", timeout=5000)
+    page.wait_for_selector(f"{DONE} #s-{ID[6]}", state="attached", timeout=5000)
     check("alpha finished session moved to Done on overview", True)
-    page.goto(f"{BASE}/projects/alpha", wait_until="load")
-    check("it is in alpha's Done section", page.locator(f"#section-done #s-{ID[6]}").count() == 1)
+    page.goto(f"{BASE}/projects/{project_id('alpha')}", wait_until="load")
+    check("it is in alpha's Done section", page.locator(f"{DONE} #s-{ID[6]}").count() == 1)
     shot(page, "02-project-alpha-done")
     page.reload(wait_until="load")
-    check("persisted after reload", page.locator(f"#section-done #s-{ID[6]}").count() == 1)
+    check("persisted after reload", page.locator(f"{DONE} #s-{ID[6]}").count() == 1)
     check("done state in store", mon("show", ID[6]).get("session", {}).get("done_at") is not None
           or "done" in json.dumps(mon("show", ID[6])))
     page.goto(f"{BASE}/", wait_until="load")
     check("ungrouped finished (4) still shown as Finished",
-          page.locator(f"#section-finished #s-{ID[4]}").count() == 1)
+          page.locator(f"{FINISHED} #s-{ID[4]}").count() == 1)
 
     # 2b. dismiss asks first; Respawn goes to the preview
     note("== 2b. confirmation before dismiss, preview before respawn")
@@ -189,7 +210,7 @@ with sync_playwright() as pw:
     note("== 4. SSE live update")
     page.goto(f"{BASE}/", wait_until="load")
     before = page.locator("#waiting li.row").count()
-    check("session 1 not yet in band", page.locator(f"#waiting #s-{ID[1]}").count() == 0)
+    check("session 1 not yet in band", page.locator(f"#waiting #w-{ID[1]}").count() == 0)
     t0 = time.monotonic()
     subprocess.Popen(
         [f"{TMP}/holder", "-c", '"$1" hook <"$2"; sleep 30', "_", BIN,
@@ -197,7 +218,7 @@ with sync_playwright() as pw:
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True,
     )
     try:
-        page.wait_for_selector(f"#waiting #s-{ID[1]}[data-state=needs_permission]",
+        page.wait_for_selector(f"#waiting #w-{ID[1]}[data-state=needs_permission]",
                                timeout=SSE_BUDGET_S * 1000)
         delay = time.monotonic() - t0
         check("page updated via SSE without reload", delay <= SSE_BUDGET_S, f"{delay:.2f}s (budget 10s)")
@@ -259,7 +280,120 @@ with sync_playwright() as pw:
         check(f"GET {path} -> 404", curl("-H", f"Cookie: {ck}", f"{BASE}{path}") == "404")
     check("session 4 not marked done by the rejected POSTs",
           page.goto(f"{BASE}/", wait_until="load") is not None
-          and page.locator(f"#section-finished #s-{ID[4]}").count() == 1)
+          and page.locator(f"{FINISHED} #s-{ID[4]}").count() == 1)
+
+    # 7. the project tree: move sessions between projects, state survives refresh
+    note("== 7. project tree and Move")
+    page.goto(f"{BASE}/", wait_until="load")
+    page.evaluate("() => localStorage.clear()")
+    page.reload(wait_until="load")
+    alpha_id = project_id("alpha")
+
+    def node(project):
+        return page.locator(f"details.node#n-{project}")
+
+    def focused(attribute):
+        return page.evaluate(f"() => document.activeElement.hasAttribute('{attribute}')")
+
+    check("overview is one tree: alpha open with its sessions nested",
+          node(alpha_id).get_attribute("open") is not None
+          and node(alpha_id).locator(f"#s-{ID[2]}").count() == 1)
+    check("sessions with no project sit in the No project node",
+          page.locator(f"details.node#n-none #s-{ID[1]}").count() == 1)
+    check("no Projects entry in the nav", page.locator("header.top nav a[href='/projects']").count() == 0)
+    page.goto(f"{BASE}/projects", wait_until="load")
+    check("/projects redirects to the overview", page.url.rstrip("/") == BASE, page.url)
+    page.goto(f"{BASE}/", wait_until="load")
+    shot(page, "06-tree-light")
+
+    row4 = page.locator(f"#s-{ID[4]}")
+    toggle4 = row4.locator("[data-move-toggle]")
+    panel4 = row4.locator("[data-move-form]")
+    check("panel starts closed", not panel4.is_visible() and toggle4.get_attribute("aria-expanded") == "false")
+    toggle4.click()
+    check("Move opens an inline panel", panel4.is_visible() and toggle4.get_attribute("aria-expanded") == "true")
+    check("focus moved into the panel's select", focused("data-move-to"))
+    options = panel4.locator("select option").all_inner_texts()
+    check("dropdown lists projects, No project and New project",
+          "alpha" in options[0] and "No project (remove)" in options and options[-1].startswith("New project"),
+          str(options))
+    check("Move button disabled until a target is chosen", panel4.locator("[data-move-go]").is_disabled())
+    shot(page, "06-tree-move-panel")
+    panel4.locator("select").select_option("alpha")
+    check("Move button enabled once a target is chosen", panel4.locator("[data-move-go]").is_enabled())
+    panel4.locator("[data-move-go]").click()
+    page.wait_for_selector(f"#n-{alpha_id} #s-{ID[4]}", timeout=5000)
+    check("session moved into the existing project", project_of(ID[4]) == "alpha")
+    try:
+        page.wait_for_function("() => document.activeElement && document.activeElement.hasAttribute('data-move-toggle')",
+                               timeout=3000)
+        check("focus returns to the moved row's Move button", True)
+    except Exception as e:  # noqa: BLE001
+        check("focus returns to the moved row's Move button", False, str(e)[:80])
+
+    row1 = page.locator(f"#s-{ID[1]}")
+    row1.locator("[data-move-toggle]").click()
+    row1.locator("[data-move-to]").select_option(label="New project…")
+    new_box = row1.locator("[data-move-new]")
+    check("New project reveals a focused name input", new_box.is_visible() and focused("data-move-new"))
+    check("Move stays disabled while the name is empty", row1.locator("[data-move-go]").is_disabled())
+    new_box.fill("gamma")
+    row1.locator("[data-move-go]").click()
+    page.wait_for_selector(f"details.node:has(h2:text-is('gamma')) #s-{ID[1]}", timeout=5000)
+    check("session moved into a brand new project", project_of(ID[1]) == "gamma")
+    page.reload(wait_until="load")
+    gamma_id = project_id("gamma")
+    check("nested placement survives a reload",
+          page.locator(f"#n-{gamma_id} #s-{ID[1]}").count() == 1
+          and page.locator(f"#n-{alpha_id} #s-{ID[4]}").count() == 1
+          and page.locator(f"#n-{alpha_id} #s-{ID[2]}").count() == 1)
+
+    node(alpha_id).locator("summary").first.click()
+    check("clicking a node's summary collapses it",
+          node(alpha_id).get_attribute("open") is None
+          and node(alpha_id).locator("summary").get_attribute("aria-expanded") == "false")
+    row3 = page.locator(f"#s-{ID[3]}")
+    row3.locator("[data-move-toggle]").click()
+    row3.locator("[data-move-to]").select_option(label="New project…")
+    row3.locator("[data-move-new]").fill("half typed")
+    page.evaluate("() => { window.__settled = 0; document.addEventListener('htmx:afterSettle', () => { window.__settled++; }); }")
+    mon("note", ID[2], "e2e ping")
+    try:
+        page.wait_for_function("() => window.__settled > 0", timeout=SSE_BUDGET_S * 1000)
+        check("an outside change refreshed the tree over SSE", True)
+    except Exception as e:  # noqa: BLE001
+        check("an outside change refreshed the tree over SSE", False, str(e)[:80])
+    check("the refresh left the collapsed node collapsed", node(alpha_id).get_attribute("open") is None)
+    check("the refresh left the other node open", node(gamma_id).get_attribute("open") is not None)
+    check("the refresh left the Move panel open and its input intact",
+          row3.locator("[data-move-form]").is_visible()
+          and row3.locator("[data-move-to]").input_value() == ""
+          and row3.locator("[data-move-new]").input_value() == "half typed")
+    check("the refresh kept the focus in the input", focused("data-move-new"))
+    page.keyboard.press("Escape")
+    check("Escape closes the panel and focus returns to Move",
+          not row3.locator("[data-move-form]").is_visible() and focused("data-move-toggle"))
+    page.reload(wait_until="load")
+    check("collapsed state survives a reload (localStorage)", node(alpha_id).get_attribute("open") is None)
+    node(alpha_id).locator("summary").first.click()
+    check("clicking again reopens it", node(alpha_id).get_attribute("open") is not None)
+
+    for scheme, size, label in (("dark", (1280, 900), "dark"), ("light", (390, 844), "phone-light"),
+                                ("dark", (390, 844), "phone-dark")):
+        c3 = browser.new_context(viewport={"width": size[0], "height": size[1]}, color_scheme=scheme)
+        c3.add_cookies([{"name": "cc_token", "value": TOKEN, "url": BASE}])
+        p3 = c3.new_page()
+        p3.goto(f"{BASE}/", wait_until="load")
+        shot(p3, f"06-tree-{label}")
+        p3.locator(f"#s-{ID[4]} [data-move-toggle]").click()
+        dims = p3.evaluate("() => [document.documentElement.scrollWidth, document.documentElement.clientWidth]")
+        check(f"tree {label} with a Move panel open: no horizontal scroll", dims[0] <= dims[1], str(dims))
+        if size[0] < 400:
+            box = p3.locator(f"#s-{ID[4]} [data-move-form]").bounding_box()
+            check(f"tree {label}: the Move panel spans the row", box is not None and box["width"] > size[0] * 0.7,
+                  str(box))
+        shot(p3, f"06-tree-{label}-move")
+        c3.close()
 
     browser.close()
 
