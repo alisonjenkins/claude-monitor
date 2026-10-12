@@ -251,6 +251,11 @@ impl Processes for SystemProcesses {
     }
 }
 
+/// Names a private tmux server socket (`tmux -S`) for the binary to use
+/// instead of the default server, so an end-to-end run never touches the
+/// user's own tmux.
+pub const TMUX_SOCKET_VAR: &str = "CLAUDE_MONITOR_TMUX_SOCKET";
+
 /// The real tmux. With a socket it talks to that private server (`tmux -S`),
 /// otherwise to the default one.
 #[derive(Debug, Clone, Default)]
@@ -263,6 +268,13 @@ impl SystemTmux {
         Self {
             socket: Some(socket.into()),
         }
+    }
+
+    /// The tmux named by `socket` (the value of [`TMUX_SOCKET_VAR`]), or the
+    /// default one when it is `None`.
+    pub fn from_socket_var(socket: Option<String>) -> Self {
+        let _ = socket;
+        Self::with_socket("/nonexistent/claude-monitor-unset")
     }
 
     fn output(&self, operation: &'static str, args: &[&str]) -> Result<String, EnvError> {
@@ -601,6 +613,23 @@ mod tests {
     fn linux_missing_pid_has_no_start_time() {
         // pid_max is at most 2^22, so this pid cannot exist.
         assert_eq!(SystemProcesses.start_time(u32::MAX).unwrap(), None);
+    }
+
+    #[test]
+    fn tmux_socket_var_selects_a_private_server() {
+        let dir = tempfile::tempdir().unwrap();
+        let socket = dir.path().join("sock");
+        let tmux = SystemTmux::from_socket_var(Some(socket.to_string_lossy().into_owned()));
+        if !tmux.is_installed() {
+            return;
+        }
+        assert!(tmux.ensure_session("t", dir.path()).unwrap());
+        assert!(socket.exists(), "private socket was not used");
+        let _ = Command::new("tmux")
+            .arg("-S")
+            .arg(&socket)
+            .arg("kill-server")
+            .output();
     }
 
     #[test]
