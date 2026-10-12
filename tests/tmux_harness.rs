@@ -13,6 +13,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
 use claude_monitor::env::{SystemTmux, Tmux};
+use claude_monitor::tmux::{parse_list_panes, PaneLocation, LIST_PANES_FORMAT};
 use tempfile::TempDir;
 
 pub struct TmuxServer {
@@ -243,4 +244,42 @@ fn spawn_window_fails_when_the_session_is_missing() {
         .spawn_window("nope", "x", cwd.path(), &sleep_argv())
         .unwrap_err();
     assert!(err.to_string().starts_with("spawn tmux window:"), "{err}");
+}
+
+/// Regression: outside a UTF-8 locale (the Nix sandbox) tmux prints a tab in
+/// `-F` output as `_`, so the pane listing must not rely on one.
+#[test]
+#[ignore = "pending the separator change"]
+fn list_panes_format_parses_under_a_c_locale_with_a_spaced_session_name() {
+    let Some(server) = TmuxServer::start() else {
+        return;
+    };
+    let cwd = TempDir::new().unwrap();
+    let cwd_str = cwd.path().to_str().unwrap();
+    let run = |args: &[&str]| {
+        let out = Command::new("tmux")
+            .arg("-S")
+            .arg(server.socket())
+            .args(["-f", "/dev/null"])
+            .args(args)
+            .env("TERM", "dumb")
+            .env("LC_ALL", "C")
+            .env_remove("LANG")
+            .env_remove("TMUX")
+            .env_remove("TMUX_PANE")
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "tmux {args:?}: {out:?}");
+        String::from_utf8_lossy(&out.stdout).into_owned()
+    };
+    run(&["new-session", "-d", "-s", "my project", "-c", cwd_str]);
+    run(&["new-window", "-d", "-t", "=my project:", "-c", cwd_str]);
+
+    let listing = run(&["list-panes", "-a", "-F", LIST_PANES_FORMAT]);
+    let panes = parse_list_panes(&listing);
+
+    assert_eq!(panes.len(), 2, "{listing:?}");
+    let mut locations: Vec<_> = panes.values().map(PaneLocation::format).collect();
+    locations.sort();
+    assert_eq!(locations, ["my project:0.0", "my project:1.0"]);
 }

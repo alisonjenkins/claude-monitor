@@ -20,6 +20,9 @@ impl PaneLocation {
     }
 }
 
+/// The `-F` format `list_panes_at` asks tmux for.
+pub const LIST_PANES_FORMAT: &str = "#{pane_id}\t#{session_name}\t#{window_index}\t#{pane_index}";
+
 /// Parse the output of `tmux list-panes -a -F "#{pane_id}\t#{session_name}\t
 /// #{window_index}\t#{pane_index}"` into a pane id -> location map. Lines that
 /// don't have exactly four tab-separated fields are skipped. Tabs are used
@@ -59,12 +62,7 @@ pub fn list_panes_at(socket: Option<&Path>) -> Result<Option<HashMap<String, Pan
         command.arg("-S").arg(socket);
     }
     let output = command
-        .args([
-            "list-panes",
-            "-a",
-            "-F",
-            "#{pane_id}\t#{session_name}\t#{window_index}\t#{pane_index}",
-        ])
+        .args(["list-panes", "-a", "-F", LIST_PANES_FORMAT])
         .output()
         .context("failed to run tmux list-panes")?;
 
@@ -138,6 +136,30 @@ mod tests {
             map.get("%7").map(|l| l.session_name.as_str()),
             Some("my project")
         );
+    }
+
+    #[test]
+    #[ignore = "pending the separator change"]
+    fn parses_space_separated_lines_with_the_session_name_last() {
+        let out = "%0 0 0 main\n%1 2 1 my project\n";
+        let map = parse_list_panes(out);
+        assert_eq!(map.len(), 2);
+        assert_eq!(
+            map.get("%1"),
+            Some(&PaneLocation {
+                session_name: "my project".to_string(),
+                window_index: "2".to_string(),
+                pane_index: "1".to_string(),
+            })
+        );
+    }
+
+    #[test]
+    #[ignore = "pending the separator change"]
+    fn space_format_skips_malformed_lines() {
+        let map = parse_list_panes("garbage\n\n%2 1 0 other\n%3 1\n");
+        assert_eq!(map.len(), 1);
+        assert!(map.contains_key("%2"));
     }
 
     #[test]
