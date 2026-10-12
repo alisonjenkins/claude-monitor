@@ -14,6 +14,7 @@ mod command;
 pub mod detail;
 mod done;
 mod export;
+mod link;
 mod list;
 mod markers;
 pub mod migrate;
@@ -612,6 +613,13 @@ pub fn run_with(
                 out,
             },
         ),
+        Command::Link {
+            owner,
+            cortex,
+            kind,
+            doc,
+        } => link::run_link(env, state_dir, &owner, &cortex, &kind, doc.as_deref()),
+        Command::Unlink { owner, cortex } => link::run_unlink(env, state_dir, &owner, &cortex),
         Command::Hook { agent, event } => {
             hook::run(agent.as_deref(), event.as_deref(), state_dir, env);
             Ok(Output::empty())
@@ -643,6 +651,8 @@ fn reads_sessions(cmd: &Command) -> bool {
             | Command::Unpark { .. }
             | Command::Dismiss { .. }
             | Command::Undismiss { .. }
+            | Command::Link { .. }
+            | Command::Unlink { .. }
     )
 }
 

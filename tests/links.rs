@@ -255,7 +255,6 @@ mod commands {
     }
 
     #[test]
-    #[ignore = "implemented by T100"]
     fn linking_a_session_stores_the_row_with_the_user_as_author() {
         let fix = Fixture::new();
 
@@ -281,7 +280,6 @@ mod commands {
     }
 
     #[test]
-    #[ignore = "implemented by T100"]
     fn linking_a_project_by_name_and_linking_twice_is_idempotent() {
         let fix = Fixture::new();
         fix.link("p1", "42").unwrap();
@@ -301,7 +299,6 @@ mod commands {
     }
 
     #[test]
-    #[ignore = "implemented by T100"]
     fn an_unknown_owner_is_refused_and_nothing_is_written() {
         let fix = Fixture::new();
 
@@ -312,7 +309,6 @@ mod commands {
     }
 
     #[test]
-    #[ignore = "implemented by T100"]
     fn a_node_id_that_is_not_a_number_is_a_usage_error() {
         let fix = Fixture::new();
 
@@ -332,7 +328,6 @@ mod commands {
     }
 
     #[test]
-    #[ignore = "implemented by T100"]
     fn unlink_removes_the_row_and_a_second_unlink_reports_no_change() {
         let fix = Fixture::new();
         fix.link("s1", "42").unwrap();

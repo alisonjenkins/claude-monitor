@@ -16,7 +16,7 @@ use crate::store::markers::Marker;
 use crate::store::Store;
 
 /// What a `<session|project>` argument names.
-enum Target {
+pub(super) enum Target {
     Session(String),
     Project { id: String, name: String },
 }
@@ -30,7 +30,7 @@ fn unknown_target(target: &str) -> Error {
 
 /// An exact session id, else an exact project name, else the one session
 /// whose id starts with `target`.
-fn resolve_target(store: &Store, target: &str) -> Result<Target, Error> {
+pub(super) fn resolve_target(store: &Store, target: &str) -> Result<Target, Error> {
     let lookup =
         |e: &dyn std::fmt::Display| store_error_message("find target", Some(store.path()), e);
     if store
