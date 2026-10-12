@@ -151,23 +151,16 @@ mod keys_on_a_row {
     }
 
     #[test]
-    fn x_dismisses_the_selected_session_and_dismisses_again_undismisses() {
-        let (_, effects) = press(single("s1", SectionName::Active), KeyCode::Char('x'));
-        assert_eq!(
-            effects,
-            organise(Organise::Dismiss {
-                id: "s1".to_owned()
-            })
-        );
-
+    fn x_on_a_listed_dismissed_session_undismisses_without_asking() {
         let shown = keys(single("s1", SectionName::Dismissed), "S");
-        let (_, effects) = press(shown, KeyCode::Char('x'));
+        let (app, effects) = press(shown, KeyCode::Char('x'));
         assert_eq!(
             effects,
             organise(Organise::Undismiss {
                 id: "s1".to_owned()
             })
         );
+        assert_eq!(app.prompt(), None);
     }
 
     #[test]
@@ -362,6 +355,125 @@ impl Rig {
         let (app, effects) = press(app, KeyCode::Char(key));
         self.perform(app, effects)
     }
+
+    /// `x` on a live row, then `y` at the footer question.
+    fn dismiss(&self, app: App, id: &str) -> App {
+        let app = self.act(app, id, 'x');
+        let (app, effects) = press(app, KeyCode::Char('y'));
+        self.perform(app, effects)
+    }
+}
+
+mod confirming_a_dismissal {
+    use super::*;
+
+    fn asked() -> App {
+        press(single("s1", SectionName::Active), KeyCode::Char('x')).0
+    }
+
+    #[test]
+    #[ignore = "the dismiss question is not wired up yet"]
+    fn x_asks_in_the_footer_and_changes_nothing_yet() {
+        let (app, effects) = press(single("s1", SectionName::Active), KeyCode::Char('x'));
+
+        assert!(effects.is_empty(), "{effects:?}");
+        assert_eq!(
+            app.prompt(),
+            Some(&Prompt::ConfirmDismiss {
+                id: "s1".to_owned(),
+                name: "task of s1".to_owned()
+            })
+        );
+        let text = render(&app);
+        assert!(text.contains("Dismiss task of s1? y/N"), "{text}");
+    }
+
+    #[test]
+    #[ignore = "the dismiss question is not wired up yet"]
+    fn y_dismisses_and_closes_the_question() {
+        let (app, effects) = press(asked(), KeyCode::Char('y'));
+
+        assert_eq!(
+            effects,
+            organise(Organise::Dismiss {
+                id: "s1".to_owned()
+            })
+        );
+        assert_eq!(app.prompt(), None);
+    }
+
+    #[test]
+    #[ignore = "the dismiss question is not wired up yet"]
+    fn every_other_key_cancels_with_no_change_and_is_not_acted_on() {
+        let others = [
+            KeyCode::Enter,
+            KeyCode::Esc,
+            KeyCode::Char('n'),
+            KeyCode::Char('Y'),
+            KeyCode::Char(' '),
+            KeyCode::Char('x'),
+            KeyCode::Char('q'),
+            KeyCode::Char('D'),
+            KeyCode::Char('j'),
+            KeyCode::Backspace,
+            KeyCode::Tab,
+        ];
+        for code in others {
+            let (app, effects) = press(asked(), code);
+
+            assert!(effects.is_empty(), "{code:?}: {effects:?}");
+            assert_eq!(app.prompt(), None, "{code:?}");
+            assert_eq!(app.status(), Some("dismiss cancelled"), "{code:?}");
+        }
+    }
+
+    #[test]
+    #[ignore = "the dismiss question is not wired up yet"]
+    fn the_row_falls_back_to_its_id_when_it_has_no_task_description() {
+        let mut row = entry("s1", SectionName::Active);
+        row.task_description = None;
+        let snapshot = Snapshot {
+            overview: Overview {
+                sections: vec![Section {
+                    name: SectionName::Active,
+                    sessions: vec![row],
+                }],
+            },
+            panes: HashMap::new(),
+            figures: HashMap::new(),
+            now: NOW.to_owned(),
+        };
+        let app = update(App::new(), Msg::Refreshed(snapshot)).0;
+
+        let app = press(app, KeyCode::Char('x')).0;
+
+        assert!(render(&app).contains("Dismiss s1? y/N"), "{}", render(&app));
+    }
+
+    #[test]
+    #[ignore = "the dismiss question is not wired up yet"]
+    fn declining_in_a_real_store_leaves_the_session_listed() {
+        let rig = rig();
+
+        let app = rig.act(rig.app(), "act", 'x');
+        let (app, effects) = press(app, KeyCode::Char('n'));
+        let app = rig.perform(app, effects);
+
+        assert!(!rig.store.get_session("act").unwrap().unwrap().dismissed);
+        assert!(render(&app).contains("Active (1)"), "{}", render(&app));
+    }
+
+    #[test]
+    #[ignore = "the dismiss question is not wired up yet"]
+    fn the_selection_does_not_move_while_the_question_is_open() {
+        let rig = rig();
+        let app = rig.select(rig.app(), "act");
+        let app = press(app, KeyCode::Char('x')).0;
+
+        let (app, _) = press(app, KeyCode::Char('j'));
+
+        assert_eq!(app.selected_id(), Some("act"));
+    }
 }
 
 mod with_a_real_store {
@@ -446,7 +558,7 @@ mod with_a_real_store {
     fn x_dismisses_hides_and_s_then_x_undismisses() {
         let rig = rig();
 
-        let app = rig.act(rig.app(), "act", 'x');
+        let app = rig.dismiss(rig.app(), "act");
         assert!(!render(&app).contains("task of act"), "{}", render(&app));
         let app = keys(app, "S");
         assert!(render(&app).contains("Dismissed (1)"), "{}", render(&app));

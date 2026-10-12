@@ -153,6 +153,8 @@ pub enum Prompt {
     Group { id: String, text: String },
     /// `<node-id> [doc]` to link this session to; Enter saves it.
     Link { id: String, text: String },
+    /// `y` dismisses this session; any other key cancels.
+    ConfirmDismiss { id: String, name: String },
 }
 
 #[derive(Debug, Clone)]
@@ -553,6 +555,7 @@ impl App {
                 }
             }
             (Prompt::Link { .. }, KeyCode::Esc) => self.prompt = None,
+            (Prompt::ConfirmDismiss { .. }, _) => self.prompt = None,
             _ => {}
         }
         Vec::new()
