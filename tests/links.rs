@@ -721,7 +721,6 @@ mod links_check_command {
     }
 
     #[test]
-    #[ignore = "implemented by T101"]
     fn without_settings_it_says_it_was_skipped_and_why_and_still_succeeds() {
         let fix = Fixture::new();
         fix.link("s1", "42").unwrap();
@@ -741,7 +740,6 @@ mod links_check_command {
     }
 
     #[test]
-    #[ignore = "implemented by T101"]
     fn it_reports_agreement_disagreement_and_unreachable_links_with_exit_0() {
         let fix = Fixture::new();
         let client = FakeClient::new();
@@ -787,7 +785,6 @@ mod links_check_command {
     }
 
     #[test]
-    #[ignore = "implemented by T101"]
     fn with_no_links_it_says_so() {
         let fix = Fixture::new();
         let client = FakeClient::new();

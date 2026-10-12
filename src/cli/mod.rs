@@ -634,6 +634,7 @@ pub fn run_with(
             doc,
         } => link::run_link(env, state_dir, &owner, &cortex, &kind, doc.as_deref()),
         Command::Unlink { owner, cortex } => link::run_unlink(env, state_dir, &owner, &cortex),
+        Command::LinksCheck => link::run_links_check(env, state_dir),
         Command::Hook { agent, event } => {
             hook::run(agent.as_deref(), event.as_deref(), state_dir, env);
             Ok(Output::empty())
@@ -947,8 +948,8 @@ mod tests {
     #[test]
     fn unimplemented_commands_report_not_implemented_with_exit_1() {
         let fake = FakeEnv::new();
-        let err = run(Command::LinksCheck, &fake.env).unwrap_err();
-        assert!(matches!(&err, Error::NotImplemented(name) if name == "links-check"));
+        let err = run(Command::Serve { port: None }, &fake.env).unwrap_err();
+        assert!(matches!(&err, Error::NotImplemented(name) if name == "serve"));
         assert_eq!(err.exit_code(), 1);
     }
 }

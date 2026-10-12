@@ -43,6 +43,37 @@ pub fn link_json(link: &Link) -> Value {
     })
 }
 
+impl Outcome {
+    /// Stable machine name, as in `links check --json`.
+    pub fn name(&self) -> &'static str {
+        match self {
+            Self::Agree { .. } => "agree",
+            Self::Disagree { .. } => "disagree",
+            Self::NoRemoteStatus => "no_remote_status",
+            Self::OwnerMissing => "owner_missing",
+            Self::Unreachable { .. } => "unreachable",
+        }
+    }
+}
+
+/// One checked link as JSON: the link, both statuses and the outcome. The
+/// remote status is given only when it differs from the local one.
+pub fn check_json(check: &LinkCheck) -> Value {
+    let mut value = link_json(&check.link);
+    let (remote, reason) = match &check.outcome {
+        Outcome::Disagree { remote, .. } => (Some(remote.as_str()), None),
+        Outcome::Unreachable { reason } => (None, Some(reason.as_str())),
+        Outcome::Agree { .. } | Outcome::NoRemoteStatus | Outcome::OwnerMissing => (None, None),
+    };
+    if let Value::Object(map) = &mut value {
+        map.insert("local_status".to_owned(), json!(check.local_status));
+        map.insert("remote_status".to_owned(), json!(remote));
+        map.insert("outcome".to_owned(), json!(check.outcome.name()));
+        map.insert("reason".to_owned(), json!(reason));
+    }
+    value
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum CheckError {
     #[error("cannot read the links to check: {0}")]

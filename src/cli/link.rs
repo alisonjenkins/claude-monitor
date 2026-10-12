@@ -11,7 +11,9 @@ use super::show::user_author;
 use super::Output;
 use crate::env::Env;
 use crate::error::Error;
-use crate::export::links::link_json;
+use crate::export::links::{
+    check_json, check_links, link_json, Check, LinkCheck, Outcome, LOOKUP_TIMEOUT,
+};
 use crate::model::OwnerKind;
 use crate::store::links::NewLink;
 
@@ -71,6 +73,63 @@ pub fn run_link(
             "ok": true,
             "created": added.created,
             "link": link_json(&added.link),
+        }),
+    })
+}
+
+fn describe(check: &LinkCheck) -> String {
+    let link = &check.link;
+    let at = format!(
+        "{} {} -> node {}",
+        link.owner_kind.as_str(),
+        link.owner_id,
+        link.cortex_node_id
+    );
+    match &check.outcome {
+        Outcome::Agree { status } => format!("agree        {at} ({status})"),
+        Outcome::Disagree { local, remote } => {
+            format!("DISAGREE     {at}: local {local}, remote {remote}")
+        }
+        Outcome::NoRemoteStatus => format!("no status    {at}: the remote node has no status"),
+        Outcome::OwnerMissing => format!("owner gone   {at}: no such {}", link.owner_kind.as_str()),
+        Outcome::Unreachable { reason } => format!("unreachable  {at}: {reason}"),
+    }
+}
+
+/// `claude-monitor links check`: always succeeds; a remote that cannot be
+/// reached is reported per link and as a warning, never as an error.
+pub fn run_links_check(env: &Env, state_dir: Option<&Path>) -> Result<Output, Error> {
+    let store = open_viewer_store(env, state_dir)?;
+    let result = check_links(&store, env.vars.as_ref(), LOOKUP_TIMEOUT)
+        .map_err(|e| store_error_message("check links", Some(store.path()), &e))?;
+    let checks = match result {
+        Check::Skipped { reason } => {
+            let message = format!("links check skipped: {reason}");
+            return Ok(Output::Dual {
+                text: message,
+                json: json!({ "ok": true, "checked": false, "skipped": reason, "links": [] }),
+            });
+        }
+        Check::Checked(checks) => checks,
+    };
+    let count = |name: &str| checks.iter().filter(|c| c.outcome.name() == name).count();
+    let (agree, disagree, unreachable) = (count("agree"), count("disagree"), count("unreachable"));
+    let mut lines: Vec<String> = checks.iter().map(describe).collect();
+    if lines.is_empty() {
+        lines.push("no links to check".to_owned());
+    }
+    if unreachable > 0 {
+        lines.push(format!(
+            "warning: {unreachable} link(s) could not be checked; the remote was unreachable"
+        ));
+    }
+    Ok(Output::Dual {
+        text: lines.join("\n"),
+        json: json!({
+            "ok": true,
+            "checked": true,
+            "summary": { "agree": agree, "disagree": disagree, "unreachable": unreachable },
+            "links": checks.iter().map(check_json).collect::<Vec<_>>(),
         }),
     })
 }
