@@ -27,7 +27,6 @@ fn ten_tasks_four_done() -> String {
 }
 
 #[test]
-#[ignore = "T086"]
 fn four_of_ten_with_current_item() {
     let p = speckit::parse(&ten_tasks_four_done(), Some("tasks.md")).unwrap();
     assert_eq!((p.done, p.total), (4, 10));
@@ -38,7 +37,6 @@ fn four_of_ten_with_current_item() {
 }
 
 #[test]
-#[ignore = "T086"]
 fn speckit_fixture_counts_phases_and_source() {
     let p = speckit::parse(SPECKIT, Some("specs/008/tasks.md")).unwrap();
     assert_eq!((p.done, p.total), (4, 9));
@@ -69,7 +67,6 @@ fn speckit_fixture_counts_phases_and_source() {
 }
 
 #[test]
-#[ignore = "T086"]
 fn speckit_strips_markers_and_keeps_ids() {
     let p = speckit::parse(SPECKIT, None).unwrap();
     let ids: Vec<_> = p
@@ -93,13 +90,11 @@ fn speckit_strips_markers_and_keeps_ids() {
 }
 
 #[test]
-#[ignore = "T086"]
 fn speckit_ignores_checkboxes_without_task_ids() {
     assert!(speckit::parse("- [ ] just a bullet\n- [x] another\n", None).is_none());
 }
 
 #[test]
-#[ignore = "T086"]
 fn checklist_fixture() {
     let p = checklist::parse(CHECKLIST, Some("PENDING.md")).unwrap();
     assert_eq!((p.done, p.total), (2, 6));
@@ -118,14 +113,12 @@ fn checklist_fixture() {
 }
 
 #[test]
-#[ignore = "T086"]
 fn checklist_without_boxes_is_none() {
     assert!(checklist::parse("# Title\n\n- plain\n- [?] odd\n", None).is_none());
     assert!(checklist::parse("", None).is_none());
 }
 
 #[test]
-#[ignore = "T086"]
 fn fences_and_crlf_are_handled() {
     let text =
         "- [x] a\r\n```\r\n- [ ] hidden\r\n```\r\n- [ ] b\r\n~~~\r\n- [ ] hidden too\r\n~~~\r\n";
@@ -135,7 +128,6 @@ fn fences_and_crlf_are_handled() {
 }
 
 #[test]
-#[ignore = "T086"]
 fn all_done_has_no_current() {
     let p = checklist::parse("- [x] a\n- [X] b\n", None).unwrap();
     assert_eq!((p.done, p.total), (2, 2));
@@ -255,7 +247,6 @@ fn check_invariants(p: &Progress) {
 }
 
 #[test]
-#[ignore = "T086"]
 fn random_markdown_never_panics_and_keeps_invariants() {
     let mut rng = Rng(0x9E37_79B9_7F4A_7C15);
     for _ in 0..3000 {
@@ -302,4 +293,22 @@ fn random_json_never_panics() {
             check_invariants(&p);
         }
     }
+}
+
+/// One phase per task made the phase lookup quadratic: seconds for 60k
+/// phases, milliseconds with a map.
+#[test]
+fn a_file_with_a_phase_per_task_parses_in_linear_time() {
+    let mut text = String::new();
+    for n in 0..60_000 {
+        text.push_str(&format!("## Phase {n}: p{n}\n- [ ] T{n:05} task\n"));
+    }
+    let started = std::time::Instant::now();
+    let progress = speckit::parse(&text, None).unwrap();
+    let elapsed = started.elapsed();
+    assert_eq!(progress.phases.len(), 60_000);
+    assert!(
+        elapsed < std::time::Duration::from_secs(3),
+        "parsing took {elapsed:?}"
+    );
 }

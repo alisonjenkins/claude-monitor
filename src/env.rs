@@ -467,16 +467,33 @@ impl Notifier for SystemNotifier {
     }
 }
 
+/// Largest file `Fs::read_to_string` returns; its callers read plan files, and
+/// a hostile or runaway one must not be loaded whole.
+const MAX_READ_BYTES: u64 = 1024 * 1024;
+
 #[derive(Debug, Clone, Copy)]
 pub struct SystemFs;
 
 impl Fs for SystemFs {
     fn read_to_string(&self, path: &Path) -> Result<String, EnvError> {
-        std::fs::read_to_string(path).map_err(|source| EnvError::Io {
+        let io = |source| EnvError::Io {
             operation: "read file",
             path: path.to_owned(),
             source,
-        })
+        };
+        let mut text = String::new();
+        let read = std::fs::File::open(path)
+            .map_err(io)?
+            .take(MAX_READ_BYTES.saturating_add(1))
+            .read_to_string(&mut text)
+            .map_err(io)?;
+        if read as u64 > MAX_READ_BYTES {
+            return Err(EnvError::Failed {
+                operation: "read file",
+                detail: format!("{} is larger than {MAX_READ_BYTES} bytes", path.display()),
+            });
+        }
+        Ok(text)
     }
 
     fn exists(&self, path: &Path) -> bool {
@@ -603,5 +620,20 @@ mod tests {
         assert!(!fs.exists(&dir.path().join("missing")));
         let err = fs.read_to_string(&dir.path().join("missing")).unwrap_err();
         assert!(err.to_string().starts_with("read file "), "{err}");
+    }
+
+    #[test]
+    fn system_fs_refuses_a_file_over_the_read_cap() {
+        let dir = tempfile::tempdir().unwrap();
+        let fits = dir.path().join("fits");
+        std::fs::write(&fits, vec![b'a'; MAX_READ_BYTES as usize]).unwrap();
+        assert_eq!(
+            SystemFs.read_to_string(&fits).unwrap().len(),
+            MAX_READ_BYTES as usize
+        );
+        let big = dir.path().join("big");
+        std::fs::write(&big, vec![b'a'; MAX_READ_BYTES as usize + 1]).unwrap();
+        let err = SystemFs.read_to_string(&big).unwrap_err();
+        assert!(err.to_string().contains("larger than"), "{err}");
     }
 }
