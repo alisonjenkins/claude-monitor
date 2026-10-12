@@ -13,6 +13,7 @@ use crate::agents::discover_store::{DiscoverStoreError, DiscoverSummary};
 use crate::agents::{claude_discover, copilot_discover, AgentKind};
 use crate::env::Env;
 use crate::model::{Author, Session, State};
+use crate::progress::binding::SyncSummary;
 use crate::reconcile::{reconcile, ReconcileReport, Scope};
 use crate::store::events::{EventsError, NewEvent};
 use crate::store::sessions::SessionsError;
@@ -32,6 +33,8 @@ pub struct RefreshReport {
     /// Known sessions whose pid, pane or state the registry changed.
     pub registry_updated: usize,
     pub reconcile: Option<ReconcileReport>,
+    /// Plan bindings made and plan files re-read.
+    pub progress: SyncSummary,
     pub warnings: Vec<String>,
 }
 
