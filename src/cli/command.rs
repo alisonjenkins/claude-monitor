@@ -105,6 +105,7 @@ pub enum Command {
     },
     ExportCortexiphan {
         project: Option<String>,
+        include_text: bool,
         out: Option<PathBuf>,
     },
     LinksCheck,
@@ -328,6 +329,7 @@ const ALL: &[CommandInfo] = &[
         implemented_by: "T098",
         example: || Command::ExportCortexiphan {
             project: None,
+            include_text: false,
             out: None,
         },
     },

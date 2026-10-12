@@ -222,6 +222,11 @@ enum Commands {
         #[arg(required = true)]
         sessions: Vec<String>,
     },
+    /// Write projects, steps, notes and sessions for another tool to import
+    Export {
+        #[command(subcommand)]
+        target: ExportTarget,
+    },
 }
 
 #[derive(Subcommand)]
@@ -251,6 +256,22 @@ enum ProjectCommands {
     Rename { name: String, new_name: String },
     /// Set a project's status: active, parked, done or archived
     SetStatus { name: String, status: String },
+}
+
+#[derive(Subcommand)]
+enum ExportTarget {
+    /// JSON Lines in cortexiphan's vocabulary; conversation text is left out
+    Cortexiphan {
+        /// Only this project (name or id)
+        #[arg(long, value_name = "P")]
+        project: Option<String>,
+        /// Also export prompts, last assistant messages and model-written summaries
+        #[arg(long)]
+        include_text: bool,
+        /// Write to this file instead of stdout
+        #[arg(long, value_name = "FILE")]
+        out: Option<PathBuf>,
+    },
 }
 
 impl Cli {
@@ -401,6 +422,18 @@ impl Cli {
             },
             Some(Commands::Undismiss { target }) => Command::Undismiss {
                 target: target.clone(),
+            },
+            Some(Commands::Export {
+                target:
+                    ExportTarget::Cortexiphan {
+                        project,
+                        include_text,
+                        out,
+                    },
+            }) => Command::ExportCortexiphan {
+                project: project.clone(),
+                include_text: *include_text,
+                out: out.clone(),
             },
         }
     }
