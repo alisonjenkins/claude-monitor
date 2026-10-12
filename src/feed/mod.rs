@@ -13,6 +13,7 @@ use crate::store::Store;
 
 pub mod claude;
 pub mod copilot;
+pub mod files;
 pub mod fs;
 pub mod merge;
 pub mod proc_exit;
@@ -21,6 +22,7 @@ pub mod safety_net;
 
 pub use claude::{ClaudeProjectsSource, ClaudeSourceError};
 pub use copilot::{CopilotSessionsSource, CopilotSourceError};
+pub use files::{BoundFilesSource, FilesSourceError};
 pub use fs::{FsSourceError, FsWatcherSource};
 pub use merge::MergedSource;
 pub use proc_exit::{ProcExitError, ProcExitHandle, ProcExitSource};
