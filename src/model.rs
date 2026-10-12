@@ -294,6 +294,23 @@ pub enum OwnerKind {
     Project,
 }
 
+impl OwnerKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Session => "session",
+            Self::Project => "project",
+        }
+    }
+
+    pub fn parse(value: &str) -> Option<Self> {
+        match value {
+            "session" => Some(Self::Session),
+            "project" => Some(Self::Project),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "author_kind", rename_all = "snake_case")]
 pub enum Author {
