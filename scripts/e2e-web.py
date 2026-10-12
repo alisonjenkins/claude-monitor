@@ -129,6 +129,40 @@ with sync_playwright() as pw:
     check("ungrouped finished (4) still shown as Finished",
           page.locator(f"#section-finished #s-{ID[4]}").count() == 1)
 
+    # 2b. dismiss asks first; Respawn goes to the preview
+    note("== 2b. confirmation before dismiss, preview before respawn")
+
+    def listed(session_id):
+        return any(s["id"] == session_id for s in mon("list", "--expand-finished")["sessions"])
+
+    page.goto(f"{BASE}/sessions/{ID[4]}", wait_until="load")
+    page.get_by_role("button", name="Dismiss").click()
+    page.wait_for_selector("[data-confirm]", timeout=5000)
+    check("dismiss opens the inline panel without changing anything", listed(ID[4]))
+    check("focus moved to the Confirm button",
+          page.evaluate("() => document.activeElement.hasAttribute('data-confirm-yes')"))
+    shot(page, "02b-dismiss-confirm")
+    page.keyboard.press("Escape")
+    check("Escape closes the panel and nothing changed",
+          page.locator("[data-confirm]").count() == 0 and listed(ID[4]))
+    page.get_by_role("button", name="Dismiss").click()
+    page.wait_for_selector("[data-confirm]", timeout=5000)
+    page.get_by_role("button", name="Confirm").click()
+    for _ in range(50):
+        if not listed(ID[4]):
+            break
+        time.sleep(0.1)
+    check("Confirm dismisses the session", not listed(ID[4]))
+    mon("undismiss", ID[4])
+    check("undismiss needs no confirmation", listed(ID[4]))
+    page.goto(f"{BASE}/", wait_until="load")
+    page.locator(f"#s-{ID[3]}").get_by_role("link", name="Respawn").click()
+    page.wait_for_url("**/restore?session=*", timeout=5000)
+    check("overview Respawn opens the single-session preview",
+          page.get_by_role("button", name="Respawn").count() == 1)
+    check("nothing started by opening it",
+          subprocess.run(["tmux", "-S", SOCK, "list-panes", "-a"], capture_output=True).returncode != 0)
+
     # 3. restore preview then confirm
     note("== 3. respawn from the page")
     page.goto(f"{BASE}/restore", wait_until="load")
