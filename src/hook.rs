@@ -22,6 +22,7 @@ const PRIVATE_FILE_MODE: u32 = 0o600;
 const HOOK_COMPONENT: &str = "hook";
 const ENTITY_SESSION: &str = "session";
 const NO_EVENT: &str = "-";
+const EVENT_NAME_FIELD: &str = "hook_event_name";
 const GIT_DIR_PREFIX: &str = "gitdir:";
 const GIT_BRANCH_PREFIX: &str = "ref: refs/heads/";
 
@@ -125,8 +126,19 @@ enum HookError {
 
 /// `input` with `hook_event_name` set to `event` when the payload is a JSON
 /// object without a non-null `hook_event_name`. Anything else is returned as is.
-pub fn inject_event(input: &str, _event: Option<&str>) -> String {
-    input.to_owned()
+pub fn inject_event(input: &str, event: Option<&str>) -> String {
+    let Some(event) = event else {
+        return input.to_owned();
+    };
+    match serde_json::from_str::<Value>(input) {
+        Ok(Value::Object(mut object))
+            if object.get(EVENT_NAME_FIELD).is_none_or(Value::is_null) =>
+        {
+            object.insert(EVENT_NAME_FIELD.to_owned(), Value::String(event.to_owned()));
+            Value::Object(object).to_string()
+        }
+        _ => input.to_owned(),
+    }
 }
 
 /// Ingest one hook payload. Never fails and never prints to stdout: errors go
@@ -144,7 +156,7 @@ pub fn ingest_with(ctx: &HookContext<'_>, kinds: &[&dyn AgentKind], input: &str)
         Err(e) => return log_failure(ctx, NO_EVENT, &HookError::InvalidJson(e)),
     };
     let event_name = raw
-        .get("hook_event_name")
+        .get(EVENT_NAME_FIELD)
         .and_then(Value::as_str)
         .unwrap_or(NO_EVENT);
     if let Err(e) = ingest_payload(ctx, kinds, &raw) {
@@ -488,7 +500,7 @@ fn append_log(state_dir: &Path, line: &str) -> std::io::Result<()> {
 /// Entry point for `claude-monitor hook`, called by the agent's hook
 /// mechanism. Always returns normally (exit 0) and never writes to stdout:
 /// Claude Code may interpret stdout for some events.
-pub fn run(agent: Option<&str>, state_dir: Option<&Path>, env: &Env) {
+pub fn run(agent: Option<&str>, event: Option<&str>, state_dir: Option<&Path>, env: &Env) {
     let agent = agents::resolve_agent(agent, env.vars.as_ref());
     let state_dir: PathBuf = match resolve_state_dir(state_dir, &StateDirEnv::from_process()) {
         Ok(dir) => dir,
@@ -508,7 +520,7 @@ pub fn run(agent: Option<&str>, state_dir: Option<&Path>, env: &Env) {
 
     let mut input = String::new();
     match std::io::stdin().read_to_string(&mut input) {
-        Ok(_) => ingest(&ctx, &input),
+        Ok(_) => ingest(&ctx, &inject_event(&input, event)),
         Err(e) => log_failure(&ctx, NO_EVENT, &HookError::ReadStdin(e)),
     }
 }

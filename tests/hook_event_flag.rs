@@ -15,7 +15,6 @@ fn parsed(text: &str) -> Value {
 }
 
 #[test]
-#[ignore = "T062c: inject_event is a stub"]
 fn the_event_is_injected_when_the_payload_has_no_name() {
     let out = inject_event(r#"{"sessionId":"s1"}"#, Some("agentStop"));
 
@@ -26,7 +25,6 @@ fn the_event_is_injected_when_the_payload_has_no_name() {
 }
 
 #[test]
-#[ignore = "T062c: inject_event is a stub"]
 fn a_null_name_counts_as_missing() {
     let out = inject_event(r#"{"hook_event_name":null}"#, Some("agentStop"));
 
@@ -56,7 +54,6 @@ fn input_that_is_not_a_json_object_is_returned_as_is() {
 }
 
 #[test]
-#[ignore = "T062c: inject_event is a stub"]
 fn an_explicit_event_beats_the_wrong_inference() {
     // `toolName` makes field inference say preToolUse, which ignores `prompt`.
     let payload = json!({

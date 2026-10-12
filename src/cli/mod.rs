@@ -120,9 +120,9 @@ impl Cli {
     pub fn command(&self) -> Command {
         match &self.command {
             None => Command::Dashboard,
-            Some(Commands::Hook { agent, event: _ }) => Command::Hook {
+            Some(Commands::Hook { agent, event }) => Command::Hook {
                 agent: agent.clone(),
-                event: None,
+                event: event.clone(),
             },
             Some(Commands::List {
                 states,
@@ -212,8 +212,8 @@ pub fn run_with(
         Command::Show { session } => show::run(env, state_dir, &session),
         Command::Reconcile { pane, session } => reconcile::run(env, state_dir, pane, session),
         Command::Watch => watch::run(env, state_dir),
-        Command::Hook { agent, event: _ } => {
-            hook::run(agent.as_deref(), state_dir, env);
+        Command::Hook { agent, event } => {
+            hook::run(agent.as_deref(), event.as_deref(), state_dir, env);
             Ok(Output::empty())
         }
         Command::Dashboard => run_dashboard(env, state_dir),
@@ -318,7 +318,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "T062c: --event is parsed but not yet passed on"]
     fn hook_event_flag_is_passed_through() {
         let cli = Cli::try_parse_from([
             "claude-monitor",
