@@ -10,7 +10,8 @@ use std::path::{Path, PathBuf};
 
 use crate::agents::{AgentKind, Launch, LaunchError, LaunchMode, LauncherConfig, Precondition};
 use crate::env::{Env, EnvError, Vars};
-use crate::model::Session;
+use crate::model::{Author, Session};
+use crate::store::events::NewEvent;
 use crate::store::Store;
 
 /// Why a respawn was refused. Codes are the strings stored in
@@ -186,7 +187,7 @@ pub fn plan_respawn_with(
         launch,
         setup,
         notices,
-        label: String::new(),
+        label: session_name(&target),
     })
 }
 
@@ -206,8 +207,10 @@ pub fn launcher_var(agent_kind: &str) -> String {
 }
 
 /// The launcher template configured for `agent_kind` (see [`launcher_var`]).
-pub fn launcher_from_env(_vars: &dyn Vars, _agent_kind: &str) -> LauncherConfig {
-    LauncherConfig::default()
+pub fn launcher_from_env(vars: &dyn Vars, agent_kind: &str) -> LauncherConfig {
+    LauncherConfig {
+        template: vars.var(&launcher_var(agent_kind)),
+    }
 }
 
 /// A respawn that started: the new window and the request awaiting the new
@@ -241,16 +244,92 @@ pub type Outcome = Result<Started, ExecuteError>;
 /// setup commands, open one window for the launch, record the respawn request
 /// for its pane and append `session.respawn_requested`. Never starts any
 /// session the plan does not name.
-pub fn execute(
-    _store: &Store,
-    _env: &Env,
-    _plan: &Plan,
-    _tmux_session: &str,
-    _now: &str,
-) -> Outcome {
+///
+/// Setup runs before tmux is touched: a failed `git worktree add` leaves no
+/// window and no tmux server behind, and the new window's directory exists.
+pub fn execute(store: &Store, env: &Env, plan: &Plan, tmux_session: &str, now: &str) -> Outcome {
+    for command in &plan.setup {
+        run_setup(command)?;
+    }
+    env.tmux.ensure_session(tmux_session, &plan.launch.cwd)?;
+    let window = env.tmux.spawn_window(
+        tmux_session,
+        &plan.label,
+        &plan.launch.cwd,
+        &launch_argv(&plan.launch),
+    )?;
+
+    let store_error = |operation: &'static str, e: &dyn std::fmt::Display| ExecuteError::Store {
+        operation,
+        detail: format!(
+            "{e} (window {} is open in {tmux_session})",
+            window.window_id
+        ),
+    };
+    let request = store
+        .create_respawn_request(&plan.session_id, &window.pane_id, now)
+        .map_err(|e| store_error("record respawn request", &e))?;
+    let payload = serde_json::json!({
+        "pane": window.pane_id,
+        "window": window.window_id,
+        "tmux_session": tmux_session,
+        "mode": plan.mode.as_str(),
+        "request": request.id,
+    });
+    let author = Author::User {
+        name: env.vars.var("USER").unwrap_or_else(|| "user".to_owned()),
+    };
+    store
+        .append_event(&NewEvent {
+            at: now,
+            entity_kind: ENTITY_SESSION,
+            entity_id: &plan.session_id,
+            kind: "session.respawn_requested",
+            payload: &payload,
+            author: &author,
+        })
+        .map_err(|e| store_error("record respawn event", &e))?;
+    Ok(Started {
+        session_id: plan.session_id.clone(),
+        pane_id: window.pane_id,
+        window_id: window.window_id,
+        request_id: request.id,
+    })
+}
+
+const ENTITY_SESSION: &str = "session";
+
+/// The words tmux runs. tmux has no environment option for a new window, so
+/// extra variables go through `env`.
+fn launch_argv(launch: &Launch) -> Vec<String> {
+    let mut argv = Vec::new();
+    if !launch.env.is_empty() {
+        argv.push("env".to_owned());
+        argv.extend(launch.env.iter().map(|(k, v)| format!("{k}={v}")));
+    }
+    argv.push(launch.program.clone());
+    argv.extend(launch.args.iter().cloned());
+    argv
+}
+
+fn run_setup(command: &Launch) -> Result<(), ExecuteError> {
+    let shown = launch_argv(command).join(" ");
+    let output = std::process::Command::new(&command.program)
+        .args(&command.args)
+        .envs(command.env.iter().map(|(k, v)| (k, v)))
+        .current_dir(&command.cwd)
+        .output()
+        .map_err(|e| ExecuteError::Setup {
+            command: shown.clone(),
+            detail: e.to_string(),
+        })?;
+    if output.status.success() {
+        return Ok(());
+    }
+    let stderr = String::from_utf8_lossy(&output.stderr);
     Err(ExecuteError::Setup {
-        command: String::new(),
-        detail: "not implemented".to_owned(),
+        command: shown,
+        detail: format!("{}: {}", output.status, stderr.trim()),
     })
 }
 

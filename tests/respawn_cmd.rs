@@ -82,7 +82,6 @@ mod execute_with_a_fake_tmux {
     }
 
     #[test]
-    #[ignore = "pending T073 execute"]
     fn ensures_the_session_then_opens_one_window_with_the_plans_argv_cwd_and_label() {
         let s = setup();
 
@@ -109,7 +108,6 @@ mod execute_with_a_fake_tmux {
     }
 
     #[test]
-    #[ignore = "pending T073 execute"]
     fn records_an_open_request_for_the_new_pane() {
         let s = setup();
 
@@ -126,7 +124,6 @@ mod execute_with_a_fake_tmux {
     }
 
     #[test]
-    #[ignore = "pending T073 execute"]
     fn appends_a_user_authored_respawn_requested_event() {
         let s = setup();
 
@@ -150,7 +147,6 @@ mod execute_with_a_fake_tmux {
     }
 
     #[test]
-    #[ignore = "pending T073 execute"]
     fn does_not_add_or_change_session_rows() {
         let s = setup();
         let before = s.store.list_sessions().unwrap();
@@ -161,7 +157,6 @@ mod execute_with_a_fake_tmux {
     }
 
     #[test]
-    #[ignore = "pending T073 execute"]
     fn a_failing_tmux_records_nothing() {
         let s = setup();
         s.fake.tmux.fail_creates("no server");
@@ -173,7 +168,6 @@ mod execute_with_a_fake_tmux {
     }
 
     #[test]
-    #[ignore = "pending T073 execute"]
     fn a_failing_setup_command_stops_before_any_window_opens() {
         let s = setup();
         let mut plan = plan();
@@ -200,7 +194,6 @@ mod execute_with_a_fake_tmux {
 }
 
 #[test]
-#[ignore = "pending T073 launcher_from_env"]
 fn the_launcher_template_comes_from_the_agent_kinds_variable() {
     let fake = FakeEnv::new();
     fake.vars.set("CLAUDE_MONITOR_LAUNCHER_CLAUDE", "sleep 30");
@@ -218,7 +211,6 @@ fn the_launcher_template_comes_from_the_agent_kinds_variable() {
 }
 
 #[test]
-#[ignore = "pending T073 plan label"]
 fn the_plan_labels_its_window_with_the_branch_else_the_directory() {
     let fake = FakeEnv::new();
     fake.fs.add_dir("/w/proj");

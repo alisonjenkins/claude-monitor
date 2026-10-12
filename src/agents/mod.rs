@@ -119,6 +119,15 @@ pub enum LaunchMode {
     Fresh,
 }
 
+impl LaunchMode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Resume => "resume",
+            Self::Fresh => "fresh",
+        }
+    }
+}
+
 /// A process to start: program, arguments, working directory and extra environment.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Launch {
