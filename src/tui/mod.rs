@@ -3,5 +3,6 @@ pub mod dashboard;
 pub mod detail;
 pub mod filter;
 pub mod links;
+pub mod projects;
 pub mod restore;
 pub mod view;
