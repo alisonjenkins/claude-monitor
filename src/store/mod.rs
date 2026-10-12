@@ -9,6 +9,7 @@ use rusqlite::Connection;
 pub mod events;
 pub mod legacy;
 mod migrations;
+pub mod progress;
 pub mod queries;
 pub mod respawn;
 mod schema;
