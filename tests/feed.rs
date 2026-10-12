@@ -11,99 +11,14 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use claude_monitor::model::Author;
-use claude_monitor::store::events::{EventRow, EventsError, NewEvent};
+use claude_monitor::store::events::{EventRow, NewEvent};
 use claude_monitor::store::{Store, StoreOptions};
 use serde_json::json;
 use tempfile::TempDir;
 
-use stub::{ChangeFeed, EventSource, FakeHandle, FakeSource, FsWatcherSource, ManualClock};
-
-/// Stand-ins so this file compiles before the feed exists; T027 replaces them
-/// with the real `claude_monitor::feed` items.
-#[allow(dead_code, unused_variables, clippy::unimplemented)]
-mod stub {
-    use super::*;
-
-    pub trait EventSource {
-        fn wait(&mut self, timeout: Duration) -> bool;
-    }
-
-    #[derive(Clone)]
-    pub struct ManualClock;
-
-    impl ManualClock {
-        pub fn new() -> Self {
-            unimplemented!()
-        }
-        pub fn advance(&self, by: Duration) {
-            unimplemented!()
-        }
-    }
-
-    pub struct FakeSource;
-
-    #[derive(Clone)]
-    pub struct FakeHandle;
-
-    impl FakeSource {
-        pub fn new() -> (Self, FakeHandle) {
-            unimplemented!()
-        }
-    }
-
-    impl FakeHandle {
-        pub fn wake(&self) {
-            unimplemented!()
-        }
-        pub fn is_closed(&self) -> bool {
-            unimplemented!()
-        }
-    }
-
-    impl EventSource for FakeSource {
-        fn wait(&mut self, timeout: Duration) -> bool {
-            unimplemented!()
-        }
-    }
-
-    pub struct FsWatcherSource;
-
-    impl FsWatcherSource {
-        pub fn watch(dir: &std::path::Path) -> Result<Self, std::io::Error> {
-            unimplemented!()
-        }
-    }
-
-    impl EventSource for FsWatcherSource {
-        fn wait(&mut self, timeout: Duration) -> bool {
-            unimplemented!()
-        }
-    }
-
-    pub struct ChangeFeed<S, C> {
-        source: S,
-        clock: C,
-    }
-
-    impl<S, C> Drop for ChangeFeed<S, C> {
-        fn drop(&mut self) {}
-    }
-
-    impl<S: EventSource> ChangeFeed<S, ManualClock> {
-        pub fn new(store: Store, source: S, clock: ManualClock) -> Result<Self, EventsError> {
-            unimplemented!()
-        }
-        pub fn poll(&mut self) -> Result<Vec<EventRow>, EventsError> {
-            unimplemented!()
-        }
-        pub fn resume_from(&mut self, seq: i64) {
-            unimplemented!()
-        }
-        pub fn cursor(&self) -> i64 {
-            unimplemented!()
-        }
-    }
-}
+use claude_monitor::feed::{
+    ChangeFeed, EventSource, FakeHandle, FakeSource, FsWatcherSource, ManualClock,
+};
 
 const AT: &str = "2026-10-12T14:03:22Z";
 const WINDOW: Duration = Duration::from_millis(50);
@@ -164,7 +79,6 @@ fn rig() -> Rig {
 }
 
 #[test]
-#[ignore = "T027"]
 fn a_committed_event_yields_one_poll_result_and_advances_the_cursor() {
     let mut rig = rig();
     let seq = append(&rig.writer, 1);
@@ -181,7 +95,6 @@ fn a_committed_event_yields_one_poll_result_and_advances_the_cursor() {
 }
 
 #[test]
-#[ignore = "T027"]
 fn a_burst_of_wakes_inside_one_window_fires_once() {
     let mut rig = rig();
     let mut fires = 0;
@@ -206,7 +119,6 @@ fn a_burst_of_wakes_inside_one_window_fires_once() {
 }
 
 #[test]
-#[ignore = "T027"]
 fn wakes_every_2ms_fire_every_window_instead_of_starving() {
     let mut rig = rig();
     let mut fire_times = Vec::new();
@@ -240,7 +152,6 @@ fn wakes_every_2ms_fire_every_window_instead_of_starving() {
 }
 
 #[test]
-#[ignore = "T027"]
 fn the_last_event_of_a_burst_is_never_lost() {
     let mut rig = rig();
     let mut delivered = Vec::new();
@@ -263,7 +174,6 @@ fn the_last_event_of_a_burst_is_never_lost() {
 }
 
 #[test]
-#[ignore = "T027"]
 fn resume_from_replays_exactly_the_missed_events() {
     let mut rig = rig();
     let all: Vec<i64> = (0..5).map(|n| append(&rig.writer, n)).collect();
@@ -277,7 +187,6 @@ fn resume_from_replays_exactly_the_missed_events() {
 }
 
 #[test]
-#[ignore = "T027"]
 fn resume_from_a_cursor_beyond_the_end_returns_nothing() {
     let mut rig = rig();
     append(&rig.writer, 1);
@@ -291,7 +200,6 @@ fn resume_from_a_cursor_beyond_the_end_returns_nothing() {
 }
 
 #[test]
-#[ignore = "T027"]
 fn two_feeds_on_one_store_keep_independent_cursors() {
     let dir = TempDir::new().unwrap();
     let writer = open(&dir);
@@ -304,12 +212,15 @@ fn two_feeds_on_one_store_keep_independent_cursors() {
     let first = append(&writer, 1);
     wake_a.wake();
     wake_b.wake();
+    assert!(a.poll().unwrap().is_empty());
+    assert!(b.poll().unwrap().is_empty());
     clock.advance(WINDOW);
     assert_eq!(seqs(&a.poll().unwrap()), vec![first]);
 
     let second = append(&writer, 2);
     wake_a.wake();
     wake_b.wake();
+    assert!(a.poll().unwrap().is_empty());
     clock.advance(WINDOW);
     assert_eq!(seqs(&a.poll().unwrap()), vec![second]);
     assert_eq!(seqs(&b.poll().unwrap()), vec![first, second]);
@@ -317,7 +228,6 @@ fn two_feeds_on_one_store_keep_independent_cursors() {
 }
 
 #[test]
-#[ignore = "T027"]
 fn dropping_a_feed_stops_its_source() {
     let rig = rig();
     assert!(!rig.wake.is_closed());
@@ -328,7 +238,6 @@ fn dropping_a_feed_stops_its_source() {
 }
 
 #[test]
-#[ignore = "T027"]
 #[cfg(target_os = "linux")]
 fn the_fs_watcher_wakes_when_another_handle_commits() {
     let dir = TempDir::new().unwrap();
