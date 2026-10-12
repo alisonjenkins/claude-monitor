@@ -405,7 +405,7 @@ impl Tmux for SystemTmux {
             "-d",
             "-P",
             "-F",
-            "#{pane_id}\t#{window_id}",
+            "#{pane_id} #{window_id}",
             "-t",
             &target,
             "-n",
@@ -416,7 +416,8 @@ impl Tmux for SystemTmux {
         ];
         args.extend(argv.iter().map(String::as_str));
         let out = self.output(OPERATION, &args)?;
-        match out.split_once('\t') {
+        // Not a tab: tmux prints tabs as `_` outside a UTF-8 locale.
+        match out.split_once(' ') {
             Some((pane_id, window_id)) => Ok(SpawnedWindow {
                 pane_id: pane_id.to_owned(),
                 window_id: window_id.to_owned(),
