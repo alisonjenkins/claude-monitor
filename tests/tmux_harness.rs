@@ -12,6 +12,7 @@
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
+use claude_monitor::env::{SystemTmux, Tmux};
 use tempfile::TempDir;
 
 pub struct TmuxServer {
@@ -109,4 +110,136 @@ fn the_harness_never_sees_the_users_server() {
         !out.status.success(),
         "a fresh private socket must have no server"
     );
+}
+
+fn sleep_argv() -> Vec<String> {
+    vec!["sleep".to_owned(), "300".to_owned()]
+}
+
+#[test]
+#[ignore = "T070: SystemTmux ensure_session/spawn_window not implemented"]
+fn a_spawned_window_lands_in_the_given_cwd_with_the_given_label() {
+    let Some(server) = TmuxServer::start() else {
+        return;
+    };
+    let tmux = SystemTmux::with_socket(server.socket());
+    let cwd = TempDir::new().unwrap();
+    let cwd_path = cwd.path().canonicalize().unwrap();
+    tmux.ensure_session("agents", &cwd_path).unwrap();
+
+    let win = tmux
+        .spawn_window("agents", "my-proj", &cwd_path, &sleep_argv())
+        .unwrap();
+
+    assert!(win.pane_id.starts_with('%'), "pane id: {}", win.pane_id);
+    assert!(
+        win.window_id.starts_with('@'),
+        "window id: {}",
+        win.window_id
+    );
+    let info = server.run(&[
+        "display-message",
+        "-p",
+        "-t",
+        &win.pane_id,
+        "#{window_id}|#{window_name}|#{pane_current_path}|#{pane_current_command}",
+    ]);
+    assert_eq!(
+        info,
+        format!(
+            "{}|my-proj|{}|sleep",
+            win.window_id,
+            cwd_path.to_str().unwrap()
+        )
+    );
+}
+
+#[test]
+#[ignore = "T070: SystemTmux ensure_session/spawn_window not implemented"]
+fn five_windows_in_a_row_get_distinct_ids() {
+    let Some(server) = TmuxServer::start() else {
+        return;
+    };
+    let tmux = SystemTmux::with_socket(server.socket());
+    let cwd = TempDir::new().unwrap();
+    tmux.ensure_session("agents", cwd.path()).unwrap();
+
+    let wins: Vec<_> = (0..5)
+        .map(|i| {
+            tmux.spawn_window("agents", &format!("w{i}"), cwd.path(), &sleep_argv())
+                .unwrap()
+        })
+        .collect();
+
+    let ids: std::collections::BTreeSet<_> = wins.iter().map(|w| w.pane_id.clone()).collect();
+    assert_eq!(ids.len(), 5);
+    let names = server.run(&["list-windows", "-t", "agents", "-F", "#{window_name}"]);
+    for i in 0..5 {
+        assert!(names.lines().any(|n| n == format!("w{i}")), "{names}");
+    }
+    assert_eq!(
+        names.lines().count(),
+        6,
+        "initial window plus five: {names}"
+    );
+}
+
+#[test]
+#[ignore = "T070: SystemTmux ensure_session/spawn_window not implemented"]
+fn ensure_session_creates_when_absent_and_reuses_when_present() {
+    let Some(server) = TmuxServer::start() else {
+        return;
+    };
+    let tmux = SystemTmux::with_socket(server.socket());
+    let cwd = TempDir::new().unwrap();
+
+    assert!(tmux.ensure_session("agents", cwd.path()).unwrap());
+    assert!(!tmux.ensure_session("agents", cwd.path()).unwrap());
+
+    assert_eq!(
+        server.run(&["list-sessions", "-F", "#{session_name}"]),
+        "agents"
+    );
+    assert_eq!(
+        server
+            .run(&["list-windows", "-t", "agents"])
+            .lines()
+            .count(),
+        1
+    );
+}
+
+#[test]
+#[ignore = "T070: SystemTmux ensure_session/spawn_window not implemented"]
+fn an_existing_session_with_a_similar_name_is_not_reused() {
+    let Some(server) = TmuxServer::start() else {
+        return;
+    };
+    let tmux = SystemTmux::with_socket(server.socket());
+    let cwd = TempDir::new().unwrap();
+    server.run(&[
+        "new-session",
+        "-d",
+        "-s",
+        "agents-old",
+        "-c",
+        cwd.path().to_str().unwrap(),
+    ]);
+
+    assert!(tmux.ensure_session("agents", cwd.path()).unwrap());
+}
+
+#[test]
+#[ignore = "T070: SystemTmux ensure_session/spawn_window not implemented"]
+fn spawn_window_fails_when_the_session_is_missing() {
+    let Some(server) = TmuxServer::start() else {
+        return;
+    };
+    let tmux = SystemTmux::with_socket(server.socket());
+    let cwd = TempDir::new().unwrap();
+
+    let err = tmux
+        .spawn_window("nope", "x", cwd.path(), &sleep_argv())
+        .unwrap_err();
+    assert!(err.to_string().starts_with("spawn tmux window:"), "{err}");
 }

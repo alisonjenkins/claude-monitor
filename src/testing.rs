@@ -6,7 +6,9 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
-use crate::env::{BootId, Clock, Env, EnvError, FileMeta, Fs, Notifier, Processes, Tmux, Vars};
+use crate::env::{
+    BootId, Clock, Env, EnvError, FileMeta, Fs, Notifier, Processes, SpawnedWindow, Tmux, Vars,
+};
 use crate::tmux::PaneLocation;
 
 fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -97,6 +99,16 @@ pub enum TmuxCall {
         command: String,
     },
     DisplayMessage(String),
+    EnsureSession {
+        session: String,
+        cwd: PathBuf,
+    },
+    SpawnWindow {
+        session: String,
+        label: String,
+        cwd: PathBuf,
+        argv: Vec<String>,
+    },
 }
 
 #[derive(Debug, Default)]
@@ -208,6 +220,26 @@ impl Tmux for FakeTmux {
             .calls
             .push(TmuxCall::DisplayMessage(message.to_owned()));
         Ok(())
+    }
+
+    fn ensure_session(&self, _session: &str, _cwd: &Path) -> Result<bool, EnvError> {
+        Err(EnvError::Failed {
+            operation: "ensure tmux session",
+            detail: "not implemented".to_owned(),
+        })
+    }
+
+    fn spawn_window(
+        &self,
+        _session: &str,
+        _label: &str,
+        _cwd: &Path,
+        _argv: &[String],
+    ) -> Result<SpawnedWindow, EnvError> {
+        Err(EnvError::Failed {
+            operation: "spawn tmux window",
+            detail: "not implemented".to_owned(),
+        })
     }
 }
 
@@ -494,6 +526,70 @@ mod tests {
                 TmuxCall::ListPanes,
             ]
         );
+    }
+
+    #[test]
+    #[ignore = "T070: fake ensure_session/spawn_window not implemented"]
+    fn fake_ensure_session_creates_once_then_reuses() {
+        let f = FakeEnv::new();
+        let cwd = Path::new("/w");
+        assert!(f.env.tmux.ensure_session("agents", cwd).unwrap());
+        assert!(!f.env.tmux.ensure_session("agents", cwd).unwrap());
+        assert_eq!(
+            f.tmux.calls(),
+            vec![
+                TmuxCall::EnsureSession {
+                    session: "agents".into(),
+                    cwd: "/w".into()
+                };
+                2
+            ]
+        );
+        let panes = f.env.tmux.list_panes().unwrap().unwrap();
+        assert_eq!(panes.len(), 1);
+    }
+
+    #[test]
+    #[ignore = "T070: fake ensure_session/spawn_window not implemented"]
+    fn fake_spawn_window_records_the_call_and_tracks_a_pane() {
+        let f = FakeEnv::new();
+        let argv = vec!["claude".to_owned(), "--resume".to_owned(), "x".to_owned()];
+        let a = f
+            .env
+            .tmux
+            .spawn_window("agents", "proj", Path::new("/w/a"), &argv)
+            .unwrap();
+        let b = f
+            .env
+            .tmux
+            .spawn_window("agents", "other", Path::new("/w/b"), &argv)
+            .unwrap();
+        assert_ne!(a.pane_id, b.pane_id);
+        assert_ne!(a.window_id, b.window_id);
+        let panes = f.env.tmux.list_panes().unwrap().unwrap();
+        assert!(panes.contains_key(&a.pane_id) && panes.contains_key(&b.pane_id));
+        assert_eq!(
+            f.tmux.calls().first(),
+            Some(&TmuxCall::SpawnWindow {
+                session: "agents".into(),
+                label: "proj".into(),
+                cwd: "/w/a".into(),
+                argv,
+            })
+        );
+    }
+
+    #[test]
+    #[ignore = "T070: fake ensure_session/spawn_window not implemented"]
+    fn fake_spawn_window_failure_uses_the_create_failure() {
+        let f = FakeEnv::new();
+        f.tmux.fail_creates("no server");
+        let err = f
+            .env
+            .tmux
+            .spawn_window("agents", "p", Path::new("/"), &["x".to_owned()])
+            .unwrap_err();
+        assert_eq!(err.to_string(), "spawn tmux window: no server");
     }
 
     #[test]

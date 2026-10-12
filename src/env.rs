@@ -60,6 +60,27 @@ pub trait Tmux: Send + Sync {
     /// Create a detached window in `session` running `command` in `cwd`; returns the pane id.
     fn new_window(&self, session: &str, cwd: &Path, command: &str) -> Result<String, EnvError>;
     fn display_message(&self, message: &str) -> Result<(), EnvError>;
+    /// Make sure the server is running and `session` exists, creating it
+    /// detached in `cwd` when absent. `true` when this call created it.
+    fn ensure_session(&self, session: &str, cwd: &Path) -> Result<bool, EnvError>;
+    /// Open a detached window in `session`, named `label`, running `argv`
+    /// directly (no shell) in `cwd`.
+    fn spawn_window(
+        &self,
+        session: &str,
+        label: &str,
+        cwd: &Path,
+        argv: &[String],
+    ) -> Result<SpawnedWindow, EnvError>;
+}
+
+/// Ids of a window `Tmux::spawn_window` opened.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SpawnedWindow {
+    /// Id of the window's only pane, e.g. `%5`.
+    pub pane_id: String,
+    /// Id of the window itself, e.g. `@3`.
+    pub window_id: String,
 }
 
 pub trait Notifier: Send + Sync {
@@ -331,6 +352,26 @@ impl Tmux for SystemTmux {
     fn display_message(&self, message: &str) -> Result<(), EnvError> {
         self.output("tmux display-message", &["display-message", message])
             .map(|_| ())
+    }
+
+    fn ensure_session(&self, _session: &str, _cwd: &Path) -> Result<bool, EnvError> {
+        Err(EnvError::Failed {
+            operation: "ensure tmux session",
+            detail: "not implemented".to_owned(),
+        })
+    }
+
+    fn spawn_window(
+        &self,
+        _session: &str,
+        _label: &str,
+        _cwd: &Path,
+        _argv: &[String],
+    ) -> Result<SpawnedWindow, EnvError> {
+        Err(EnvError::Failed {
+            operation: "spawn tmux window",
+            detail: "not implemented".to_owned(),
+        })
     }
 }
 
