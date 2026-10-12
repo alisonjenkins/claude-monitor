@@ -197,6 +197,29 @@ in
       };
     };
 
+    launchers = lib.mkOption {
+      type = lib.types.attrsOf lib.types.str;
+      default = { };
+      example = lib.literalExpression ''
+        {
+          claude = "claude --resume {session_id}";
+          copilot = "copilot --resume={session_id}";
+        }
+      '';
+      description = ''
+        Command template per agent kind (`claude`, `copilot`) that
+        `claude-monitor respawn` and `restore` run to resume a session.
+        Placeholders: `{session_id}`, `{cwd}`, `{name}`. A kind with no
+        entry uses its built-in command.
+      '';
+    };
+
+    tmuxSession = lib.mkOption {
+      type = lib.types.str;
+      default = "agents";
+      description = "Name of the tmux session that respawned agents run in.";
+    };
+
     enable = lib.mkEnableOption "claude-monitor, a TUI dashboard for Claude Code sessions in tmux";
 
     package = lib.mkOption {
@@ -212,6 +235,11 @@ in
 
     home.file = lib.mkIf cfg.copilot.enable {
       "${cfg.copilot.hooksDir}/claude-monitor.json".text = builtins.toJSON copilotHooksFile;
+    };
+
+    xdg.configFile."claude-monitor/config.json".text = builtins.toJSON {
+      tmuxSession = cfg.tmuxSession;
+      launchers = cfg.launchers;
     };
 
     programs.tmux.extraConfig = lib.mkMerge [
