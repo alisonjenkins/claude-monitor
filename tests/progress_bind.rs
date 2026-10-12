@@ -117,7 +117,6 @@ fn set_mtime(path: &Path, secs_ago: u64) {
 }
 
 #[test]
-#[ignore = "implemented by T088"]
 fn the_branch_name_binds_its_spec_kit_tasks_file() {
     let rig = rig();
     rig.write("specs/008-ai-control-centre/tasks.md", TASKS);
@@ -142,7 +141,6 @@ fn the_branch_name_binds_its_spec_kit_tasks_file() {
 }
 
 #[test]
-#[ignore = "implemented by T088"]
 fn a_numeric_branch_prefix_is_enough() {
     let rig = rig();
     rig.write("specs/008-ai-control-centre/tasks.md", TASKS);
@@ -155,7 +153,6 @@ fn a_numeric_branch_prefix_is_enough() {
 }
 
 #[test]
-#[ignore = "implemented by T088"]
 fn a_branch_with_a_namespace_still_matches() {
     let rig = rig();
     rig.write("specs/008-ai-control-centre/tasks.md", TASKS);
@@ -165,7 +162,6 @@ fn a_branch_with_a_namespace_still_matches() {
 }
 
 #[test]
-#[ignore = "implemented by T088"]
 fn feature_json_binds_when_the_branch_says_nothing() {
     let rig = rig();
     rig.write(
@@ -184,7 +180,6 @@ fn feature_json_binds_when_the_branch_says_nothing() {
 }
 
 #[test]
-#[ignore = "implemented by T088"]
 fn branch_and_feature_json_agreeing_is_one_candidate() {
     let rig = rig();
     rig.write(
@@ -198,7 +193,6 @@ fn branch_and_feature_json_agreeing_is_one_candidate() {
 }
 
 #[test]
-#[ignore = "implemented by T088"]
 fn two_spec_dirs_with_the_branch_prefix_are_ambiguous() {
     let rig = rig();
     rig.write("specs/008-a/tasks.md", TASKS);
@@ -219,7 +213,6 @@ fn two_spec_dirs_with_the_branch_prefix_are_ambiguous() {
 }
 
 #[test]
-#[ignore = "implemented by T088"]
 fn branch_and_feature_json_disagreeing_is_ambiguous() {
     let rig = rig();
     rig.write(
@@ -239,7 +232,6 @@ fn branch_and_feature_json_disagreeing_is_ambiguous() {
 }
 
 #[test]
-#[ignore = "implemented by T088"]
 fn several_checklist_files_are_ambiguous() {
     let rig = rig();
     rig.write("PENDING.md", "- [ ] one\n- [x] two\n");
@@ -260,7 +252,6 @@ fn several_checklist_files_are_ambiguous() {
 }
 
 #[test]
-#[ignore = "implemented by T088"]
 fn a_lone_checklist_file_is_the_only_plan_so_it_binds() {
     let rig = rig();
     rig.write("PENDING.md", "- [ ] one\n- [x] two\n");
@@ -277,7 +268,6 @@ fn a_lone_checklist_file_is_the_only_plan_so_it_binds() {
 }
 
 #[test]
-#[ignore = "implemented by T088"]
 fn a_spec_match_beats_checklist_files() {
     let rig = rig();
     rig.write("specs/008-a/tasks.md", TASKS);
@@ -292,7 +282,6 @@ fn a_spec_match_beats_checklist_files() {
 }
 
 #[test]
-#[ignore = "implemented by T088"]
 fn no_plan_and_no_candidates_shows_no_figure() {
     let rig = rig();
     rig.write("README.md", "nothing to do\n");
@@ -307,7 +296,6 @@ fn no_plan_and_no_candidates_shows_no_figure() {
 }
 
 #[test]
-#[ignore = "implemented by T088"]
 fn the_users_choice_survives_a_restart() {
     let rig = rig();
     rig.write("PENDING.md", "- [ ] one\n- [x] two\n");
@@ -339,7 +327,6 @@ fn the_users_choice_survives_a_restart() {
 }
 
 #[test]
-#[ignore = "implemented by T088"]
 fn a_relative_choice_resolves_against_the_session_root() {
     let rig = rig();
     rig.write("PENDING.md", "- [ ] one\n");
@@ -361,7 +348,6 @@ fn a_relative_choice_resolves_against_the_session_root() {
 }
 
 #[test]
-#[ignore = "implemented by T088"]
 fn a_file_that_is_not_a_plan_cannot_be_chosen() {
     let rig = rig();
     let readme = rig.write("README.md", "no checkboxes\n");
@@ -385,7 +371,6 @@ fn a_file_that_is_not_a_plan_cannot_be_chosen() {
 }
 
 #[test]
-#[ignore = "implemented by T088"]
 fn choosing_none_stays_chosen_and_shows_no_figure() {
     let rig = rig();
     rig.write("PENDING.md", "- [ ] one\n");
@@ -402,7 +387,6 @@ fn choosing_none_stays_chosen_and_shows_no_figure() {
 }
 
 #[test]
-#[ignore = "implemented by T088"]
 fn a_vanished_source_is_stale_not_zero() {
     let rig = rig();
     let tasks = rig.write("specs/008-a/tasks.md", TASKS);
@@ -429,7 +413,6 @@ fn a_vanished_source_is_stale_not_zero() {
 }
 
 #[test]
-#[ignore = "implemented by T088"]
 fn steps_are_upserted_idempotently_with_stable_ids() {
     let rig = rig();
     let tasks = rig.write("specs/008-a/tasks.md", TASKS);
@@ -462,7 +445,6 @@ fn steps_are_upserted_idempotently_with_stable_ids() {
 }
 
 #[test]
-#[ignore = "implemented by T088"]
 fn sync_all_rereads_only_the_files_modified_since_their_last_read() {
     let rig = rig();
     let a = rig.write("a/PENDING.md", "- [ ] a1\n- [ ] a2\n");
@@ -494,7 +476,6 @@ fn sync_all_rereads_only_the_files_modified_since_their_last_read() {
 }
 
 #[test]
-#[ignore = "implemented by T088"]
 fn sync_all_binds_only_active_sessions_without_a_binding() {
     let rig = rig();
     rig.write("PENDING.md", "- [ ] one\n");
@@ -518,7 +499,30 @@ fn sync_all_binds_only_active_sessions_without_a_binding() {
 }
 
 #[test]
-#[ignore = "implemented by T088"]
+fn sync_all_skips_a_corrupt_row_and_still_binds_the_rest() {
+    let rig = rig();
+    rig.write("PENDING.md", "- [ ] one\n");
+    let active = rig.session("active", Some("main"));
+    rig.session("bad", Some("main"));
+    let conn = rig.store.connection();
+    conn.execute_batch("PRAGMA ignore_check_constraints = ON")
+        .unwrap();
+    conn.execute("UPDATE sessions SET state = 'bogus' WHERE id = 'bad'", [])
+        .unwrap();
+    conn.execute_batch("PRAGMA ignore_check_constraints = OFF")
+        .unwrap();
+
+    let summary = sync_all(&rig.store, &rig.env, T1);
+
+    assert!(rig
+        .store
+        .get_progress_binding(OwnerKind::Session, &active.id)
+        .unwrap()
+        .is_some());
+    assert!(summary.warnings.is_empty(), "{:?}", summary.warnings);
+}
+
+#[test]
 fn a_branch_that_appears_later_resolves_an_ambiguous_pick() {
     let rig = rig();
     rig.write("PENDING.md", "- [ ] one\n");
@@ -539,7 +543,6 @@ fn a_branch_that_appears_later_resolves_an_ambiguous_pick() {
 }
 
 #[test]
-#[ignore = "implemented by T088"]
 fn an_auto_binding_moves_to_a_stronger_hint_but_a_user_choice_does_not() {
     let rig = rig();
     rig.write("PENDING.md", "- [ ] one\n");

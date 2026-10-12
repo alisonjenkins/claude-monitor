@@ -75,6 +75,20 @@ impl Progress {
         }
     }
 
+    /// Rebuilds a figure from stored steps; `None` when there are none.
+    pub(crate) fn from_items(items: Vec<Item>, source: Source) -> Option<Self> {
+        let entries = items
+            .into_iter()
+            .map(|item| Entry {
+                text: item.text,
+                status: item.status,
+                group: item.group,
+                external_id: item.external_id,
+            })
+            .collect();
+        Self::build(entries, source)
+    }
+
     /// `None` when there are no items: no plan, no figure (FR-016).
     pub(crate) fn build(entries: Vec<Entry>, source: Source) -> Option<Self> {
         if entries.is_empty() {
