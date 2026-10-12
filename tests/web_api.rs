@@ -710,3 +710,105 @@ fn the_restore_preview_lists_interrupted_sessions_and_starts_nothing() {
     assert_eq!(ids, ["int1"]);
     assert!(!fx.server_has_sessions());
 }
+
+fn project_named<'a>(tree: &'a Value, name: &str) -> &'a Value {
+    tree["projects"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|p| p["name"] == name)
+        .unwrap_or_else(|| panic!("no project {name} in {tree}"))
+}
+
+fn session_ids(node: &Value) -> Vec<&str> {
+    node["sessions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|s| s["id"].as_str().unwrap())
+        .collect()
+}
+
+#[test]
+fn grouping_into_a_missing_project_creates_it_and_a_second_group_moves_the_session() {
+    let web = Plain::new();
+    web.put("s-one", State::Working);
+
+    let created = post(
+        &web.rig,
+        "/sessions/s-one/group",
+        &json!({"project": "fresh"}),
+    );
+    assert_eq!(created.status, 200, "{}", created.body);
+    assert_eq!(created.json()["project"], "fresh");
+    post(&web.rig, "/projects", &json!({"name": "other"}));
+    let moved = post(
+        &web.rig,
+        "/sessions/s-one/group",
+        &json!({"project": "other"}),
+    );
+    assert_eq!(moved.json()["changed"], json!(["s-one"]));
+    let again = post(
+        &web.rig,
+        "/sessions/s-one/group",
+        &json!({"project": "other"}),
+    );
+    assert_eq!(again.json()["unchanged"], json!(["s-one"]));
+
+    let listed = get(&web.rig, "/sessions").json();
+    assert_eq!(listed["sessions"][0]["project"], "other");
+    let ungrouped = post(&web.rig, "/sessions/s-one/group", &json!({"project": "-"}));
+    assert_eq!(ungrouped.json()["project"], Value::Null);
+    let listed = get(&web.rig, "/sessions").json();
+    assert!(listed["sessions"][0]["project"].is_null());
+}
+
+#[test]
+#[ignore = "the tree form of / arrives with the next commit"]
+fn the_overview_json_gains_a_project_tree_and_keeps_the_flat_fields() {
+    let web = Plain::new();
+    web.put("a-work", State::Working);
+    web.put("a-int", State::Interrupted);
+    web.put("a-fin", State::Finished);
+    web.put("loose", State::Finished);
+    post(&web.rig, "/projects", &json!({"name": "zeta"}));
+    post(&web.rig, "/projects", &json!({"name": "alpha"}));
+    for id in ["a-work", "a-int", "a-fin"] {
+        post(
+            &web.rig,
+            &format!("/sessions/{id}/group"),
+            &json!({"project": "alpha"}),
+        );
+    }
+
+    let tree = get(&web.rig, "/").json();
+
+    let names: Vec<_> = tree["projects"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|p| p["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        names,
+        ["alpha", "zeta"],
+        "alphabetical, empty ones included"
+    );
+    let alpha = project_named(&tree, "alpha");
+    assert_eq!(alpha["summary"], "1 working · 1 interrupted · 1 finished");
+    assert_eq!(alpha["status"], "active");
+    assert!(alpha["id"].as_str().is_some());
+    assert_eq!(session_ids(alpha).len(), 3);
+    assert!(session_ids(project_named(&tree, "zeta")).is_empty());
+    assert_eq!(tree["no_project"]["sessions"][0]["id"], "loose");
+    assert_eq!(
+        tree["sessions"].as_array().unwrap().len(),
+        4,
+        "flat list kept"
+    );
+    assert_eq!(
+        get(&web.rig, "/sessions").json(),
+        web.cli(list_command()),
+        "/sessions keeps the exact list --json shape"
+    );
+}
