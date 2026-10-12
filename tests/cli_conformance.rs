@@ -110,7 +110,6 @@ macro_rules! command_tests {
 }
 
 command_tests! {
-    serve => "serve", "implemented by T117";
     delete => "delete", "implemented by unscheduled (no task in tasks.md)";
 }
 
@@ -206,6 +205,21 @@ mod summarize {
         let result = run_in((info.example)(), &fake.env, Some(state.path()));
         assert!(matches!(result, Err(Error::Refused { .. })), "{result:?}");
         assert_contract("summarize", &result);
+    }
+}
+
+/// `serve` runs until it is stopped, so the harness never runs its example;
+/// `tests/web_security.rs` and `tests/web_sse.rs` cover the server itself.
+mod serve {
+    use super::*;
+
+    #[test]
+    fn is_not_a_tui_action() {
+        let info = Command::all()
+            .iter()
+            .find(|info| info.name == "serve")
+            .unwrap();
+        assert!(!info.is_interactive());
     }
 }
 
@@ -388,7 +402,7 @@ fn every_command_has_generated_tests_with_the_right_task() {
             "hook" | "dashboard" | "migrate" | "list" | "show" | "reconcile" | "watch"
             | "boot-check" | "restore" | "respawn" | "summarize" | "progress-bind" | "project"
             | "group" | "note" | "park" | "unpark" | "dismiss" | "undismiss" | "done"
-            | "undone" | "export-cortexiphan" | "link" | "unlink" | "links-check" => {}
+            | "undone" | "export-cortexiphan" | "link" | "unlink" | "links-check" | "serve" => {}
             name => {
                 let reason = GENERATED
                     .iter()
@@ -403,7 +417,7 @@ fn every_command_has_generated_tests_with_the_right_task() {
             }
         }
     }
-    assert_eq!(GENERATED.len() + 25, Command::all().len());
+    assert_eq!(GENERATED.len() + 26, Command::all().len());
 }
 
 #[test]
