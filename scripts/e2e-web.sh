@@ -12,6 +12,10 @@
 # Env:   E2E_OUT      evidence directory (screenshots + assertions.log)
 #        E2E_PYTHON   python with the `playwright` package (default python3)
 #        E2E_CHROMIUM chromium executable (default: Playwright's own)
+# Nix, without a global playwright (a dev shell's LD_LIBRARY_PATH breaks the
+# browser, so clear it):
+#   env -u LD_LIBRARY_PATH nix-shell -p 'python3.withPackages (ps: [ps.playwright])' \
+#     --run 'E2E_PYTHON=python E2E_CHROMIUM=$(command -v chromium) scripts/e2e-web.sh'
 set -euo pipefail
 [ -z "${E2E_TRACE:-}" ] || set -x
 
