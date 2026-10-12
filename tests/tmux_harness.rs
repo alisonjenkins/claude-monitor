@@ -137,21 +137,27 @@ fn a_spawned_window_lands_in_the_given_cwd_with_the_given_label() {
         "window id: {}",
         win.window_id
     );
-    let info = server.run(&[
-        "display-message",
-        "-p",
-        "-t",
-        &win.pane_id,
-        "#{window_id}|#{window_name}|#{pane_current_path}|#{pane_current_command}",
-    ]);
-    assert_eq!(
-        info,
-        format!(
-            "{}|my-proj|{}|sleep",
-            win.window_id,
-            cwd_path.to_str().unwrap()
-        )
+    let expected = format!(
+        "{}|my-proj|{}|sleep",
+        win.window_id,
+        cwd_path.to_str().unwrap()
     );
+    // Until the child execs, tmux reports its own cwd and name for the pane.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    let info = loop {
+        let info = server.run(&[
+            "display-message",
+            "-p",
+            "-t",
+            &win.pane_id,
+            "#{window_id}|#{window_name}|#{pane_current_path}|#{pane_current_command}",
+        ]);
+        if info == expected || std::time::Instant::now() > deadline {
+            break info;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    };
+    assert_eq!(info, expected);
 }
 
 #[test]
