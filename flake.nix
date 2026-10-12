@@ -171,6 +171,7 @@
                   tmuxHooks,
                   watch ? false,
                   bootCheck ? false,
+                  bootCheckBanner ? false,
                   hostSystem ? system,
                 }:
                 home-manager.lib.homeManagerConfiguration {
@@ -186,6 +187,7 @@
                       programs.claude-monitor.tmuxHooks.enable = tmuxHooks;
                       programs.claude-monitor.watch.enable = watch;
                       programs.claude-monitor.bootCheck.enable = bootCheck;
+                      programs.claude-monitor.bootCheck.banner.enable = bootCheckBanner;
                       programs.tmux.enable = true;
                     }
                   ];
@@ -367,6 +369,30 @@
                       bootCheck = true;
                     }).config.launchd.agents
                 ) "boot-check launchd agent generated on Linux";
+              # banner hook: absent by default; when enabled the tmux config
+              # carries one client-attached line that backgrounds the
+              # store-path `boot-check --banner` with no shell expansions.
+              bannerLines =
+                conf:
+                builtins.filter (l: pkgs.lib.hasPrefix "set-hook -g client-attached " l) (pkgs.lib.splitString "\n" conf);
+              bannerOn = bannerLines (tmuxConf (mkHmConfigWith {
+                copilot = false;
+                tmuxHooks = false;
+                bootCheckBanner = true;
+              }));
+              bannerProblems =
+                pkgs.lib.optional (
+                  bannerLines tmuxOff != [ ]
+                ) "client-attached hook present with bootCheck.banner.enable = false"
+                ++ pkgs.lib.optional (
+                  !(
+                    builtins.length bannerOn == 1
+                    && pkgs.lib.hasInfix "run-shell -b" (builtins.head bannerOn)
+                    && pkgs.lib.hasInfix "/nix/store/" (builtins.head bannerOn)
+                    && pkgs.lib.hasInfix "/bin/claude-monitor boot-check --banner\"'" (builtins.head bannerOn)
+                    && !pkgs.lib.hasInfix "$" (builtins.head bannerOn)
+                  )
+                ) "client-attached hook missing or not a backgrounded store-path `boot-check --banner`";
               expectedEvents = [
                 "SessionStart"
                 "UserPromptSubmit"
@@ -391,6 +417,8 @@
               throw "claude-monitor hm-module: ${builtins.concatStringsSep "; " bootCheckProblems}"
             else if launchdProblems != [ ] then
               throw "claude-monitor hm-module: ${builtins.concatStringsSep "; " launchdProblems}"
+            else if bannerProblems != [ ] then
+              throw "claude-monitor hm-module: ${builtins.concatStringsSep "; " bannerProblems}"
             else
               hmPkgs.runCommand "claude-monitor-hm-module-check" { } "touch $out";
         }
