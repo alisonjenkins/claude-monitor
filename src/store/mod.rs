@@ -6,6 +6,7 @@ use std::time::Duration;
 
 use rusqlite::Connection;
 
+pub mod events;
 mod migrations;
 mod schema;
 
