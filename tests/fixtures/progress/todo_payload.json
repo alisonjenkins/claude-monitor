@@ -1,0 +1,5 @@
+{"todos":[
+ {"content":"Read the spec","status":"completed","activeForm":"Reading the spec"},
+ {"content":"Write the parser","status":"in_progress","activeForm":"Writing the parser"},
+ {"content":"Run the tests","status":"pending","activeForm":"Running the tests"}
+]}
