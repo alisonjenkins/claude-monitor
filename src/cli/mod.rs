@@ -1,6 +1,6 @@
 use clap::{Parser, Subcommand};
 
-use crate::{hook, tui};
+use crate::hook;
 
 #[derive(Parser)]
 #[command(
@@ -20,7 +20,13 @@ enum Commands {
 
 pub fn run(args: Cli) -> anyhow::Result<()> {
     match args.command {
-        None => tui::dashboard::run(),
+        #[cfg(feature = "tui")]
+        None => crate::tui::dashboard::run(),
+        #[cfg(not(feature = "tui"))]
+        None => anyhow::bail!(
+            "the dashboard needs the `tui` feature; rebuild with `--features tui` \
+             or use a subcommand (see --help)"
+        ),
         Some(Commands::Hook) => {
             hook::run();
             Ok(())
