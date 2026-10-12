@@ -50,6 +50,11 @@ pub enum DiscoverError {
 pub enum LaunchError {
     #[error("launching is not supported by agent kind `{kind}`")]
     Unsupported { kind: &'static str },
+    /// The kind can start sessions but cannot continue a conversation.
+    #[error("agent kind `{kind}` cannot resume a conversation")]
+    ResumeUnsupported { kind: &'static str },
+    #[error("launcher template for `{kind}` is unusable: {detail}")]
+    BadTemplate { kind: &'static str, detail: String },
 }
 
 /// One hook payload parsed into the closed [`Event`] set plus the extra data
@@ -127,6 +132,8 @@ pub struct Launch {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Precondition {
     pub description: String,
+    /// A path that must exist for the respawn to resume the conversation.
+    pub required_path: PathBuf,
 }
 
 /// Launch command templates per kind; placeholders `{session_id}`, `{cwd}`, `{name}`.
@@ -164,7 +171,7 @@ pub trait AgentKind: Send + Sync {
     }
 
     /// Preconditions a respawn must check. Empty if none.
-    fn resume_preconditions(&self, _session: &Session) -> Vec<Precondition> {
+    fn resume_preconditions(&self, _session: &Session, _env: &Env) -> Vec<Precondition> {
         Vec::new()
     }
 }
@@ -264,6 +271,8 @@ mod tests {
             Bare.launch(&session, LaunchMode::Fresh, &LauncherConfig::default()),
             Err(LaunchError::Unsupported { kind: "bare" })
         );
-        assert!(Bare.resume_preconditions(&session).is_empty());
+        assert!(Bare
+            .resume_preconditions(&session, &crate::testing::FakeEnv::new().env)
+            .is_empty());
     }
 }
