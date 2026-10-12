@@ -11,6 +11,7 @@ use crate::store::{resolve_state_dir, StateDirEnv};
 
 mod boot_check;
 mod command;
+mod done;
 mod list;
 mod markers;
 pub mod migrate;
@@ -200,6 +201,18 @@ enum Commands {
         /// Session id (or the start of one), or a project name
         target: String,
     },
+    /// Mark finished sessions done: they move to their project's Done section
+    Done {
+        /// Session ids, or the start of each
+        #[arg(required = true)]
+        sessions: Vec<String>,
+    },
+    /// Return done sessions to the finished group
+    Undone {
+        /// Session ids, or the start of each
+        #[arg(required = true)]
+        sessions: Vec<String>,
+    },
     /// Put sessions in a project (created if new); `-` as the project removes them from theirs
     Group {
         /// Project name, or `-` for no project
@@ -366,6 +379,12 @@ impl Cli {
                 project: project.clone(),
                 sessions: sessions.clone(),
             },
+            Some(Commands::Done { sessions }) => Command::Done {
+                sessions: sessions.clone(),
+            },
+            Some(Commands::Undone { sessions }) => Command::Undone {
+                sessions: sessions.clone(),
+            },
             Some(Commands::Note { target, text }) => Command::Note {
                 target: target.clone(),
                 text: text.join(" "),
@@ -402,7 +421,8 @@ pub struct RunOptions {
 /// Run one command; `state_dir` is the `--state-dir` override. `Hook`,
 /// `Dashboard`, `Migrate`, `List`, `Show`, `Reconcile`, `Watch`, `BootCheck`,
 /// `Restore`, `Respawn`, `Summarize`, `ProgressBind`, `Project`, `Group`, `Note`,
-/// `Park`, `Unpark`, `Dismiss` and `Undismiss` are implemented; every other
+/// `Park`, `Unpark`, `Dismiss`, `Undismiss`, `Done` and `Undone` are implemented;
+/// every other
 /// command reports `NotImplemented` until its task lands. Reads the store as it
 /// is; [`run_with`] adds the refresh pass the binary runs.
 pub fn run_in(cmd: Command, env: &Env, state_dir: Option<&Path>) -> Result<Output, Error> {
@@ -494,6 +514,8 @@ pub fn run_with(
         Command::Group { project, sessions } => {
             project::run_group(env, state_dir, &project, &sessions)
         }
+        Command::Done { sessions } => done::run(env, state_dir, &sessions, true),
+        Command::Undone { sessions } => done::run(env, state_dir, &sessions, false),
         Command::Note { target, text } => markers::run_note(env, state_dir, &target, &text),
         Command::Park { target } => {
             markers::run_marker(env, state_dir, Marker::Parked, true, &target)
@@ -531,6 +553,8 @@ fn reads_sessions(cmd: &Command) -> bool {
             | Command::Restore { .. }
             | Command::Respawn { .. }
             | Command::Group { .. }
+            | Command::Done { .. }
+            | Command::Undone { .. }
             | Command::Note { .. }
             | Command::Park { .. }
             | Command::Unpark { .. }

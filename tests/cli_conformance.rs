@@ -110,8 +110,6 @@ macro_rules! command_tests {
 }
 
 command_tests! {
-    done => "done", "implemented by T110";
-    undone => "undone", "implemented by T110";
     serve => "serve", "implemented by T117";
     link => "link", "implemented by T100";
     export_cortexiphan => "export-cortexiphan", "implemented by T098";
@@ -333,10 +331,18 @@ mod organisers {
         assert_contract("group", &result);
     }
 
-    /// The example targets a session the empty store does not have.
+    /// Each example names a session the empty store does not have.
     #[test]
     fn markers_refuse_an_unknown_target() {
-        for name in ["note", "park", "unpark", "dismiss", "undismiss"] {
+        for name in [
+            "note",
+            "park",
+            "unpark",
+            "dismiss",
+            "undismiss",
+            "done",
+            "undone",
+        ] {
             let result = run_against_empty_store(name);
             assert!(
                 matches!(result, Err(Error::Refused { .. })),
@@ -375,7 +381,8 @@ fn every_command_has_generated_tests_with_the_right_task() {
         match info.name {
             "hook" | "dashboard" | "migrate" | "list" | "show" | "reconcile" | "watch"
             | "boot-check" | "restore" | "respawn" | "summarize" | "progress-bind" | "project"
-            | "group" | "note" | "park" | "unpark" | "dismiss" | "undismiss" => {}
+            | "group" | "note" | "park" | "unpark" | "dismiss" | "undismiss" | "done"
+            | "undone" => {}
             name => {
                 let reason = GENERATED
                     .iter()
@@ -390,7 +397,7 @@ fn every_command_has_generated_tests_with_the_right_task() {
             }
         }
     }
-    assert_eq!(GENERATED.len() + 19, Command::all().len());
+    assert_eq!(GENERATED.len() + 21, Command::all().len());
 }
 
 #[test]

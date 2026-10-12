@@ -434,7 +434,6 @@ mod done_sections {
     }
 
     #[test]
-    #[ignore = "implemented by T110"]
     fn each_session_is_in_exactly_one_group_and_done_is_per_project() {
         let fx = Fixture::new();
         fx.put("in-p", State::Finished, RECENT);
@@ -463,7 +462,6 @@ mod done_sections {
     }
 
     #[test]
-    #[ignore = "implemented by T110"]
     fn done_is_rejected_for_a_session_that_is_not_finished() {
         let fx = Fixture::new();
         fx.put("run", State::Working, RECENT);
@@ -478,7 +476,6 @@ mod done_sections {
     }
 
     #[test]
-    #[ignore = "implemented by T110"]
     fn a_batch_with_one_unfinished_session_marks_nothing() {
         let fx = Fixture::new();
         fx.put("fin", State::Finished, RECENT);
@@ -490,7 +487,6 @@ mod done_sections {
     }
 
     #[test]
-    #[ignore = "implemented by T110"]
     fn undone_returns_the_session_to_finished() {
         let fx = Fixture::new();
         fx.put("fin", State::Finished, RECENT);
@@ -505,7 +501,6 @@ mod done_sections {
     }
 
     #[test]
-    #[ignore = "implemented by T110"]
     fn done_and_undone_are_idempotent() {
         let fx = Fixture::new();
         fx.put("fin", State::Finished, RECENT);
@@ -520,7 +515,6 @@ mod done_sections {
     }
 
     #[test]
-    #[ignore = "implemented by T110"]
     fn every_done_session_has_a_user_authored_done_event() {
         let fx = Fixture::new();
         fx.put("a", State::Finished, RECENT);
@@ -542,7 +536,6 @@ mod done_sections {
     }
 
     #[test]
-    #[ignore = "implemented by T110"]
     fn the_system_never_marks_a_session_done() {
         let fx = Fixture::new();
         fx.put("fin", State::Finished, "2026-01-01T00:00:00Z");
@@ -556,7 +549,6 @@ mod done_sections {
     }
 
     #[test]
-    #[ignore = "implemented by T110"]
     fn a_session_start_hook_clears_done_and_puts_the_work_in_active() {
         let fx = Fixture::new();
         fx.put("fin", State::Finished, RECENT);
