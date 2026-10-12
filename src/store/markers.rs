@@ -7,8 +7,9 @@ use serde_json::{json, Value};
 
 use super::events::{EventsError, NewEvent};
 use super::projects::ProjectsError;
+use super::sessions::SessionsError;
 use super::Store;
-use crate::model::{Author, Note, OwnerKind, ProjectStatus};
+use crate::model::{Author, DoneError, Note, OwnerKind, ProjectStatus, Session, State};
 
 /// A flag a person sets on a session, or the matching status on a project.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -66,6 +67,17 @@ pub enum MarkersError {
     NoteOwner { id: Box<str>, owner_kind: Box<str> },
     #[error("cannot change the project marker: {source}")]
     Project { source: ProjectsError },
+    #[error("cannot read session {id} before changing done: {source}")]
+    ReadSession { id: Box<str>, source: SessionsError },
+    #[error("session {id} is {state}; only a finished session can be marked done")]
+    NotFinished { id: Box<str>, state: State },
+}
+
+/// What a `done` or `undone` call did, session by session.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct DoneReport {
+    pub changed: Vec<String>,
+    pub unchanged: Vec<String>,
 }
 
 fn db(operation: &'static str) -> impl Fn(rusqlite::Error) -> MarkersError {
@@ -241,6 +253,95 @@ impl Store {
         )?;
         tx.commit().map_err(db("commit marker"))?;
         Ok(true)
+    }
+
+    /// Marks finished sessions done (FR-019b). Every session must be
+    /// finished or nothing changes; one already done keeps its time and
+    /// records nothing.
+    pub fn mark_done(
+        &self,
+        ids: &[String],
+        at: &str,
+        author: &Author,
+    ) -> Result<DoneReport, MarkersError> {
+        let tx = begin(self)?;
+        let mut report = DoneReport::default();
+        for id in ids {
+            let mut session = self.require_session(id)?;
+            if session.done_at.is_some() && session.state == State::Finished {
+                report.unchanged.push(id.clone());
+                continue;
+            }
+            session
+                .mark_done(at)
+                .map_err(
+                    |DoneError::NotFinished { state }| MarkersError::NotFinished {
+                        id: id.as_str().into(),
+                        state,
+                    },
+                )?;
+            self.connection()
+                .execute(
+                    "UPDATE sessions SET done_at = ?2 WHERE id = ?1 AND state = 'finished'",
+                    params![id, at],
+                )
+                .map_err(db("mark session done"))?;
+            emit(
+                self,
+                "mark session done",
+                at,
+                ("session", id),
+                "session.done",
+                &json!({}),
+                author,
+            )?;
+            report.changed.push(id.clone());
+        }
+        tx.commit().map_err(db("commit done"))?;
+        Ok(report)
+    }
+
+    /// Returns done sessions to the finished group (FR-019c). One that is not
+    /// done is left alone and records nothing.
+    pub fn unmark_done(
+        &self,
+        ids: &[String],
+        at: &str,
+        author: &Author,
+    ) -> Result<DoneReport, MarkersError> {
+        let tx = begin(self)?;
+        let mut report = DoneReport::default();
+        for id in ids {
+            let session = self.require_session(id)?;
+            if session.done_at.is_none() {
+                report.unchanged.push(id.clone());
+                continue;
+            }
+            self.connection()
+                .execute("UPDATE sessions SET done_at = NULL WHERE id = ?1", [id])
+                .map_err(db("unmark session done"))?;
+            emit(
+                self,
+                "unmark session done",
+                at,
+                ("session", id),
+                "session.undone",
+                &json!({}),
+                author,
+            )?;
+            report.changed.push(id.clone());
+        }
+        tx.commit().map_err(db("commit undone"))?;
+        Ok(report)
+    }
+
+    fn require_session(&self, id: &str) -> Result<Session, MarkersError> {
+        self.get_session(id)
+            .map_err(|source| MarkersError::ReadSession {
+                id: id.into(),
+                source,
+            })?
+            .ok_or_else(|| MarkersError::UnknownSession { id: id.into() })
     }
 
     /// Sets or clears a marker on a project: parked is the `parked` status
