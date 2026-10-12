@@ -27,7 +27,6 @@ fn authed(rig: &Rig, path: &str) -> web_support::Response {
 }
 
 #[test]
-#[ignore = "implemented by T117"]
 fn binds_to_loopback_on_the_port_it_was_given() {
     let rig = Rig::start();
 
@@ -37,7 +36,6 @@ fn binds_to_loopback_on_the_port_it_was_given() {
 }
 
 #[test]
-#[ignore = "implemented by T117"]
 fn a_non_loopback_bind_is_refused_outright() {
     for bind in [
         IpAddr::V4(Ipv4Addr::UNSPECIFIED),
@@ -67,7 +65,6 @@ fn a_non_loopback_bind_is_refused_outright() {
 }
 
 #[test]
-#[ignore = "implemented by T117"]
 fn a_foreign_host_gets_421_even_with_a_valid_token() {
     let rig = Rig::start();
     let port = rig.addr().port();
@@ -89,7 +86,6 @@ fn a_foreign_host_gets_421_even_with_a_valid_token() {
 }
 
 #[test]
-#[ignore = "implemented by T117"]
 fn the_loopback_names_with_the_right_port_are_allowed() {
     let rig = Rig::start();
     let port = rig.addr().port();
@@ -109,7 +105,6 @@ fn the_loopback_names_with_the_right_port_are_allowed() {
 }
 
 #[test]
-#[ignore = "implemented by T117"]
 fn a_request_without_the_token_gets_401() {
     let rig = Rig::start();
 
@@ -120,7 +115,6 @@ fn a_request_without_the_token_gets_401() {
 }
 
 #[test]
-#[ignore = "implemented by T117"]
 fn a_wrong_cookie_or_wrong_query_token_gets_401() {
     let rig = Rig::start();
     let wrong = "0".repeat(rig.token.as_str().len());
@@ -141,7 +135,6 @@ fn a_wrong_cookie_or_wrong_query_token_gets_401() {
 }
 
 #[test]
-#[ignore = "implemented by T117"]
 fn the_token_in_the_url_becomes_an_http_only_strict_cookie_and_a_clean_redirect() {
     let rig = Rig::start();
     let token = rig.token.as_str();
@@ -168,7 +161,6 @@ fn the_token_in_the_url_becomes_an_http_only_strict_cookie_and_a_clean_redirect(
 }
 
 #[test]
-#[ignore = "implemented by T117"]
 fn the_redirect_keeps_the_other_query_parameters_and_never_leaves_the_origin() {
     let rig = Rig::start();
     let token = rig.token.as_str();
@@ -191,7 +183,6 @@ fn the_redirect_keeps_the_other_query_parameters_and_never_leaves_the_origin() {
 }
 
 #[test]
-#[ignore = "implemented by T117"]
 fn a_post_needs_the_csrf_header_matching_the_cookie() {
     let rig = Rig::start();
     let wrong = "f".repeat(rig.token.as_str().len());
@@ -221,7 +212,6 @@ fn a_post_needs_the_csrf_header_matching_the_cookie() {
 }
 
 #[test]
-#[ignore = "implemented by T117"]
 fn no_response_carries_cors_headers_and_all_are_no_store() {
     let rig = Rig::start();
     let port = rig.addr().port();
@@ -262,7 +252,6 @@ fn no_response_carries_cors_headers_and_all_are_no_store() {
 }
 
 #[test]
-#[ignore = "implemented by T117"]
 fn no_route_serves_a_conversation_transcript() {
     let rig = Rig::start();
 
@@ -280,7 +269,6 @@ fn no_route_serves_a_conversation_transcript() {
 }
 
 #[test]
-#[ignore = "implemented by T117"]
 fn the_token_file_is_private_and_holds_256_bits_of_hex() {
     let dir = TempDir::new().unwrap();
 
@@ -296,7 +284,6 @@ fn the_token_file_is_private_and_holds_256_bits_of_hex() {
 }
 
 #[test]
-#[ignore = "implemented by T117"]
 fn the_token_rotates_on_every_start_and_a_loose_old_file_is_tightened() {
     let dir = TempDir::new().unwrap();
     let path = dir.path().join(TOKEN_FILE_NAME);
@@ -318,7 +305,6 @@ fn the_token_rotates_on_every_start_and_a_loose_old_file_is_tightened() {
 }
 
 #[test]
-#[ignore = "implemented by T117"]
 fn the_token_does_not_appear_in_debug_output() {
     let token = Token::generate().unwrap();
     assert!(!format!("{token:?}").contains(token.as_str()));
