@@ -4,6 +4,7 @@
 //! Parsers are pure functions over text. They return `None` when the input
 //! holds no tasks, so a caller never shows a figure it cannot derive.
 
+pub mod binding;
 pub mod checklist;
 pub mod speckit;
 pub mod todo;
