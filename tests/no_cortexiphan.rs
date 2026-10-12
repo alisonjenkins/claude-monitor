@@ -93,7 +93,7 @@ fn the_organise_commands_work() {
     rig.ok(&["note", "sess-a", "a note"]);
     rig.ok(&["park", "sess-a"]);
     rig.ok(&["unpark", "sess-a"]);
-    rig.ok(&["dismiss", "sess-a"]);
+    rig.ok(&["dismiss", "sess-a", "--yes"]);
     rig.ok(&["undismiss", "sess-a"]);
     rig.ok(&["done", "sess-a"]);
     rig.ok(&["undone", "sess-a"]);

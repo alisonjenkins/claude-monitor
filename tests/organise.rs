@@ -327,7 +327,10 @@ mod markers {
             })
             .unwrap();
 
-        fx.json(target(|target| Command::Dismiss { target }, "s2"));
+        fx.json(target(
+            |target| Command::Dismiss { target, yes: true },
+            "s2",
+        ));
 
         assert_eq!(fx.ids(None, None, false), ["s1"]);
         assert_eq!(fx.ids(None, None, true), ["s1", "s2"]);
@@ -357,8 +360,14 @@ mod markers {
         let fx = Fixture::new();
         fx.put("s1", State::Idle, RECENT);
 
-        fx.json(target(|target| Command::Dismiss { target }, "s1"));
-        fx.json(target(|target| Command::Dismiss { target }, "s1"));
+        fx.json(target(
+            |target| Command::Dismiss { target, yes: true },
+            "s1",
+        ));
+        fx.json(target(
+            |target| Command::Dismiss { target, yes: true },
+            "s1",
+        ));
 
         assert_eq!(fx.events("session.dismissed").len(), 1);
     }
@@ -408,7 +417,10 @@ mod markers {
         assert_eq!(status(&fx), "parked");
         fx.json(target(|target| Command::Unpark { target }, "alpha"));
         assert_eq!(status(&fx), "active");
-        fx.json(target(|target| Command::Dismiss { target }, "alpha"));
+        fx.json(target(
+            |target| Command::Dismiss { target, yes: true },
+            "alpha",
+        ));
         assert_eq!(status(&fx), "archived");
         fx.json(target(|target| Command::Undismiss { target }, "alpha"));
         assert_eq!(status(&fx), "active");

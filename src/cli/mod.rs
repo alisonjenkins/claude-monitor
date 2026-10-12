@@ -209,6 +209,9 @@ enum Commands {
     Dismiss {
         /// Session id (or the start of one), or a project name
         target: String,
+        /// Do not ask for confirmation
+        #[arg(long, short = 'y')]
+        yes: bool,
     },
     /// Show a dismissed session or project again
     Undismiss {
@@ -254,6 +257,9 @@ enum Commands {
         owner: String,
         /// The node's id
         node_id: String,
+        /// Do not ask for confirmation
+        #[arg(long, short = 'y')]
+        yes: bool,
     },
     /// Work with links to the external graph
     Links {
@@ -461,8 +467,9 @@ impl Cli {
             Some(Commands::Unpark { target }) => Command::Unpark {
                 target: target.clone(),
             },
-            Some(Commands::Dismiss { target }) => Command::Dismiss {
+            Some(Commands::Dismiss { target, yes }) => Command::Dismiss {
                 target: target.clone(),
+                yes: *yes,
             },
             Some(Commands::Undismiss { target }) => Command::Undismiss {
                 target: target.clone(),
@@ -478,9 +485,14 @@ impl Cli {
                 kind: kind.clone(),
                 doc: doc.clone(),
             },
-            Some(Commands::Unlink { owner, node_id }) => Command::Unlink {
+            Some(Commands::Unlink {
+                owner,
+                node_id,
+                yes,
+            }) => Command::Unlink {
                 owner: owner.clone(),
                 cortex: node_id.clone(),
+                yes: *yes,
             },
             Some(Commands::Links {
                 action: LinksAction::Check,
@@ -623,7 +635,7 @@ pub fn run_with(
         Command::Unpark { target } => {
             markers::run_marker(env, state_dir, Marker::Parked, false, &target)
         }
-        Command::Dismiss { target } => {
+        Command::Dismiss { target, yes: _ } => {
             markers::run_marker(env, state_dir, Marker::Dismissed, true, &target)
         }
         Command::Undismiss { target } => {
@@ -648,7 +660,11 @@ pub fn run_with(
             kind,
             doc,
         } => link::run_link(env, state_dir, &owner, &cortex, &kind, doc.as_deref()),
-        Command::Unlink { owner, cortex } => link::run_unlink(env, state_dir, &owner, &cortex),
+        Command::Unlink {
+            owner,
+            cortex,
+            yes: _,
+        } => link::run_unlink(env, state_dir, &owner, &cortex),
         Command::LinksCheck => link::run_links_check(env, state_dir),
         Command::Serve { port, bind } => serve::run(env, state_dir, port, bind),
         Command::Hook { agent, event } => {

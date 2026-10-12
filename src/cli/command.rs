@@ -78,6 +78,7 @@ pub enum Command {
     },
     Dismiss {
         target: String,
+        yes: bool,
     },
     Undismiss {
         target: String,
@@ -112,6 +113,7 @@ pub enum Command {
     Unlink {
         owner: String,
         cortex: String,
+        yes: bool,
     },
     ExportCortexiphan {
         project: Option<String>,
@@ -277,7 +279,10 @@ const ALL: &[CommandInfo] = &[
         name: "dismiss",
         tui_action: Some("dismiss"),
         implemented_by: "T109",
-        example: || Command::Dismiss { target: s("s1") },
+        example: || Command::Dismiss {
+            target: s("s1"),
+            yes: true,
+        },
     },
     CommandInfo {
         name: "undismiss",
@@ -344,6 +349,7 @@ const ALL: &[CommandInfo] = &[
         example: || Command::Unlink {
             owner: s("s1"),
             cortex: s("1"),
+            yes: true,
         },
     },
     CommandInfo {

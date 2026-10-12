@@ -401,7 +401,7 @@ pub fn router() -> Router<AppState> {
         )
         .route(
             "/sessions/{id}/dismiss",
-            session(|target| Command::Dismiss { target }),
+            session(|target| Command::Dismiss { target, yes: true }),
         )
         .route(
             "/sessions/{id}/undismiss",
@@ -440,7 +440,7 @@ pub fn router() -> Router<AppState> {
         )
         .route(
             "/projects/{id}/dismiss",
-            project(|target| Command::Dismiss { target }),
+            project(|target| Command::Dismiss { target, yes: true }),
         )
         .route(
             "/projects/{id}/undismiss",
@@ -649,7 +649,15 @@ async fn unlink(
     body: Payload,
 ) -> Result<Response, ApiError> {
     let cortex = blank(body.text("cortex")).unwrap_or_default();
-    act(&state, Command::Unlink { owner: id, cortex }).await
+    act(
+        &state,
+        Command::Unlink {
+            owner: id,
+            cortex,
+            yes: true,
+        },
+    )
+    .await
 }
 
 #[derive(Debug, Deserialize)]

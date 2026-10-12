@@ -463,6 +463,7 @@ mod with_a_real_store {
         let rig = rig();
         rig.command(Command::Dismiss {
             target: "act".to_owned(),
+            yes: true,
         });
 
         let snapshot = Snapshot::load(&rig.store, NOW).unwrap();

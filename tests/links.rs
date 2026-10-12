@@ -204,6 +204,7 @@ impl Fixture {
         self.run(Command::Unlink {
             owner: owner.to_owned(),
             cortex: node.to_owned(),
+            yes: true,
         })
     }
 }
@@ -253,6 +254,16 @@ mod commands {
             Command::Unlink {
                 owner: "s1".to_owned(),
                 cortex: "42".to_owned(),
+                yes: false,
+            }
+        );
+        let cli = Cli::try_parse_from(["claude-monitor", "unlink", "s1", "42", "-y"]).unwrap();
+        assert_eq!(
+            cli.command(),
+            Command::Unlink {
+                owner: "s1".to_owned(),
+                cortex: "42".to_owned(),
+                yes: true,
             }
         );
         assert!(

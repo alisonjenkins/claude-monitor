@@ -66,7 +66,10 @@ impl Organise {
             Self::Undone { id } => Command::Undone {
                 sessions: vec![id.clone()],
             },
-            Self::Dismiss { id } => Command::Dismiss { target: id.clone() },
+            Self::Dismiss { id } => Command::Dismiss {
+                target: id.clone(),
+                yes: true,
+            },
             Self::Undismiss { id } => Command::Undismiss { target: id.clone() },
             Self::Note { id, text } => Command::Note {
                 target: id.clone(),
