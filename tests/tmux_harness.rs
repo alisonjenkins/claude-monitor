@@ -117,7 +117,6 @@ fn sleep_argv() -> Vec<String> {
 }
 
 #[test]
-#[ignore = "T070: SystemTmux ensure_session/spawn_window not implemented"]
 fn a_spawned_window_lands_in_the_given_cwd_with_the_given_label() {
     let Some(server) = TmuxServer::start() else {
         return;
@@ -161,7 +160,6 @@ fn a_spawned_window_lands_in_the_given_cwd_with_the_given_label() {
 }
 
 #[test]
-#[ignore = "T070: SystemTmux ensure_session/spawn_window not implemented"]
 fn five_windows_in_a_row_get_distinct_ids() {
     let Some(server) = TmuxServer::start() else {
         return;
@@ -191,7 +189,6 @@ fn five_windows_in_a_row_get_distinct_ids() {
 }
 
 #[test]
-#[ignore = "T070: SystemTmux ensure_session/spawn_window not implemented"]
 fn ensure_session_creates_when_absent_and_reuses_when_present() {
     let Some(server) = TmuxServer::start() else {
         return;
@@ -216,7 +213,6 @@ fn ensure_session_creates_when_absent_and_reuses_when_present() {
 }
 
 #[test]
-#[ignore = "T070: SystemTmux ensure_session/spawn_window not implemented"]
 fn an_existing_session_with_a_similar_name_is_not_reused() {
     let Some(server) = TmuxServer::start() else {
         return;
@@ -236,7 +232,6 @@ fn an_existing_session_with_a_similar_name_is_not_reused() {
 }
 
 #[test]
-#[ignore = "T070: SystemTmux ensure_session/spawn_window not implemented"]
 fn spawn_window_fails_when_the_session_is_missing() {
     let Some(server) = TmuxServer::start() else {
         return;

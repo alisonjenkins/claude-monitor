@@ -268,6 +268,23 @@ impl SystemTmux {
     fn output(&self, operation: &'static str, args: &[&str]) -> Result<String, EnvError> {
         tmux_output(operation, self.socket.as_deref(), args)
     }
+
+    /// Exact-name match (`=`), so `agents` never matches `agents-old`.
+    fn has_session(&self, operation: &'static str, session: &str) -> Result<bool, EnvError> {
+        let target = format!("={session}");
+        let mut command = Command::new("tmux");
+        if let Some(socket) = &self.socket {
+            command.arg("-S").arg(socket);
+        }
+        command
+            .args(["has-session", "-t", &target])
+            .output()
+            .map(|out| out.status.success())
+            .map_err(|e| EnvError::Failed {
+                operation,
+                detail: format!("tmux has-session -t {target}: {e}"),
+            })
+    }
 }
 
 fn tmux_output(
@@ -354,24 +371,61 @@ impl Tmux for SystemTmux {
             .map(|_| ())
     }
 
-    fn ensure_session(&self, _session: &str, _cwd: &Path) -> Result<bool, EnvError> {
-        Err(EnvError::Failed {
-            operation: "ensure tmux session",
-            detail: "not implemented".to_owned(),
-        })
+    fn ensure_session(&self, session: &str, cwd: &Path) -> Result<bool, EnvError> {
+        const OPERATION: &str = "ensure tmux session";
+        if self.has_session(OPERATION, session)? {
+            return Ok(false);
+        }
+        let cwd = cwd.to_string_lossy();
+        match self.output(OPERATION, &["new-session", "-d", "-s", session, "-c", &cwd]) {
+            Ok(_) => Ok(true),
+            // Another client may have created it between the check and now.
+            Err(e) => {
+                if self.has_session(OPERATION, session)? {
+                    Ok(false)
+                } else {
+                    Err(e)
+                }
+            }
+        }
     }
 
     fn spawn_window(
         &self,
-        _session: &str,
-        _label: &str,
-        _cwd: &Path,
-        _argv: &[String],
+        session: &str,
+        label: &str,
+        cwd: &Path,
+        argv: &[String],
     ) -> Result<SpawnedWindow, EnvError> {
-        Err(EnvError::Failed {
-            operation: "spawn tmux window",
-            detail: "not implemented".to_owned(),
-        })
+        const OPERATION: &str = "spawn tmux window";
+        let target = format!("={session}:");
+        let cwd = cwd.to_string_lossy();
+        let mut args = vec![
+            "new-window",
+            "-d",
+            "-P",
+            "-F",
+            "#{pane_id}\t#{window_id}",
+            "-t",
+            &target,
+            "-n",
+            label,
+            "-c",
+            &cwd,
+            "--",
+        ];
+        args.extend(argv.iter().map(String::as_str));
+        let out = self.output(OPERATION, &args)?;
+        match out.split_once('\t') {
+            Some((pane_id, window_id)) => Ok(SpawnedWindow {
+                pane_id: pane_id.to_owned(),
+                window_id: window_id.to_owned(),
+            }),
+            None => Err(EnvError::Failed {
+                operation: OPERATION,
+                detail: format!("unexpected new-window output {out:?}"),
+            }),
+        }
     }
 }
 

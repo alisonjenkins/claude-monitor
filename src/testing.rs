@@ -117,6 +117,7 @@ struct TmuxState {
     panes: HashMap<String, PaneLocation>,
     calls: Vec<TmuxCall>,
     next_pane: u32,
+    next_window: u32,
     fail_creates: Option<String>,
 }
 
@@ -222,23 +223,70 @@ impl Tmux for FakeTmux {
         Ok(())
     }
 
-    fn ensure_session(&self, _session: &str, _cwd: &Path) -> Result<bool, EnvError> {
-        Err(EnvError::Failed {
-            operation: "ensure tmux session",
-            detail: "not implemented".to_owned(),
-        })
+    fn ensure_session(&self, session: &str, cwd: &Path) -> Result<bool, EnvError> {
+        let mut state = lock(&self.0);
+        state.calls.push(TmuxCall::EnsureSession {
+            session: session.to_owned(),
+            cwd: cwd.to_owned(),
+        });
+        if state.panes.values().any(|p| p.session_name == session) {
+            return Ok(false);
+        }
+        if let Some(detail) = state.fail_creates.clone() {
+            return Err(EnvError::Failed {
+                operation: "ensure tmux session",
+                detail,
+            });
+        }
+        let pane_id = format!("%{}", state.next_pane);
+        state.next_pane = state.next_pane.saturating_add(1);
+        state.next_window = state.next_window.saturating_add(1);
+        state.panes.insert(
+            pane_id,
+            PaneLocation {
+                session_name: session.to_owned(),
+                window_index: "0".to_owned(),
+                pane_index: "0".to_owned(),
+            },
+        );
+        Ok(true)
     }
 
     fn spawn_window(
         &self,
-        _session: &str,
-        _label: &str,
-        _cwd: &Path,
-        _argv: &[String],
+        session: &str,
+        label: &str,
+        cwd: &Path,
+        argv: &[String],
     ) -> Result<SpawnedWindow, EnvError> {
-        Err(EnvError::Failed {
-            operation: "spawn tmux window",
-            detail: "not implemented".to_owned(),
+        let mut state = lock(&self.0);
+        state.calls.push(TmuxCall::SpawnWindow {
+            session: session.to_owned(),
+            label: label.to_owned(),
+            cwd: cwd.to_owned(),
+            argv: argv.to_vec(),
+        });
+        if let Some(detail) = state.fail_creates.clone() {
+            return Err(EnvError::Failed {
+                operation: "spawn tmux window",
+                detail,
+            });
+        }
+        let pane_id = format!("%{}", state.next_pane);
+        let window_index = state.next_window;
+        state.next_pane = state.next_pane.saturating_add(1);
+        state.next_window = state.next_window.saturating_add(1);
+        state.panes.insert(
+            pane_id.clone(),
+            PaneLocation {
+                session_name: session.to_owned(),
+                window_index: window_index.to_string(),
+                pane_index: "0".to_owned(),
+            },
+        );
+        Ok(SpawnedWindow {
+            pane_id,
+            window_id: format!("@{window_index}"),
         })
     }
 }
@@ -529,7 +577,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "T070: fake ensure_session/spawn_window not implemented"]
     fn fake_ensure_session_creates_once_then_reuses() {
         let f = FakeEnv::new();
         let cwd = Path::new("/w");
@@ -550,7 +597,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "T070: fake ensure_session/spawn_window not implemented"]
     fn fake_spawn_window_records_the_call_and_tracks_a_pane() {
         let f = FakeEnv::new();
         let argv = vec!["claude".to_owned(), "--resume".to_owned(), "x".to_owned()];
@@ -580,7 +626,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "T070: fake ensure_session/spawn_window not implemented"]
     fn fake_spawn_window_failure_uses_the_create_failure() {
         let f = FakeEnv::new();
         f.tmux.fail_creates("no server");
