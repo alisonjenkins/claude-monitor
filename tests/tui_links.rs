@@ -141,7 +141,6 @@ mod page {
     use super::*;
 
     #[test]
-    #[ignore = "T103: implemented in the next commit"]
     fn the_page_lists_the_sessions_links_and_offers_the_check() {
         let app = opened(vec![
             link("42", Some("7"), "task"),
@@ -158,7 +157,6 @@ mod page {
     }
 
     #[test]
-    #[ignore = "T103: implemented in the next commit"]
     fn a_session_without_links_has_no_links_block() {
         let text = render(&opened(Vec::new()));
 
@@ -166,7 +164,6 @@ mod page {
     }
 
     #[test]
-    #[ignore = "T103: implemented in the next commit"]
     fn l_on_the_page_asks_for_the_check_and_shows_checking_at_once() {
         let (app, effects) = press(
             opened(vec![link("42", Some("7"), "task")]),
@@ -184,7 +181,6 @@ mod page {
     }
 
     #[test]
-    #[ignore = "T103: implemented in the next commit"]
     fn l_on_a_row_opens_the_page_loads_it_and_starts_the_check() {
         let (app, effects) = press(loaded(&["s1", "s2"]), KeyCode::Char('L'));
 
@@ -204,7 +200,6 @@ mod page {
     }
 
     #[test]
-    #[ignore = "T103: implemented in the next commit"]
     fn l_while_a_check_runs_does_not_start_another() {
         let (app, _) = press(opened(vec![link("42", None, "task")]), KeyCode::Char('L'));
 
@@ -214,7 +209,6 @@ mod page {
     }
 
     #[test]
-    #[ignore = "T103: implemented in the next commit"]
     fn l_with_no_links_runs_nothing_and_says_so() {
         let (app, effects) = press(opened(Vec::new()), KeyCode::Char('L'));
 
@@ -236,7 +230,6 @@ mod results {
     }
 
     #[test]
-    #[ignore = "T103: implemented in the next commit"]
     fn each_link_shows_agree_disagree_with_both_statuses_or_unreachable() {
         let app = after_check(vec![
             checked(
@@ -286,7 +279,6 @@ mod results {
     }
 
     #[test]
-    #[ignore = "T103: implemented in the next commit"]
     fn a_skipped_check_says_why_beside_every_link() {
         let (app, _) = press(
             opened(vec![link("42", Some("7"), "task")]),
@@ -307,7 +299,6 @@ mod results {
     }
 
     #[test]
-    #[ignore = "T103: implemented in the next commit"]
     fn a_failed_check_is_shown_and_a_second_l_runs_it_again() {
         let (app, _) = press(opened(vec![link("42", None, "task")]), KeyCode::Char('L'));
         let app = answer(app, Err("cannot read the links to check: boom".to_owned()));
@@ -324,7 +315,6 @@ mod results {
     }
 
     #[test]
-    #[ignore = "T103: implemented in the next commit"]
     fn an_answer_for_another_session_is_ignored() {
         let (app, _) = press(opened(vec![link("42", None, "task")]), KeyCode::Char('L'));
 
@@ -341,7 +331,6 @@ mod results {
     }
 
     #[test]
-    #[ignore = "T103: implemented in the next commit"]
     fn closing_the_page_and_reopening_it_forgets_the_result() {
         let app = after_check(vec![checked(
             link("42", None, "task"),
@@ -460,7 +449,6 @@ mod worker {
     use super::*;
 
     #[test]
-    #[ignore = "T103: implemented in the next commit"]
     fn the_check_covers_only_this_sessions_links_and_changes_nothing() {
         let rig = rig();
         rig.link("s1", "42");
@@ -496,7 +484,6 @@ mod worker {
     }
 
     #[test]
-    #[ignore = "T103: implemented in the next commit"]
     fn without_server_and_token_the_answer_is_skipped_and_nothing_runs() {
         let rig = rig();
         rig.link("s1", "42");
@@ -512,7 +499,6 @@ mod worker {
     }
 
     #[test]
-    #[ignore = "T103: implemented in the next commit"]
     fn a_slow_remote_never_blocks_the_caller_and_the_answer_arrives_later() {
         let rig = rig();
         rig.link("s1", "42");
@@ -548,7 +534,6 @@ mod worker {
     }
 
     #[test]
-    #[ignore = "T103: implemented in the next commit"]
     fn a_disagreement_reaches_the_page_with_both_statuses() {
         let rig = rig();
         rig.link("s1", "42");

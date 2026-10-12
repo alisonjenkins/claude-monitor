@@ -15,6 +15,7 @@ use crate::store::queries::{Overview, OverviewEntry, OverviewQuery, Section, Sec
 use crate::store::Store;
 
 const NO_PANE_STATUS: &str = "no tmux pane recorded for this session";
+const NO_LINKS_STATUS: &str = "this session has no links to check";
 
 #[derive(Debug, Clone)]
 pub struct Snapshot {
@@ -294,11 +295,11 @@ impl App {
             return self.on_restore_key(code);
         }
         if self.detail.is_some() {
-            self.on_detail_key(code);
-            return Vec::new();
+            return self.on_detail_key(code);
         }
         match code {
             KeyCode::Char('i') => return self.open_detail(),
+            KeyCode::Char('L') => return self.open_detail_and_check_links(),
             KeyCode::Char('R') => self.open_restore(),
             KeyCode::Char('q') | KeyCode::Esc => return vec![Effect::Quit],
             KeyCode::Char('j') | KeyCode::Down => self.move_selection(true),
@@ -364,15 +365,51 @@ impl App {
         vec![Effect::LoadDetail { id }]
     }
 
-    fn on_detail_key(&mut self, code: KeyCode) {
-        if matches!(code, KeyCode::Esc | KeyCode::Char('q' | 'i')) {
-            self.detail = None;
+    fn open_detail_and_check_links(&mut self) -> Vec<Effect> {
+        let mut effects = self.open_detail();
+        if let Some(open) = self.detail.as_mut() {
+            open.start_check();
+            effects.push(Effect::CheckLinks {
+                id: open.id().to_owned(),
+            });
         }
+        effects
+    }
+
+    fn on_detail_key(&mut self, code: KeyCode) -> Vec<Effect> {
+        match code {
+            KeyCode::Esc | KeyCode::Char('q' | 'i') => self.detail = None,
+            KeyCode::Char('L') => return self.check_links(),
+            _ => {}
+        }
+        Vec::new()
+    }
+
+    fn check_links(&mut self) -> Vec<Effect> {
+        let Some(open) = self.detail.as_mut() else {
+            return Vec::new();
+        };
+        if open.detail().is_some_and(|d| d.links.is_empty()) {
+            self.status = Some(NO_LINKS_STATUS.to_owned());
+            return Vec::new();
+        }
+        if !open.start_check() {
+            return Vec::new();
+        }
+        vec![Effect::CheckLinks {
+            id: open.id().to_owned(),
+        }]
     }
 
     fn on_detail(&mut self, detail: SessionDetail) {
         if let Some(open) = self.detail.as_mut().filter(|open| open.id() == detail.id) {
             open.set(detail);
+        }
+    }
+
+    fn on_links_checked(&mut self, id: &str, result: Result<Check, String>) {
+        if let Some(open) = self.detail.as_mut().filter(|open| open.id() == id) {
+            open.finish_check(result);
         }
     }
 }
@@ -424,7 +461,10 @@ pub fn update(mut app: App, msg: Msg) -> (App, Vec<Effect>) {
             app.on_detail(detail);
             Vec::new()
         }
-        Msg::LinksChecked { .. } => Vec::new(),
+        Msg::LinksChecked { id, result } => {
+            app.on_links_checked(&id, result);
+            Vec::new()
+        }
     };
     (app, effects)
 }

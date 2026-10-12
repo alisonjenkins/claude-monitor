@@ -17,10 +17,10 @@ const MAUVE: Color = Color::Rgb(203, 166, 247);
 const OVERLAY0: Color = Color::Rgb(88, 91, 112);
 const SUBTEXT0: Color = Color::Rgb(108, 112, 134);
 const SURFACE0: Color = Color::Rgb(49, 50, 68);
-const PEACH: Color = Color::Rgb(250, 179, 135);
+pub(super) const PEACH: Color = Color::Rgb(250, 179, 135);
 const YELLOW: Color = Color::Rgb(249, 226, 175);
 pub(super) const GREEN: Color = Color::Rgb(166, 227, 161);
-const RED: Color = Color::Rgb(243, 139, 168);
+pub(super) const RED: Color = Color::Rgb(243, 139, 168);
 
 const TITLE_HEIGHT: u16 = 3;
 const HELP_HEIGHT: u16 = 3;
@@ -256,7 +256,12 @@ fn help_line(app: &App) -> Line<'static> {
         return Line::from(spans);
     }
     if app.detail().is_some() {
-        spans.extend([Span::styled(" Esc", key), Span::raw(" close")]);
+        spans.extend([
+            Span::styled(" L", key),
+            Span::raw(" check links  "),
+            Span::styled("Esc", key),
+            Span::raw(" close"),
+        ]);
         return Line::from(spans);
     }
     spans.extend([
@@ -266,6 +271,8 @@ fn help_line(app: &App) -> Line<'static> {
         Span::raw(" jump  "),
         Span::styled("i", key),
         Span::raw(" detail  "),
+        Span::styled("L", key),
+        Span::raw(" links  "),
         Span::styled("d", key),
         Span::raw(" hide  "),
         Span::styled("u", key),

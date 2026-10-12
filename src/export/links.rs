@@ -280,6 +280,28 @@ fn compare(local: &str, reply: &str) -> Outcome {
 /// client with read-only subcommands; writes nothing. Does nothing unless the
 /// server address and token are both set.
 pub fn check_links(store: &Store, vars: &dyn Vars, timeout: Duration) -> Result<Check, CheckError> {
+    check_selected(store, vars, timeout, || store.all_links())
+}
+
+/// [`check_links`] for the links of one session or project only.
+pub fn check_owner_links(
+    store: &Store,
+    vars: &dyn Vars,
+    timeout: Duration,
+    owner_kind: OwnerKind,
+    owner_id: &str,
+) -> Result<Check, CheckError> {
+    check_selected(store, vars, timeout, || {
+        store.links_for(owner_kind, owner_id)
+    })
+}
+
+fn check_selected(
+    store: &Store,
+    vars: &dyn Vars,
+    timeout: Duration,
+    select: impl FnOnce() -> Result<Vec<Link>, LinksError>,
+) -> Result<Check, CheckError> {
     if let Some(reason) = missing_settings(vars) {
         return Ok(Check::Skipped { reason });
     }
@@ -289,7 +311,7 @@ pub fn check_links(store: &Store, vars: &dyn Vars, timeout: Duration) -> Result<
     );
     let client = find_client(vars);
     let mut checks = Vec::new();
-    for link in store.all_links()? {
+    for link in select()? {
         let local = local_status(store, &link)?;
         let outcome = match &local {
             None => Outcome::OwnerMissing,

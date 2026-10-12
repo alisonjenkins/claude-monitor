@@ -16,11 +16,13 @@ use crossterm::ExecutableCommand;
 use ratatui::prelude::*;
 
 use super::app::{update, App, Effect, Msg, Snapshot};
+use super::links::spawn_check;
 use super::restore::{preview_restore, run_restore, RestoreResult};
 use super::view::{state_label, view};
 use crate::cli::detail::SessionDetail;
 use crate::cli::migrate::open_viewer_store;
 use crate::env::Env;
+use crate::export::links::LOOKUP_TIMEOUT;
 use crate::feed::{ChangeFeed, EventSource, FsWatcherSource, Monotonic, SystemMonotonic};
 use crate::live::{build_sources_with_files, spawn_live, LiveThread};
 use crate::respawn::SPAWN_FAILED;
@@ -271,7 +273,15 @@ fn perform(effect: &Effect, env: &Env, store: &Store, restore_tx: &mpsc::Sender<
         }
         Effect::StartRestore { ids } => start_restore(env, store, ids.clone(), restore_tx),
         Effect::LoadDetail { id } => load_detail(env, store, id),
-        Effect::CheckLinks { .. } => Done::Ok,
+        Effect::CheckLinks { id } => {
+            match spawn_check(env, store.path(), id, LOOKUP_TIMEOUT, restore_tx.clone()) {
+                Ok(()) => Done::Ok,
+                Err(e) => Done::Answer(Msg::LinksChecked {
+                    id: id.clone(),
+                    result: Err(format!("cannot start a worker: {e}")),
+                }),
+            }
+        }
         Effect::JumpToPane { pane } => match tmux::switch_to_pane(pane) {
             Ok(()) => Done::Ok,
             Err(e) => Done::Failed(format!("switch failed: {e:#}")),

@@ -4,9 +4,10 @@
 use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 
-use super::links::LinksState;
+use super::links::{link_lines, LinksState};
 use super::view::{dim, heading, state_label, GREEN};
 use crate::cli::detail::SessionDetail;
+use crate::export::links::Check;
 use crate::progress::binding::ProgressView;
 use crate::store::queries::OverviewEntry;
 
@@ -45,6 +46,22 @@ impl DetailView {
     pub fn set(&mut self, detail: SessionDetail) {
         self.detail = Some(detail);
     }
+
+    /// Marks a check as running; false when one already is.
+    pub fn start_check(&mut self) -> bool {
+        if self.links == LinksState::Checking {
+            return false;
+        }
+        self.links = LinksState::Checking;
+        true
+    }
+
+    pub fn finish_check(&mut self, result: Result<Check, String>) {
+        self.links = match result {
+            Ok(check) => LinksState::Checked(check),
+            Err(reason) => LinksState::Failed(reason),
+        };
+    }
 }
 
 /// The page's lines; `entry` is the session's overview row when it is still
@@ -82,6 +99,12 @@ pub fn detail_lines(view: &DetailView, entry: Option<&OverviewEntry>) -> Vec<Lin
         lines.push(Line::default());
         lines.push(heading("Model-written summaries".to_owned()));
         lines.extend(generated.into_iter().map(indented));
+    }
+
+    let links = link_lines(detail, view.links());
+    if !links.is_empty() {
+        lines.push(Line::default());
+        lines.extend(links);
     }
     lines
 }
