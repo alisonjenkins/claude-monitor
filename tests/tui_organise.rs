@@ -372,7 +372,6 @@ mod confirming_a_dismissal {
     }
 
     #[test]
-    #[ignore = "the dismiss question is not wired up yet"]
     fn x_asks_in_the_footer_and_changes_nothing_yet() {
         let (app, effects) = press(single("s1", SectionName::Active), KeyCode::Char('x'));
 
@@ -389,7 +388,6 @@ mod confirming_a_dismissal {
     }
 
     #[test]
-    #[ignore = "the dismiss question is not wired up yet"]
     fn y_dismisses_and_closes_the_question() {
         let (app, effects) = press(asked(), KeyCode::Char('y'));
 
@@ -403,7 +401,6 @@ mod confirming_a_dismissal {
     }
 
     #[test]
-    #[ignore = "the dismiss question is not wired up yet"]
     fn every_other_key_cancels_with_no_change_and_is_not_acted_on() {
         let others = [
             KeyCode::Enter,
@@ -428,7 +425,6 @@ mod confirming_a_dismissal {
     }
 
     #[test]
-    #[ignore = "the dismiss question is not wired up yet"]
     fn the_row_falls_back_to_its_id_when_it_has_no_task_description() {
         let mut row = entry("s1", SectionName::Active);
         row.task_description = None;
@@ -451,7 +447,6 @@ mod confirming_a_dismissal {
     }
 
     #[test]
-    #[ignore = "the dismiss question is not wired up yet"]
     fn declining_in_a_real_store_leaves_the_session_listed() {
         let rig = rig();
 
@@ -464,7 +459,6 @@ mod confirming_a_dismissal {
     }
 
     #[test]
-    #[ignore = "the dismiss question is not wired up yet"]
     fn the_selection_does_not_move_while_the_question_is_open() {
         let rig = rig();
         let app = rig.select(rig.app(), "act");

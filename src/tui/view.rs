@@ -325,12 +325,25 @@ fn keys_help(key: Style, bindings: &[(&'static str, &'static str)]) -> Vec<Span<
 }
 
 fn prompt_help(prompt: &Prompt, filter_text: &str, key: Style) -> Vec<Span<'static>> {
+    if let Prompt::ConfirmDismiss { name, .. } = prompt {
+        return vec![
+            Span::styled(
+                format!(" Dismiss {name}? y/N"),
+                Style::default().add_modifier(Modifier::BOLD),
+            ),
+            Span::raw("   "),
+            Span::styled("y", key),
+            Span::raw(" dismiss  "),
+            Span::styled("any other key", key),
+            Span::raw(" cancel"),
+        ];
+    }
     let (shown, enter) = match prompt {
         Prompt::Filter => (format!(" /{filter_text}"), "keep"),
         Prompt::Note { text, .. } => (format!(" note: {text}"), "save"),
         Prompt::Group { text, .. } => (format!(" project (- for none): {text}"), "save"),
         Prompt::Link { text, .. } => (format!(" link to node [doc]: {text}"), "save"),
-        Prompt::ConfirmDismiss { name, .. } => (format!(" Dismiss {name}?"), "cancel"),
+        Prompt::ConfirmDismiss { .. } => return Vec::new(),
     };
     let leave = match prompt {
         Prompt::Filter => "clear",

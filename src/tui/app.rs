@@ -24,6 +24,7 @@ const NO_PANE_STATUS: &str = "no tmux pane recorded for this session";
 const NO_LINKS_STATUS: &str = "this session has no links to check";
 const NOT_FINISHED_STATUS: &str = "only a finished session can be marked done";
 const NOT_DONE_STATUS: &str = "that session is not done";
+const DISMISS_CANCELLED_STATUS: &str = "dismiss cancelled";
 const LINK_USAGE_STATUS: &str = "link takes <node-id> [doc]";
 
 /// What `D`, `U` and `x` ask for on the selected row.
@@ -422,7 +423,14 @@ impl App {
             (Mark::Undone, SectionName::Done) => Organise::Undone { id },
             (Mark::Undone, _) => return self.refuse(NOT_DONE_STATUS),
             (Mark::Dismiss, SectionName::Dismissed) => Organise::Undismiss { id },
-            (Mark::Dismiss, _) => Organise::Dismiss { id },
+            (Mark::Dismiss, _) => {
+                let name = self
+                    .selected_entry()
+                    .and_then(|entry| entry.task_description.clone())
+                    .unwrap_or_else(|| id.clone());
+                self.prompt = Some(Prompt::ConfirmDismiss { id, name });
+                return Vec::new();
+            }
         };
         vec![Effect::Organise(action)]
     }
@@ -555,7 +563,14 @@ impl App {
                 }
             }
             (Prompt::Link { .. }, KeyCode::Esc) => self.prompt = None,
-            (Prompt::ConfirmDismiss { .. }, _) => self.prompt = None,
+            (Prompt::ConfirmDismiss { id, .. }, KeyCode::Char('y')) => {
+                self.prompt = None;
+                return vec![Effect::Organise(Organise::Dismiss { id })];
+            }
+            (Prompt::ConfirmDismiss { .. }, _) => {
+                self.prompt = None;
+                self.status = Some(DISMISS_CANCELLED_STATUS.to_owned());
+            }
             _ => {}
         }
         Vec::new()
