@@ -159,19 +159,66 @@
           hm-module =
             let
               hmPkgs = import home-manager.inputs.nixpkgs { inherit system; };
-              hmConfig = home-manager.lib.homeManagerConfiguration {
-                pkgs = hmPkgs;
-                modules = [
-                  self.homeManagerModules.default
-                  {
-                    home.username = "claude-monitor-check";
-                    home.homeDirectory = "/home/claude-monitor-check";
-                    home.stateVersion = "24.05";
-                    programs.claude-monitor.enable = true;
-                  }
-                ];
-              };
+              mkHmConfig =
+                copilot:
+                home-manager.lib.homeManagerConfiguration {
+                  pkgs = hmPkgs;
+                  modules = [
+                    self.homeManagerModules.default
+                    {
+                      home.username = "claude-monitor-check";
+                      home.homeDirectory = "/home/claude-monitor-check";
+                      home.stateVersion = "24.05";
+                      programs.claude-monitor.enable = true;
+                      programs.claude-monitor.copilot.enable = copilot;
+                    }
+                  ];
+                };
+              hmConfig = mkHmConfig false;
               hooks = hmConfig.config.programs.claude-code.settings.hooks;
+
+              # Copilot hooks file: absent by default, and when enabled it must
+              # be valid JSON v1 with exactly the eight camelCase events, each
+              # running the store-path binary (no PATH reliance).
+              copilotFile = ".copilot/hooks/claude-monitor.json";
+              hasCopilotFile = cfg: builtins.hasAttr copilotFile cfg.config.home.file;
+              # fromJSON refuses strings that carry store-path context (the
+              # handler commands reference the package), so drop it for parsing.
+              copilotParsed = builtins.fromJSON (
+                builtins.unsafeDiscardStringContext (mkHmConfig true).config.home.file.${copilotFile}.text
+              );
+              expectedCopilotEvents = [
+                "agentStop"
+                "notification"
+                "permissionRequest"
+                "postToolUse"
+                "preToolUse"
+                "sessionEnd"
+                "sessionStart"
+                "userPromptSubmitted"
+              ];
+              copilotHandlerOk =
+                handlers:
+                builtins.length handlers == 1
+                && builtins.all (
+                  h:
+                  h.type == "command"
+                  && h.timeoutSec == 10
+                  && pkgs.lib.hasPrefix "/nix/store/" h.bash
+                  && pkgs.lib.hasInfix "hook --agent copilot" h.bash
+                ) handlers;
+              copilotProblems =
+                pkgs.lib.optional (hasCopilotFile hmConfig) "copilot hooks file generated with copilot.enable = false"
+                ++ pkgs.lib.optional (
+                  !hasCopilotFile (mkHmConfig true)
+                ) "copilot hooks file missing with copilot.enable = true"
+                ++ pkgs.lib.optional (copilotParsed.version != 1) "copilot hooks file version is not 1"
+                ++ pkgs.lib.optional (
+                  builtins.sort builtins.lessThan (builtins.attrNames copilotParsed.hooks) != expectedCopilotEvents
+                ) "copilot hooks file events differ from the expected eight"
+                ++ pkgs.lib.optional (
+                  !builtins.all copilotHandlerOk (builtins.attrValues copilotParsed.hooks)
+                ) "a copilot handler is not a store-path `hook --agent copilot` command with timeoutSec 10";
               expectedEvents = [
                 "SessionStart"
                 "UserPromptSubmit"
@@ -186,6 +233,8 @@
             in
             if missing != [ ] then
               throw "claude-monitor hm-module: missing hook events: ${toString missing}"
+            else if copilotProblems != [ ] then
+              throw "claude-monitor hm-module: ${builtins.concatStringsSep "; " copilotProblems}"
             else
               hmPkgs.runCommand "claude-monitor-hm-module-check" { } "touch $out";
         }
