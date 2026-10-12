@@ -486,7 +486,6 @@ mod storage {
     }
 
     #[test]
-    #[ignore = "implemented by T091"]
     fn model_text_is_stored_with_model_timestamp_and_label() {
         let (_h, store, id) = seeded();
         let made = store
@@ -505,7 +504,6 @@ mod storage {
     }
 
     #[test]
-    #[ignore = "implemented by T091"]
     fn model_text_never_overwrites_the_verbatim_text() {
         let (h, store, id) = seeded();
         store
@@ -520,7 +518,6 @@ mod storage {
     }
 
     #[test]
-    #[ignore = "implemented by T091"]
     fn summaries_accumulate_newest_first_and_stay_with_their_owner() {
         let (_h, store, id) = seeded();
         store
@@ -545,7 +542,6 @@ mod storage {
     }
 
     #[test]
-    #[ignore = "implemented by T091"]
     fn nothing_is_generated_without_an_explicit_request() {
         let (_h, store, id) = seeded();
         assert!(store.list_summaries("session", &id).unwrap().is_empty());
