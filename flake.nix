@@ -181,9 +181,14 @@
                   bootCheck ? false,
                   bootCheckBanner ? false,
                   hostSystem ? system,
+                  extra ? { },
                 }:
                 home-manager.lib.homeManagerConfiguration {
-                  pkgs = if hostSystem == system then hmPkgs else import home-manager.inputs.nixpkgs { system = hostSystem; };
+                  pkgs =
+                    if hostSystem == system then
+                      hmPkgs
+                    else
+                      import home-manager.inputs.nixpkgs { system = hostSystem; };
                   modules = [
                     self.homeManagerModules.default
                     {
@@ -198,6 +203,7 @@
                       programs.claude-monitor.bootCheck.banner.enable = bootCheckBanner;
                       programs.tmux.enable = true;
                     }
+                    extra
                   ];
                 };
               hmConfig = mkHmConfig false;
@@ -243,9 +249,14 @@
                 ++ pkgs.lib.optional (
                   builtins.sort builtins.lessThan (builtins.attrNames copilotParsed.hooks) != expectedCopilotEvents
                 ) "copilot hooks file events differ from the expected eight"
-                ++ pkgs.lib.optional (
-                  !builtins.all (e: copilotHandlerOk e copilotParsed.hooks.${e}) (builtins.attrNames copilotParsed.hooks)
-                ) "a copilot handler is not a store-path `hook --agent copilot --event <its event>` command with timeoutSec 10";
+                ++
+                  pkgs.lib.optional
+                    (
+                      !builtins.all (e: copilotHandlerOk e copilotParsed.hooks.${e}) (
+                        builtins.attrNames copilotParsed.hooks
+                      )
+                    )
+                    "a copilot handler is not a store-path `hook --agent copilot --event <its event>` command with timeoutSec 10";
               # tmux hooks: absent by default; when enabled the generated
               # tmux config must carry the three hooks, each running the
               # store-path binary, and the pane-scoped ones pass the pane id.
@@ -326,9 +337,7 @@
                   bootCheck = true;
                 }).config.systemd.user.services.${bootCheckServiceName};
               bootCheckProblems =
-                pkgs.lib.optional (
-                  hasBootCheckService hmConfig
-                ) "boot-check unit generated with bootCheck.enable = false"
+                pkgs.lib.optional (hasBootCheckService hmConfig) "boot-check unit generated with bootCheck.enable = false"
                 ++ pkgs.lib.optionals pkgs.stdenv.hostPlatform.isLinux (
                   let
                     exec = builtins.unsafeDiscardStringContext (
@@ -338,9 +347,7 @@
                   pkgs.lib.optional (
                     !(pkgs.lib.hasPrefix "/nix/store/" exec && pkgs.lib.hasSuffix "/bin/claude-monitor boot-check" exec)
                   ) "boot-check unit ExecStart is not the store-path `claude-monitor boot-check`"
-                  ++ pkgs.lib.optional (
-                    bootCheckOn.Service.Type != "oneshot"
-                  ) "boot-check unit is not a oneshot"
+                  ++ pkgs.lib.optional (bootCheckOn.Service.Type != "oneshot") "boot-check unit is not a oneshot"
                   ++ pkgs.lib.optional (
                     bootCheckOn.Install.WantedBy != [ "default.target" ]
                   ) "boot-check unit is not wanted by default.target"
@@ -370,24 +377,29 @@
                 ) "boot-check launchd agent is not RunAtLoad"
                 ++ pkgs.lib.optional (
                   pkgs.stdenv.hostPlatform.isLinux
-                  && builtins.hasAttr bootCheckServiceName
-                    (mkHmConfigWith {
-                      copilot = false;
-                      tmuxHooks = false;
-                      bootCheck = true;
-                    }).config.launchd.agents
+                  &&
+                    builtins.hasAttr bootCheckServiceName
+                      (mkHmConfigWith {
+                        copilot = false;
+                        tmuxHooks = false;
+                        bootCheck = true;
+                      }).config.launchd.agents
                 ) "boot-check launchd agent generated on Linux";
               # banner hook: absent by default; when enabled the tmux config
               # carries one client-attached line that backgrounds the
               # store-path `boot-check --banner` with no shell expansions.
               bannerLines =
                 conf:
-                builtins.filter (l: pkgs.lib.hasPrefix "set-hook -g client-attached " l) (pkgs.lib.splitString "\n" conf);
-              bannerOn = bannerLines (tmuxConf (mkHmConfigWith {
-                copilot = false;
-                tmuxHooks = false;
-                bootCheckBanner = true;
-              }));
+                builtins.filter (l: pkgs.lib.hasPrefix "set-hook -g client-attached " l) (
+                  pkgs.lib.splitString "\n" conf
+                );
+              bannerOn = bannerLines (
+                tmuxConf (mkHmConfigWith {
+                  copilot = false;
+                  tmuxHooks = false;
+                  bootCheckBanner = true;
+                })
+              );
               bannerProblems =
                 pkgs.lib.optional (
                   bannerLines tmuxOff != [ ]
@@ -401,6 +413,36 @@
                     && !pkgs.lib.hasInfix "$" (builtins.head bannerOn)
                   )
                 ) "client-attached hook missing or not a backgrounded store-path `boot-check --banner`";
+              # config.json: defaults carry no launchers and the "agents"
+              # session; configured values pass through verbatim.
+              configFile = "claude-monitor/config.json";
+              configOf =
+                cfg:
+                builtins.fromJSON (
+                  builtins.unsafeDiscardStringContext cfg.config.xdg.configFile.${configFile}.text
+                );
+              configDefault = configOf hmConfig;
+              configSet = configOf (mkHmConfigWith {
+                copilot = false;
+                tmuxHooks = false;
+                extra = {
+                  programs.claude-monitor.tmuxSession = "work";
+                  programs.claude-monitor.launchers.claude = "claude --resume {session_id} --name {name}";
+                };
+              });
+              configProblems =
+                pkgs.lib.optional (
+                  configDefault != {
+                    tmuxSession = "agents";
+                    launchers = { };
+                  }
+                ) "default config.json is not {tmuxSession=agents; launchers={}}"
+                ++ pkgs.lib.optional (
+                  configSet != {
+                    tmuxSession = "work";
+                    launchers.claude = "claude --resume {session_id} --name {name}";
+                  }
+                ) "configured launchers/tmuxSession missing from config.json";
               expectedEvents = [
                 "SessionStart"
                 "UserPromptSubmit"
@@ -427,6 +469,8 @@
               throw "claude-monitor hm-module: ${builtins.concatStringsSep "; " launchdProblems}"
             else if bannerProblems != [ ] then
               throw "claude-monitor hm-module: ${builtins.concatStringsSep "; " bannerProblems}"
+            else if configProblems != [ ] then
+              throw "claude-monitor hm-module: ${builtins.concatStringsSep "; " configProblems}"
             else
               hmPkgs.runCommand "claude-monitor-hm-module-check" { } "touch $out";
         }
