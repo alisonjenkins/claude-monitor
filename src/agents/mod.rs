@@ -69,6 +69,9 @@ pub struct ParsedHook {
     pub prompt: Option<String>,
     /// `Stop`: the full last assistant message.
     pub last_assistant_message: Option<String>,
+    /// `Stop`: the conversation transcript, the fallback source of the last
+    /// assistant message.
+    pub transcript_path: Option<String>,
     /// Tool events and `PermissionRequest`.
     pub tool_name: Option<String>,
     /// `Notification`: the human-readable message.
@@ -83,6 +86,7 @@ impl ParsedHook {
             cwd: None,
             prompt: None,
             last_assistant_message: None,
+            transcript_path: None,
             tool_name: None,
             message: None,
         }

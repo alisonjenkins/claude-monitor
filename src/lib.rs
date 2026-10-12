@@ -13,6 +13,7 @@ pub mod refresh;
 pub mod respawn;
 pub mod session;
 pub mod store;
+pub mod summary;
 #[doc(hidden)]
 pub mod testing;
 pub mod tmux;
