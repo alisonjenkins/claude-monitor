@@ -4,9 +4,12 @@
 
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
+use std::net::SocketAddr;
 use std::path::Path;
 
 use serde_json::Value;
+
+use crate::env::Vars;
 
 /// Most bytes read from the end of a transcript when looking for the latest
 /// assistant message; a transcript can run to many megabytes and a hook has a
@@ -70,5 +73,110 @@ pub fn left_off(stop_message: Option<&str>, transcript_path: Option<&Path>) -> O
         None => {
             transcript_path.and_then(|path| transcript_tail_message(path, TRANSCRIPT_TAIL_BYTES))
         }
+    }
+}
+
+/// Environment variable naming the OpenAI-compatible server's base URL.
+pub const URL_VAR: &str = "CLAUDE_MONITOR_SUMMARY_URL";
+/// Environment variable naming the model to ask for.
+pub const MODEL_VAR: &str = "CLAUDE_MONITOR_SUMMARY_MODEL";
+
+#[derive(Debug, thiserror::Error, PartialEq, Eq)]
+pub enum EndpointError {
+    #[error("summary endpoint {url:?} is not usable: {reason}")]
+    Invalid { url: String, reason: &'static str },
+    #[error(
+        "summary endpoint host {host:?} is not loopback; session text never leaves this machine"
+    )]
+    NotLoopback { host: String },
+}
+
+/// A parsed model endpoint that is known to be on this machine.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Endpoint {
+    addr: SocketAddr,
+    base_path: String,
+}
+
+impl Endpoint {
+    /// Accepts `http://` URLs whose host is `localhost` or a loopback IP
+    /// literal, without userinfo, query or fragment. Never resolves a name.
+    pub fn parse(url: &str) -> Result<Self, EndpointError> {
+        Err(EndpointError::Invalid {
+            url: url.to_owned(),
+            reason: "not implemented",
+        })
+    }
+
+    pub fn addr(&self) -> SocketAddr {
+        self.addr
+    }
+
+    /// The request path: the URL's own path then `/v1/chat/completions`.
+    pub fn chat_path(&self) -> String {
+        self.base_path.clone()
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum ConfigError {
+    #[error("{var} is not set")]
+    NotConfigured { var: &'static str },
+    #[error(transparent)]
+    Endpoint(#[from] EndpointError),
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum ModelError {
+    #[error("cannot reach the summary model at {addr}: {source}")]
+    Io {
+        addr: SocketAddr,
+        source: std::io::Error,
+    },
+    #[error(
+        "the summary model answered with a redirect (HTTP {status}); redirects are not followed"
+    )]
+    Redirect { status: u16 },
+    #[error("the summary model answered HTTP {status}")]
+    Status { status: u16 },
+    #[error("the summary model's answer is unusable: {0}")]
+    BadResponse(&'static str),
+}
+
+/// An OpenAI-compatible chat client bound to one loopback endpoint.
+#[derive(Debug, Clone)]
+pub struct ModelClient {
+    endpoint: Endpoint,
+    model: String,
+}
+
+impl ModelClient {
+    pub fn new(endpoint: Endpoint, model: &str) -> Self {
+        Self {
+            endpoint,
+            model: model.to_owned(),
+        }
+    }
+
+    /// Both variables must be set; there is no default endpoint.
+    pub fn from_vars(_vars: &dyn Vars) -> Result<Self, ConfigError> {
+        Err(ConfigError::NotConfigured { var: URL_VAR })
+    }
+
+    pub fn model(&self) -> &str {
+        &self.model
+    }
+
+    pub fn endpoint(&self) -> &Endpoint {
+        &self.endpoint
+    }
+
+    /// One chat completion over the session's task and left-off text.
+    pub fn summarize(
+        &self,
+        _task: Option<&str>,
+        _left_off: Option<&str>,
+    ) -> Result<String, ModelError> {
+        Err(ModelError::BadResponse("not implemented"))
     }
 }

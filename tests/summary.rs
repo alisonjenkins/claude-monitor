@@ -4,6 +4,7 @@
 #![allow(
     clippy::unwrap_used,
     clippy::expect_used,
+    clippy::panic,
     clippy::indexing_slicing,
     clippy::arithmetic_side_effects
 )]
@@ -213,5 +214,264 @@ mod verbatim {
             summary::transcript_tail_message(&path, cap).as_deref(),
             Some("kept")
         );
+    }
+}
+
+mod endpoint {
+    use std::io::{Read, Write};
+    use std::net::{SocketAddr, TcpListener, TcpStream};
+    use std::thread::JoinHandle;
+
+    use claude_monitor::summary::{
+        ConfigError, Endpoint, EndpointError, ModelClient, ModelError, MODEL_VAR, URL_VAR,
+    };
+    use claude_monitor::testing::FakeEnv;
+
+    use super::*;
+
+    struct Captured {
+        request_line: String,
+        headers: String,
+        body: Value,
+    }
+
+    /// Serves exactly one connection on a loopback port with `response`.
+    fn fake_server(response: String) -> (SocketAddr, JoinHandle<Captured>) {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let handle = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut raw = Vec::new();
+            let mut chunk = [0_u8; 4096];
+            let (head_end, length) = loop {
+                let n = stream.read(&mut chunk).unwrap();
+                raw.extend_from_slice(&chunk[..n]);
+                let text = String::from_utf8_lossy(&raw).into_owned();
+                if let Some(end) = text.find("\r\n\r\n") {
+                    let length = text[..end]
+                        .lines()
+                        .find_map(|l| {
+                            l.to_ascii_lowercase()
+                                .strip_prefix("content-length:")
+                                .map(|v| v.trim().parse::<usize>().unwrap())
+                        })
+                        .unwrap_or(0);
+                    break (end + 4, length);
+                }
+                assert!(n > 0, "client closed before finishing the request");
+            };
+            while raw.len() < head_end + length {
+                let n = stream.read(&mut chunk).unwrap();
+                assert!(n > 0, "client closed mid-body");
+                raw.extend_from_slice(&chunk[..n]);
+            }
+            let head = String::from_utf8_lossy(&raw[..head_end]).into_owned();
+            let body = serde_json::from_slice(&raw[head_end..head_end + length]).unwrap();
+            stream.write_all(response.as_bytes()).unwrap();
+            let _ = stream.flush();
+            Captured {
+                request_line: head.lines().next().unwrap().to_owned(),
+                headers: head.to_ascii_lowercase(),
+                body,
+            }
+        });
+        (addr, handle)
+    }
+
+    fn http(status_line: &str, extra_headers: &str, body: &str) -> String {
+        format!(
+            "HTTP/1.1 {status_line}\r\nContent-Type: application/json\r\n\
+             Content-Length: {}\r\nConnection: close\r\n{extra_headers}\r\n{body}",
+            body.len()
+        )
+    }
+
+    fn completion(text: &str) -> String {
+        http(
+            "200 OK",
+            "",
+            &json!({"choices": [{"message": {"role": "assistant", "content": text}}]}).to_string(),
+        )
+    }
+
+    fn client_for(addr: SocketAddr) -> ModelClient {
+        let endpoint = Endpoint::parse(&format!("http://{addr}")).unwrap();
+        ModelClient::new(endpoint, "test-model")
+    }
+
+    #[test]
+    #[ignore = "implemented by T091"]
+    fn loopback_endpoints_are_accepted() {
+        for (url, addr, path) in [
+            (
+                "http://127.0.0.1:8081",
+                "127.0.0.1:8081",
+                "/v1/chat/completions",
+            ),
+            ("http://127.1.2.3:1/", "127.1.2.3:1", "/v1/chat/completions"),
+            ("http://localhost:9", "127.0.0.1:9", "/v1/chat/completions"),
+            (
+                "http://LOCALHOST:9/api/",
+                "127.0.0.1:9",
+                "/api/v1/chat/completions",
+            ),
+            ("http://[::1]:8080/", "[::1]:8080", "/v1/chat/completions"),
+            ("http://127.0.0.1", "127.0.0.1:80", "/v1/chat/completions"),
+        ] {
+            let parsed = Endpoint::parse(url).unwrap_or_else(|e| panic!("{url}: {e}"));
+            assert_eq!(parsed.addr(), addr.parse::<SocketAddr>().unwrap(), "{url}");
+            assert_eq!(parsed.chat_path(), path, "{url}");
+        }
+    }
+
+    #[test]
+    #[ignore = "implemented by T091"]
+    fn anything_not_provably_loopback_is_rejected_before_connecting() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let bad = [
+            "http://example.com".to_owned(),
+            "http://192.168.1.5:8080".to_owned(),
+            "http://0.0.0.0:8080".to_owned(),
+            "http://10.0.0.1".to_owned(),
+            "http://[::2]:8080".to_owned(),
+            "http://[::ffff:127.0.0.1]:8080".to_owned(),
+            "http://2130706433:8080".to_owned(),
+            "http://127.1:8080".to_owned(),
+            format!("http://127.0.0.1@evil.example:{port}"),
+            format!("http://evil.example@127.0.0.1:{port}"),
+            format!("http://user:pw@127.0.0.1:{port}"),
+            format!("http://127.0.0.1.evil.example:{port}"),
+            format!("http://localhost.evil.example:{port}"),
+            format!("http://evil.example:{port}/127.0.0.1"),
+            format!("http://127.0.0.1:{port}?next=http://evil.example"),
+            format!("http://127.0.0.1:{port}#x"),
+            format!("http://127.0.0.1:{port}/a b"),
+            format!("http://127.0.0.1:{port}/\r\nX-Evil: 1"),
+            "http://127.0.0.1:99999".to_owned(),
+            "https://127.0.0.1:8080".to_owned(),
+            "ftp://127.0.0.1".to_owned(),
+            "127.0.0.1:8080".to_owned(),
+            "http://".to_owned(),
+            String::new(),
+        ];
+        for url in &bad {
+            assert!(Endpoint::parse(url).is_err(), "{url:?} was accepted");
+        }
+        let err = Endpoint::parse("http://example.com").unwrap_err();
+        assert!(matches!(err, EndpointError::NotLoopback { .. }), "{err}");
+        let err = Endpoint::parse("http://127.0.0.1@evil.example").unwrap_err();
+        assert!(matches!(err, EndpointError::Invalid { .. }), "{err}");
+
+        let err = listener.accept().unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::WouldBlock);
+    }
+
+    #[test]
+    #[ignore = "implemented by T091"]
+    fn no_endpoint_is_configured_by_default() {
+        let fake = FakeEnv::new();
+        let err = ModelClient::from_vars(fake.env.vars.as_ref()).unwrap_err();
+        assert!(matches!(err, ConfigError::NotConfigured { var } if var == URL_VAR));
+
+        fake.vars.set(URL_VAR, "http://127.0.0.1:8081");
+        let err = ModelClient::from_vars(fake.env.vars.as_ref()).unwrap_err();
+        assert!(matches!(err, ConfigError::NotConfigured { var } if var == MODEL_VAR));
+
+        fake.vars.set(MODEL_VAR, "tiny");
+        let client = ModelClient::from_vars(fake.env.vars.as_ref()).unwrap();
+        assert_eq!(client.model(), "tiny");
+        assert_eq!(client.endpoint().addr().port(), 8081);
+    }
+
+    #[test]
+    #[ignore = "implemented by T091"]
+    fn a_remote_url_in_the_environment_is_a_config_error() {
+        let fake = FakeEnv::new();
+        fake.vars.set(URL_VAR, "http://api.example.com");
+        fake.vars.set(MODEL_VAR, "tiny");
+        let err = ModelClient::from_vars(fake.env.vars.as_ref()).unwrap_err();
+        assert!(
+            matches!(
+                err,
+                ConfigError::Endpoint(EndpointError::NotLoopback { .. })
+            ),
+            "{err}"
+        );
+    }
+
+    #[test]
+    #[ignore = "implemented by T091"]
+    fn summarize_posts_the_session_text_and_returns_the_reply() {
+        let (addr, server) = fake_server(completion("Fixed the flaky test."));
+        let text = client_for(addr)
+            .summarize(Some("Fix the flaky test"), Some("Test now passes"))
+            .unwrap();
+        assert_eq!(text, "Fixed the flaky test.");
+
+        let captured = server.join().unwrap();
+        assert_eq!(captured.request_line, "POST /v1/chat/completions HTTP/1.0");
+        assert!(captured.headers.contains(&format!("host: {addr}")));
+        assert!(captured.headers.contains("content-type: application/json"));
+        assert_eq!(captured.body["model"], "test-model");
+        assert_eq!(captured.body["stream"], false);
+        let messages = captured.body["messages"].as_array().unwrap();
+        assert_eq!(messages.first().unwrap()["role"], "system");
+        let user = messages.last().unwrap();
+        assert_eq!(user["role"], "user");
+        let content = user["content"].as_str().unwrap();
+        assert!(content.contains("Fix the flaky test"), "{content}");
+        assert!(content.contains("Test now passes"), "{content}");
+    }
+
+    #[test]
+    #[ignore = "implemented by T091"]
+    fn redirects_are_not_followed() {
+        let target = TcpListener::bind("127.0.0.1:0").unwrap();
+        target.set_nonblocking(true).unwrap();
+        let location = format!("http://{}/elsewhere", target.local_addr().unwrap());
+        let (addr, server) =
+            fake_server(http("302 Found", &format!("Location: {location}\r\n"), ""));
+        let err = client_for(addr).summarize(Some("t"), None).unwrap_err();
+        assert!(matches!(err, ModelError::Redirect { status: 302 }), "{err}");
+        server.join().unwrap();
+        assert_eq!(
+            target.accept().unwrap_err().kind(),
+            std::io::ErrorKind::WouldBlock
+        );
+    }
+
+    #[test]
+    #[ignore = "implemented by T091"]
+    fn error_statuses_and_garbage_answers_are_errors() {
+        let (addr, server) = fake_server(http("500 Internal Server Error", "", "{}"));
+        let err = client_for(addr).summarize(Some("t"), None).unwrap_err();
+        assert!(matches!(err, ModelError::Status { status: 500 }), "{err}");
+        server.join().unwrap();
+
+        for body in [
+            "not json",
+            "{}",
+            r#"{"choices": []}"#,
+            r#"{"choices":[{"message":{"content":"  "}}]}"#,
+        ] {
+            let (addr, server) = fake_server(http("200 OK", "", body));
+            let err = client_for(addr).summarize(Some("t"), None).unwrap_err();
+            assert!(matches!(err, ModelError::BadResponse(_)), "{body}: {err}");
+            server.join().unwrap();
+        }
+    }
+
+    #[test]
+    #[ignore = "implemented by T091"]
+    fn nothing_listening_is_an_io_error() {
+        let addr = {
+            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+            listener.local_addr().unwrap()
+        };
+        let err = client_for(addr).summarize(Some("t"), None).unwrap_err();
+        assert!(matches!(err, ModelError::Io { .. }), "{err}");
+        drop(TcpStream::connect(addr).err());
     }
 }
