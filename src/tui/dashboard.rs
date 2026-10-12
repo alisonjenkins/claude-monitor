@@ -16,9 +16,11 @@ use crossterm::ExecutableCommand;
 use ratatui::prelude::*;
 
 use super::app::{update, App, Effect, Msg, Snapshot};
+use super::bind;
 use super::links::spawn_check;
 use super::organise;
 use super::restore::{preview_restore, run_restore, RestoreResult};
+use super::summarize;
 use super::view::view;
 use crate::cli::detail::SessionDetail;
 use crate::cli::migrate::open_viewer_store;
@@ -274,6 +276,13 @@ fn perform(effect: &Effect, env: &Env, store: &Store, restore_tx: &mpsc::Sender<
         Effect::StartRestore { ids } => start_restore(env, store, ids.clone(), restore_tx),
         Effect::LoadDetail { id } => load_detail(env, store, id),
         Effect::Organise(action) => Done::Answer(organise::run(env, store, action)),
+        Effect::LoadCandidates { id } => Done::Answer(bind::load(env, store, id)),
+        Effect::Summarize { id } => {
+            match summarize::spawn(env, store.path(), id, restore_tx.clone()) {
+                Ok(()) => Done::Ok,
+                Err(e) => Done::Failed(format!("cannot start a worker: {e}")),
+            }
+        }
         Effect::CheckLinks { id } => {
             match spawn_check(env, store.path(), id, LOOKUP_TIMEOUT, restore_tx.clone()) {
                 Ok(()) => Done::Ok,

@@ -1,4 +1,5 @@
 pub mod app;
+pub mod bind;
 pub mod bindings;
 pub mod dashboard;
 pub mod detail;
@@ -7,4 +8,5 @@ pub mod links;
 pub mod organise;
 pub mod projects;
 pub mod restore;
+pub mod summarize;
 pub mod view;

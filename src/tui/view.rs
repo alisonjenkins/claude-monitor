@@ -311,10 +311,12 @@ fn prompt_help(prompt: &Prompt, filter_text: &str, key: Style) -> Vec<Span<'stat
     let (shown, enter) = match prompt {
         Prompt::Filter => (format!(" /{filter_text}"), "keep"),
         Prompt::Note { text, .. } => (format!(" note: {text}"), "save"),
+        Prompt::Group { text, .. } => (format!(" project (- for none): {text}"), "save"),
+        Prompt::Link { text, .. } => (format!(" link to node [doc]: {text}"), "save"),
     };
     let leave = match prompt {
         Prompt::Filter => "clear",
-        Prompt::Note { .. } => "cancel",
+        Prompt::Note { .. } | Prompt::Group { .. } | Prompt::Link { .. } => "cancel",
     };
     vec![
         Span::styled(

@@ -6,6 +6,7 @@ use std::path::Path;
 
 use crossterm::event::{KeyCode, KeyModifiers};
 
+use super::bind::{BindChooser, BindOption};
 use super::bindings::{action_for, Action};
 use super::detail::DetailView;
 use super::filter::Filter;
@@ -86,6 +87,17 @@ pub enum Msg {
         id: String,
         result: Result<Check, String>,
     },
+    /// The answer to [`Effect::LoadCandidates`]: the rows of the progress
+    /// source chooser.
+    Candidates {
+        id: String,
+        options: Vec<BindOption>,
+    },
+    /// The answer to [`Effect::Summarize`]: stored, or why it was refused.
+    Summarized {
+        id: String,
+        result: Result<(), String>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -107,6 +119,16 @@ pub enum Effect {
     CheckLinks {
         id: String,
     },
+    /// Find the plan files that could be this session's and answer with
+    /// [`Msg::Candidates`].
+    LoadCandidates {
+        id: String,
+    },
+    /// Ask the local model for a summary off the UI thread and answer with
+    /// [`Msg::Summarized`].
+    Summarize {
+        id: String,
+    },
     /// Change the store as the person asked, then reload.
     Organise(Organise),
     JumpToPane {
@@ -126,6 +148,10 @@ pub enum Prompt {
     Filter,
     /// A note for this session; Enter saves it.
     Note { id: String, text: String },
+    /// A project name for this session (`-` for none); Enter saves it.
+    Group { id: String, text: String },
+    /// `<node-id> [doc]` to link this session to; Enter saves it.
+    Link { id: String, text: String },
 }
 
 #[derive(Debug, Clone)]
@@ -147,6 +173,8 @@ pub struct App {
     restore: Option<RestoreView>,
     /// Open with `i`; takes over the keys until closed.
     detail: Option<DetailView>,
+    /// Open with `b`; takes over the keys until closed.
+    chooser: Option<BindChooser>,
 }
 
 impl App {
@@ -163,7 +191,12 @@ impl App {
             unseen_expanded: false,
             restore: None,
             detail: None,
+            chooser: None,
         }
+    }
+
+    pub fn chooser(&self) -> Option<&BindChooser> {
+        self.chooser.as_ref()
     }
 
     pub fn grouped(&self) -> bool {
@@ -693,6 +726,7 @@ pub fn update(mut app: App, msg: Msg) -> (App, Vec<Effect>) {
             app.on_links_checked(&id, result);
             Vec::new()
         }
+        Msg::Candidates { .. } | Msg::Summarized { .. } => Vec::new(),
     };
     (app, effects)
 }
