@@ -99,7 +99,6 @@ mod keys_on_a_row {
     use super::*;
 
     #[test]
-    #[ignore = "T111: implemented in the next commit"]
     fn d_upper_marks_a_finished_session_done() {
         let (_, effects) = press(single("s1", SectionName::Finished), KeyCode::Char('D'));
 
@@ -112,7 +111,6 @@ mod keys_on_a_row {
     }
 
     #[test]
-    #[ignore = "T111: implemented in the next commit"]
     fn d_upper_on_anything_but_a_finished_session_is_refused_in_the_footer() {
         for section in [
             SectionName::Active,
@@ -120,7 +118,8 @@ mod keys_on_a_row {
             SectionName::Done,
             SectionName::Unseen,
         ] {
-            let (app, effects) = press(single("s1", section), KeyCode::Char('D'));
+            let listed = keys(single("s1", section), "u");
+            let (app, effects) = press(listed, KeyCode::Char('D'));
 
             assert!(effects.is_empty(), "{section:?}: {effects:?}");
             assert_eq!(
@@ -132,7 +131,6 @@ mod keys_on_a_row {
     }
 
     #[test]
-    #[ignore = "T111: implemented in the next commit"]
     fn u_upper_returns_a_done_session_to_finished() {
         let (_, effects) = press(single("s1", SectionName::Done), KeyCode::Char('U'));
 
@@ -145,7 +143,6 @@ mod keys_on_a_row {
     }
 
     #[test]
-    #[ignore = "T111: implemented in the next commit"]
     fn u_upper_on_a_session_that_is_not_done_is_refused_in_the_footer() {
         let (app, effects) = press(single("s1", SectionName::Finished), KeyCode::Char('U'));
 
@@ -154,7 +151,6 @@ mod keys_on_a_row {
     }
 
     #[test]
-    #[ignore = "T111: implemented in the next commit"]
     fn x_dismisses_the_selected_session_and_dismisses_again_undismisses() {
         let (_, effects) = press(single("s1", SectionName::Active), KeyCode::Char('x'));
         assert_eq!(
@@ -175,7 +171,6 @@ mod keys_on_a_row {
     }
 
     #[test]
-    #[ignore = "T111: implemented in the next commit"]
     fn the_keys_do_nothing_with_no_session_selected() {
         let app = update(
             App::new(),
@@ -198,7 +193,6 @@ mod keys_on_a_row {
     }
 
     #[test]
-    #[ignore = "T111: implemented in the next commit"]
     fn the_keys_act_on_the_selected_row_in_the_grouped_view_too() {
         let app = keys(single("s1", SectionName::Finished), "p");
 
@@ -213,7 +207,6 @@ mod keys_on_a_row {
     }
 
     #[test]
-    #[ignore = "T111: implemented in the next commit"]
     fn the_help_line_lists_the_organise_keys() {
         let text = render(&single("s1", SectionName::Finished));
 
@@ -234,7 +227,6 @@ mod note_prompt {
     }
 
     #[test]
-    #[ignore = "T111: implemented in the next commit"]
     fn n_opens_a_note_prompt_for_the_selected_session() {
         let (app, effects) = press(single("s1", SectionName::Active), KeyCode::Char('n'));
 
@@ -250,7 +242,6 @@ mod note_prompt {
     }
 
     #[test]
-    #[ignore = "T111: implemented in the next commit"]
     fn typed_text_shows_in_the_prompt_and_command_keys_are_plain_letters() {
         let app = typing("quit D x");
 
@@ -265,7 +256,6 @@ mod note_prompt {
     }
 
     #[test]
-    #[ignore = "T111: implemented in the next commit"]
     fn backspace_deletes_and_enter_saves_the_trimmed_note() {
         let app = typing("  call back  now!");
         let (app, _) = press(app, KeyCode::Backspace);
@@ -283,7 +273,6 @@ mod note_prompt {
     }
 
     #[test]
-    #[ignore = "T111: implemented in the next commit"]
     fn an_empty_note_is_not_saved() {
         let (app, effects) = press(typing("   "), KeyCode::Enter);
 
@@ -292,7 +281,6 @@ mod note_prompt {
     }
 
     #[test]
-    #[ignore = "T111: implemented in the next commit"]
     fn esc_cancels_without_saving_or_quitting() {
         let (app, effects) = press(typing("draft"), KeyCode::Esc);
 
@@ -380,7 +368,6 @@ mod with_a_real_store {
     use super::*;
 
     #[test]
-    #[ignore = "T111: implemented in the next commit"]
     fn d_upper_moves_the_session_into_its_projects_done_section_and_records_the_user() {
         let rig = rig();
 
@@ -407,7 +394,6 @@ mod with_a_real_store {
     }
 
     #[test]
-    #[ignore = "T111: implemented in the next commit"]
     fn u_upper_returns_it_to_finished() {
         let rig = rig();
         let app = rig.act(rig.app(), "fin", 'D');
@@ -432,7 +418,6 @@ mod with_a_real_store {
     }
 
     #[test]
-    #[ignore = "T111: implemented in the next commit"]
     fn the_store_refuses_done_on_a_session_that_is_not_finished() {
         let rig = rig();
 
@@ -458,7 +443,6 @@ mod with_a_real_store {
     }
 
     #[test]
-    #[ignore = "T111: implemented in the next commit"]
     fn x_dismisses_hides_and_s_then_x_undismisses() {
         let rig = rig();
 
@@ -475,7 +459,6 @@ mod with_a_real_store {
     }
 
     #[test]
-    #[ignore = "T111: implemented in the next commit"]
     fn a_dismissed_session_keeps_its_history_and_is_in_the_snapshot() {
         let rig = rig();
         rig.command(Command::Dismiss {
@@ -495,7 +478,6 @@ mod with_a_real_store {
     }
 
     #[test]
-    #[ignore = "T111: implemented in the next commit"]
     fn n_saves_a_user_authored_note_on_the_session() {
         let rig = rig();
         let app = rig.select(rig.app(), "act");

@@ -287,6 +287,10 @@ fn help_lines(app: &App) -> Vec<Line<'static>> {
     let second = keys_help(
         key,
         &[
+            ("D", "done"),
+            ("U", "undone"),
+            ("x", "dismiss"),
+            ("n", "note"),
             ("d", "hide"),
             ("u", "unseen"),
             ("R", "restore"),

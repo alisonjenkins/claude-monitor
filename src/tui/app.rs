@@ -19,6 +19,16 @@ use crate::store::Store;
 
 const NO_PANE_STATUS: &str = "no tmux pane recorded for this session";
 const NO_LINKS_STATUS: &str = "this session has no links to check";
+const NOT_FINISHED_STATUS: &str = "only a finished session can be marked done";
+const NOT_DONE_STATUS: &str = "that session is not done";
+
+/// What `D`, `U` and `x` ask for on the selected row.
+#[derive(Debug, Clone, Copy)]
+enum Mark {
+    Done,
+    Undone,
+    Dismiss,
+}
 
 #[derive(Debug, Clone)]
 pub struct Snapshot {
@@ -31,12 +41,15 @@ pub struct Snapshot {
 }
 
 impl Snapshot {
-    /// Reads the default overview and the recorded panes; `now` dates the age
+    /// Reads the overview with the dismissed sessions (the dashboard decides
+    /// whether to list them) and the recorded panes; `now` dates the age
     /// column.
     pub fn load(store: &Store, now: &str) -> Result<Self, String> {
-        let overview = store
-            .overview(&OverviewQuery::default())
-            .map_err(|e| e.to_string())?;
+        let query = OverviewQuery {
+            include_dismissed: true,
+            ..OverviewQuery::default()
+        };
+        let overview = store.overview(&query).map_err(|e| e.to_string())?;
         let panes = store
             .list_sessions()
             .map_err(|e| e.to_string())?
@@ -349,6 +362,47 @@ impl App {
         kinds.into_iter().map(str::to_owned).collect()
     }
 
+    fn selected_entry(&self) -> Option<&OverviewEntry> {
+        let selected = self.selected.as_deref()?;
+        self.visible()
+            .into_iter()
+            .find(|entry| entry.id == selected)
+    }
+
+    /// The organise effect for the selected row, or a footer message when the
+    /// row is not in a state the action applies to.
+    fn organise_selected(&mut self, mark: Mark) -> Vec<Effect> {
+        let Some((id, section)) = self
+            .selected_entry()
+            .map(|entry| (entry.id.clone(), entry.section))
+        else {
+            return Vec::new();
+        };
+        let action = match (mark, section) {
+            (Mark::Done, SectionName::Finished) => Organise::Done { id },
+            (Mark::Done, _) => return self.refuse(NOT_FINISHED_STATUS),
+            (Mark::Undone, SectionName::Done) => Organise::Undone { id },
+            (Mark::Undone, _) => return self.refuse(NOT_DONE_STATUS),
+            (Mark::Dismiss, SectionName::Dismissed) => Organise::Undismiss { id },
+            (Mark::Dismiss, _) => Organise::Dismiss { id },
+        };
+        vec![Effect::Organise(action)]
+    }
+
+    fn refuse(&mut self, message: &str) -> Vec<Effect> {
+        self.status = Some(message.to_owned());
+        Vec::new()
+    }
+
+    fn open_note(&mut self) {
+        if let Some(id) = self.selected_entry().map(|entry| entry.id.clone()) {
+            self.prompt = Some(Prompt::Note {
+                id,
+                text: String::new(),
+            });
+        }
+    }
+
     fn on_prompt_key(&mut self, code: KeyCode) -> Vec<Effect> {
         let Some(prompt) = self.prompt.clone() else {
             return Vec::new();
@@ -368,6 +422,25 @@ impl App {
                 self.prompt = None;
                 self.change_filter(|filter| filter.set_text(String::new()));
             }
+            (Prompt::Note { id, mut text }, KeyCode::Char(c)) => {
+                text.push(c);
+                self.prompt = Some(Prompt::Note { id, text });
+            }
+            (Prompt::Note { id, mut text }, KeyCode::Backspace) => {
+                text.pop();
+                self.prompt = Some(Prompt::Note { id, text });
+            }
+            (Prompt::Note { id, text }, KeyCode::Enter) => {
+                self.prompt = None;
+                let text = text.trim();
+                if !text.is_empty() {
+                    return vec![Effect::Organise(Organise::Note {
+                        id,
+                        text: text.to_owned(),
+                    })];
+                }
+            }
+            (Prompt::Note { .. }, KeyCode::Esc) => self.prompt = None,
             _ => {}
         }
         Vec::new()
@@ -427,6 +500,10 @@ impl App {
                 self.change_filter(|filter| filter.cycle_agent(&kinds));
             }
             KeyCode::Char('S') => self.change_filter(Filter::toggle_dismissed),
+            KeyCode::Char('D') => return self.organise_selected(Mark::Done),
+            KeyCode::Char('U') => return self.organise_selected(Mark::Undone),
+            KeyCode::Char('x') => return self.organise_selected(Mark::Dismiss),
+            KeyCode::Char('n') => self.open_note(),
             KeyCode::Char('i') => return self.open_detail(),
             KeyCode::Char('L') => return self.open_detail_and_check_links(),
             KeyCode::Char('R') => self.open_restore(),
