@@ -119,7 +119,6 @@ fn chain_head_follows_several_clears() {
 }
 
 #[test]
-#[ignore = "T071: an unexpected new id is linked through the pane's request"]
 fn a_respawn_linked_through_a_request_still_collapses() {
     let h = Harness::new();
     h.feed("%1", "SessionStart-startup", "a");

@@ -11,6 +11,7 @@ use crate::agents::{self, AgentKind, ParseError, ParsedHook};
 use crate::env::{Clock, Env, EnvError};
 use crate::model::{Author, Event, Session, StartSource};
 use crate::store::events::{EventsError, NewEvent};
+use crate::store::respawn::RespawnError;
 use crate::store::sessions::SessionsError;
 use crate::store::{resolve_state_dir, StateDirEnv, Store, StoreError, StoreOptions};
 
@@ -114,6 +115,8 @@ enum HookError {
     Sessions(#[from] SessionsError),
     #[error("{0}")]
     Events(#[from] EventsError),
+    #[error("{0}")]
+    Respawn(#[from] RespawnError),
     #[error("cannot probe the agent process: {0}")]
     Probe(EnvError),
     #[error("cannot read the Claude session registry: {0}")]
@@ -248,8 +251,39 @@ fn apply(
     }
 
     store.upsert_session(&session)?;
-    append_events(ctx, store, before.as_ref(), &session, now)?;
+    if matches!(hook.event, Event::SessionStart { .. }) {
+        answer_respawn_request(ctx, store, &session)?;
+    }
+    let resumed = !created
+        && matches!(
+            hook.event,
+            Event::SessionStart {
+                source: StartSource::Resume
+            }
+        );
+    append_events(ctx, store, before.as_ref(), &session, resumed, now)?;
     tx.commit().map_err(HookError::Commit)
+}
+
+/// Closes the open respawn request of the pane `session` just started in, when
+/// the session is the one the request revived or the one linked to it.
+fn answer_respawn_request(
+    ctx: &HookContext<'_>,
+    store: &Store,
+    session: &Session,
+) -> Result<(), HookError> {
+    let Some(pane) = ctx.tmux_pane else {
+        return Ok(());
+    };
+    let Some(request) = store.find_open_respawn_request(pane)? else {
+        return Ok(());
+    };
+    let answers = request.session_id == session.id
+        || session.resumed_from.as_deref() == Some(request.session_id.as_str());
+    if answers {
+        store.close_respawn_request(&request.id, &session.id)?;
+    }
+    Ok(())
 }
 
 /// Records the agent pid, its start time and the boot id, overwriting values
@@ -334,6 +368,14 @@ fn new_session(
             .find_cleared_predecessor(ctx.tmux_pane, &cwd)?
             .map(|predecessor| predecessor.id);
     }
+    if session.resumed_from.is_none() && matches!(hook.event, Event::SessionStart { .. }) {
+        // A respawn that came back under a new id: the pane's request is the link.
+        if let Some(pane) = ctx.tmux_pane {
+            session.resumed_from = store
+                .find_open_respawn_request(pane)?
+                .map(|request| request.session_id);
+        }
+    }
     Ok(session)
 }
 
@@ -356,6 +398,7 @@ fn append_events(
     store: &Store,
     before: Option<&Session>,
     after: &Session,
+    resumed: bool,
     now: &str,
 ) -> Result<(), HookError> {
     let agent = Author::Agent {
@@ -391,6 +434,20 @@ fn append_events(
                 &state_payload(before),
                 &session_event(now, &after.id, "session.state_changed", &payload, &agent),
             )?;
+            if resumed {
+                let payload = json!({
+                    "from": before.state.as_str(),
+                    "state": after.state.as_str(),
+                    "tmux_pane": after.tmux_pane,
+                });
+                store.append_event(&session_event(
+                    now,
+                    &after.id,
+                    "session.resumed",
+                    &payload,
+                    &agent,
+                ))?;
+            }
         }
     }
 

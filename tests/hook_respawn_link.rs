@@ -100,7 +100,6 @@ fn resume_of_a_known_id_revives_the_row_without_a_link() {
 }
 
 #[test]
-#[ignore = "T071: session.resumed event"]
 fn resume_of_a_known_id_appends_a_resumed_event() {
     let h = Harness::new();
     let ended = h.ended_session("a", "%1");
@@ -125,7 +124,6 @@ fn a_first_start_is_not_a_resumed_event() {
 }
 
 #[test]
-#[ignore = "T071: answer the open request on resume"]
 fn resume_in_the_requested_pane_closes_the_request_with_the_same_session() {
     let h = Harness::new();
     let ended = h.ended_session("a", "%1");
@@ -152,7 +150,6 @@ fn resume_in_the_requested_pane_closes_the_request_with_the_same_session() {
 }
 
 #[test]
-#[ignore = "T071: link an unexpected id through the open request"]
 fn an_unexpected_new_id_in_a_respawned_pane_is_linked_by_the_request() {
     let h = Harness::new();
     let old = h.ended_session("a", "%1");
