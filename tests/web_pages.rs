@@ -43,11 +43,11 @@ fn between<'a>(html: &'a str, marker: &str, closing: &str) -> &'a str {
 }
 
 fn section<'a>(html: &'a str, name: &str) -> &'a str {
-    between(html, &format!("id=\"section-{name}\""), "</section>")
+    between(html, &format!("section-{name}\""), "</section>")
 }
 
 fn has_section(html: &str, name: &str) -> bool {
-    html.contains(&format!("id=\"section-{name}\""))
+    html.contains(&format!("section-{name}\""))
 }
 
 #[test]
@@ -128,7 +128,7 @@ fn sessions_waiting_on_the_user_are_lifted_into_their_own_band() {
     assert!(waiting.contains("data-state=\"interrupted\""));
     assert!(html.contains("<title>(2) claude-monitor</title>"), "{html}");
     assert!(
-        html.find("id=\"waiting\"").unwrap() < html.find("id=\"section-active\"").unwrap(),
+        html.find("id=\"waiting\"").unwrap() < html.find("section-active\"").unwrap(),
         "the band comes before every section"
     );
 }
@@ -344,14 +344,293 @@ fn the_project_page_has_its_sections_and_only_its_own_done_sessions() {
 }
 
 #[test]
-fn the_project_index_lists_projects() {
+#[ignore = "the tree page arrives with the next commit"]
+fn the_projects_page_is_the_overview_now() {
     let web = Plain::new();
     post(&web.rig, "/projects", &json!({"name": "alpha"}));
 
-    let html = page(&web.rig, "/projects").body;
+    let response = page(&web.rig, "/projects");
 
-    assert!(html.contains("alpha"));
-    assert!(html.contains("hx-post=\"/projects\""), "create form");
+    assert_eq!(response.status, 302);
+    assert_eq!(response.header("location"), Some("/"));
+    let home = page(&web.rig, "/").body;
+    assert!(
+        !home.contains("href=\"/projects\""),
+        "no Projects entry in the nav"
+    );
+    assert!(home.contains("alpha"));
+}
+
+fn make_project(web: &Plain, name: &str) -> String {
+    post(&web.rig, "/projects", &json!({"name": name})).json()["project"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned()
+}
+
+fn group(web: &Plain, session: &str, project: &str) {
+    post(
+        &web.rig,
+        &format!("/sessions/{session}/group"),
+        &json!({"project": project}),
+    );
+}
+
+/// One project's node: from its opening tag to the next node's.
+fn node<'a>(html: &'a str, id: &str) -> &'a str {
+    let start = html
+        .find(&format!("id=\"n-{id}\""))
+        .unwrap_or_else(|| panic!("no node n-{id} in page:\n{html}"));
+    let rest = &html[start..];
+    let end = rest[1..]
+        .find("<details class=\"node")
+        .map_or(rest.len(), |at| at + 1);
+    &rest[..end]
+}
+
+fn node_tag<'a>(html: &'a str, id: &str) -> &'a str {
+    let start = html.find(&format!("id=\"n-{id}\"")).unwrap();
+    let from = html[..start].rfind("<details").unwrap();
+    let rest = &html[from..];
+    &rest[..rest.find('>').unwrap()]
+}
+
+#[test]
+#[ignore = "the tree page arrives with the next commit"]
+fn sessions_are_nested_under_their_projects_in_alphabetical_order() {
+    let web = Plain::new();
+    web.put("in-b", State::Working);
+    web.put("in-a", State::Finished);
+    web.put("loose", State::Working);
+    let beta = make_project(&web, "beta");
+    let alpha = make_project(&web, "alpha");
+    group(&web, "in-b", "beta");
+    group(&web, "in-a", "alpha");
+
+    let html = page(&web.rig, "/").body;
+
+    let (a, b, none) = (
+        html.find(&format!("id=\"n-{alpha}\"")).unwrap(),
+        html.find(&format!("id=\"n-{beta}\"")).unwrap(),
+        html.find("id=\"n-none\"").unwrap(),
+    );
+    assert!(a < b && b < none, "alphabetical, then No project");
+    assert!(node(&html, &alpha).contains("in-a"));
+    assert!(!node(&html, &alpha).contains("in-b"));
+    assert!(section(node(&html, &beta), "active").contains("in-b"));
+    assert!(section(node(&html, "none"), "active").contains("loose"));
+    assert!(
+        node(&html, &alpha).contains("<h2"),
+        "the project name is a heading"
+    );
+    assert!(node(&html, &alpha).contains("alpha"));
+}
+
+#[test]
+#[ignore = "the tree page arrives with the next commit"]
+fn a_node_is_open_by_default_and_says_its_state_summary() {
+    let web = Plain::new();
+    web.put("w1", State::Working);
+    web.put("w2", State::Working);
+    web.put("i1", State::Interrupted);
+    web.put("f1", State::Finished);
+    let id = make_project(&web, "alpha");
+    for s in ["w1", "w2", "i1", "f1"] {
+        group(&web, s, "alpha");
+    }
+
+    let html = page(&web.rig, "/").body;
+
+    let tag = node_tag(&html, &id);
+    assert!(tag.contains(" open"), "{tag}");
+    assert!(tag.contains("data-node"), "{tag}");
+    assert!(node(&html, &id).contains("2 working · 1 interrupted · 1 finished"));
+    assert!(node(&html, &id).contains("aria-expanded=\"true\""));
+}
+
+#[test]
+#[ignore = "the tree page arrives with the next commit"]
+fn a_project_with_no_sessions_stays_visible_and_muted() {
+    let web = Plain::new();
+    web.put("loose", State::Working);
+    let id = make_project(&web, "empty-one");
+
+    let html = page(&web.rig, "/").body;
+
+    assert!(
+        node_tag(&html, &id).contains("class=\"node empty\""),
+        "muted class"
+    );
+    assert!(node(&html, &id).contains("no sessions"));
+}
+
+#[test]
+#[ignore = "the tree page arrives with the next commit"]
+fn the_no_project_node_is_left_out_when_nothing_is_loose() {
+    let web = Plain::new();
+    web.put("s1", State::Working);
+    make_project(&web, "alpha");
+    group(&web, "s1", "alpha");
+
+    let html = page(&web.rig, "/").body;
+
+    assert!(!html.contains("id=\"n-none\""));
+}
+
+#[test]
+#[ignore = "the tree page arrives with the next commit"]
+fn waiting_sessions_repeat_in_the_band_with_their_project_and_stay_in_their_node() {
+    let web = Plain::new();
+    web.put("s-perm", State::NeedsPermission);
+    web.put("s-int", State::Interrupted);
+    let id = make_project(&web, "alpha");
+    group(&web, "s-perm", "alpha");
+    group(&web, "s-int", "alpha");
+
+    let html = page(&web.rig, "/").body;
+
+    let band = between(&html, "id=\"waiting\"", "</section>");
+    assert!(band.contains("s-perm") && band.contains("s-int"));
+    assert!(band.contains("alpha"), "the band names the project: {band}");
+    let tree = node(&html, &id);
+    assert!(tree.contains("s-perm") && tree.contains("s-int"));
+    assert!(section(tree, "interrupted").contains("s-int"));
+    assert!(section(tree, "active").contains("s-perm"));
+}
+
+#[test]
+#[ignore = "the tree page arrives with the next commit"]
+fn finished_is_never_collapsed_and_done_is_a_nested_collapsed_details() {
+    let web = Plain::new();
+    web.put("s-fin", State::Finished);
+    web.put("s-done", State::Finished);
+    let id = make_project(&web, "alpha");
+    group(&web, "s-fin", "alpha");
+    group(&web, "s-done", "alpha");
+    post(&web.rig, "/sessions/s-done/done", &json!({}));
+
+    let html = page(&web.rig, "/").body;
+
+    let tree = node(&html, &id);
+    let finished = section(tree, "finished");
+    assert!(finished.contains("s-fin") && !finished.contains("<details"));
+    let done = section(tree, "done");
+    assert!(done.contains("s-done"));
+    let tag = between(done, "<details", ">");
+    assert!(!tag.contains("open"), "done starts collapsed: {tag}");
+}
+
+#[test]
+#[ignore = "the tree page arrives with the next commit"]
+fn unseen_sessions_stay_in_one_collapsed_node_after_the_projects() {
+    let web = Plain::new();
+    web.put("s-unseen", State::Unknown);
+    web.put("s-work", State::Working);
+    make_project(&web, "alpha");
+
+    let html = page(&web.rig, "/").body;
+
+    let tag = between(&html, "<details id=\"section-unseen\"", ">");
+    assert!(!tag.contains("open"));
+    assert!(section(&html, "unseen").contains("s-unseen"));
+    assert!(html.find("id=\"n-none\"").unwrap() < html.find("section-unseen").unwrap());
+    assert!(!node(&html, "none").contains("s-unseen"));
+}
+
+#[test]
+#[ignore = "the tree page arrives with the next commit"]
+fn filters_apply_to_the_tree() {
+    let web = Plain::new();
+    web.put("in-work", State::Working);
+    web.put("in-fin", State::Finished);
+    let id = make_project(&web, "alpha");
+    group(&web, "in-work", "alpha");
+    group(&web, "in-fin", "alpha");
+
+    let html = page(&web.rig, "/?state=finished").body;
+
+    assert!(node(&html, &id).contains("in-fin"));
+    assert!(!html.contains("in-work"));
+    assert!(node(&html, &id).contains("1 finished"));
+}
+
+#[test]
+#[ignore = "the tree page arrives with the next commit"]
+fn each_row_has_a_move_panel_listing_the_existing_projects() {
+    let web = Plain::new();
+    web.put("s-one", State::Working);
+    web.put("s-two", State::Finished);
+    make_project(&web, "alpha");
+    make_project(&web, "b&c");
+    group(&web, "s-one", "alpha");
+
+    let html = page(&web.rig, "/").body;
+
+    let row = between(&html, "id=\"s-s-one\"", "</li>");
+    assert!(row.contains("data-move-toggle"));
+    assert!(row.contains("aria-expanded=\"false\""));
+    let panel = between(row, "<form", "</form>");
+    assert!(
+        panel.contains("hx-post=\"/sessions/s-one/group\""),
+        "{panel}"
+    );
+    assert!(panel.contains("hidden"));
+    assert!(panel.contains("<label"), "labelled controls");
+    assert!(panel.contains("name=\"project\""));
+    assert!(
+        panel.contains("<option value=\"b&amp;c\">"),
+        "escaped: {panel}"
+    );
+    assert!(panel.contains("<option value=\"-\""), "ungroup option");
+    assert!(panel.contains("New project"), "new project option");
+    assert!(panel.contains("data-move-new"), "name input");
+    let current = between(panel, "<option value=\"alpha\"", ">");
+    assert!(
+        current.contains("selected") && current.contains("disabled"),
+        "{current}"
+    );
+    let loose = between(&html, "id=\"s-s-two\"", "</li>");
+    let none_option = between(loose, "<option value=\"-\"", ">");
+    assert!(
+        none_option.contains("disabled"),
+        "no project is the current one"
+    );
+}
+
+#[test]
+#[ignore = "the tree page arrives with the next commit"]
+fn the_project_page_is_the_same_node_for_one_project() {
+    let web = Plain::new();
+    web.put("in-a", State::Working);
+    web.put("in-b", State::Working);
+    let a = make_project(&web, "alpha");
+    make_project(&web, "beta");
+    group(&web, "in-a", "alpha");
+    group(&web, "in-b", "beta");
+
+    let html = page(&web.rig, &format!("/projects/{a}")).body;
+
+    assert!(html.contains("<h1>alpha</h1>"));
+    assert!(html.contains("in-a") && !html.contains("in-b"));
+    assert!(html.contains("data-move-toggle"), "rows can still be moved");
+    assert!(html.contains("hx-select=\"#sessions\""));
+}
+
+#[test]
+#[ignore = "the tree page arrives with the next commit"]
+fn a_project_node_offers_rename_status_note_and_park_in_a_menu() {
+    let web = Plain::new();
+    web.put("s1", State::Working);
+    let id = make_project(&web, "alpha");
+    group(&web, "s1", "alpha");
+
+    let html = page(&web.rig, "/").body;
+
+    let tree = node(&html, &id);
+    assert!(tree.contains("class=\"menu\""));
+    assert!(tree.contains(&format!("hx-post=\"/projects/{id}\"")));
+    assert!(tree.contains(&format!("hx-post=\"/projects/{id}/note\"")));
+    assert!(tree.contains(&format!("hx-post=\"/projects/{id}/park\"")));
 }
 
 #[test]

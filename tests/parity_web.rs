@@ -145,3 +145,21 @@ fn every_write_route_needs_the_csrf_header() {
         );
     }
 }
+
+#[test]
+#[ignore = "the tree page arrives with the next commit"]
+fn the_projects_page_redirects_to_the_overview_but_creating_a_project_still_posts_there() {
+    let rig = Rig::start();
+
+    let read = Request::get("/projects")
+        .header("Cookie", rig.cookie())
+        .send(rig.addr());
+    let create = Request::new("POST", "/projects")
+        .signed_in(&rig)
+        .json_body(&serde_json::json!({"name": "alpha"}))
+        .send(rig.addr());
+
+    assert_eq!(read.status, 302);
+    assert_eq!(read.header("location"), Some("/"));
+    assert_eq!(create.status, 200, "{}", create.body);
+}
