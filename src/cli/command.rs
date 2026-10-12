@@ -40,6 +40,9 @@ pub enum Command {
     Restore {
         all_interrupted: bool,
         include_finished: bool,
+        fresh: bool,
+        /// Sessions to leave out of the restore, by id or id prefix.
+        skip: Vec<String>,
         yes: bool,
     },
     Respawn {
@@ -197,6 +200,8 @@ const ALL: &[CommandInfo] = &[
         example: || Command::Restore {
             all_interrupted: true,
             include_finished: false,
+            fresh: false,
+            skip: vec![],
             yes: true,
         },
     },

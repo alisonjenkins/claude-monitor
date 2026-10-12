@@ -9,8 +9,9 @@
 use std::path::{Path, PathBuf};
 
 use crate::agents::{AgentKind, Launch, LaunchError, LaunchMode, LauncherConfig, Precondition};
-use crate::env::Env;
+use crate::env::{Env, EnvError, Vars};
 use crate::model::Session;
+use crate::store::Store;
 
 /// Why a respawn was refused. Codes are the strings stored in
 /// `RespawnRequest.outcome` as `refused:<code>`.
@@ -73,6 +74,8 @@ pub struct Plan {
     pub launch: Launch,
     pub setup: Vec<Launch>,
     pub notices: Vec<String>,
+    /// The tmux window name: the branch, else the directory name.
+    pub label: String,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -183,6 +186,71 @@ pub fn plan_respawn_with(
         launch,
         setup,
         notices,
+        label: String::new(),
+    })
+}
+
+/// The tmux session respawned windows go into.
+pub const DEFAULT_TMUX_SESSION: &str = "agents";
+
+/// The variable that overrides [`DEFAULT_TMUX_SESSION`].
+pub const TMUX_SESSION_VAR: &str = "CLAUDE_MONITOR_TMUX_SESSION";
+
+/// The variable holding the resume command template for `agent_kind`, for
+/// example `CLAUDE_MONITOR_LAUNCHER_CLAUDE`.
+pub fn launcher_var(agent_kind: &str) -> String {
+    format!(
+        "CLAUDE_MONITOR_LAUNCHER_{}",
+        agent_kind.to_ascii_uppercase().replace('-', "_")
+    )
+}
+
+/// The launcher template configured for `agent_kind` (see [`launcher_var`]).
+pub fn launcher_from_env(_vars: &dyn Vars, _agent_kind: &str) -> LauncherConfig {
+    LauncherConfig::default()
+}
+
+/// A respawn that started: the new window and the request awaiting the new
+/// session's `SessionStart`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Started {
+    pub session_id: String,
+    pub pane_id: String,
+    pub window_id: String,
+    pub request_id: String,
+}
+
+/// Why executing a plan failed. Nothing is rolled back: a setup command that
+/// ran stays done, and a window that started stays open.
+#[derive(Debug, thiserror::Error)]
+pub enum ExecuteError {
+    #[error("setup command `{command}` failed: {detail}")]
+    Setup { command: String, detail: String },
+    #[error("{0}")]
+    Tmux(#[from] EnvError),
+    #[error("cannot {operation}: {detail}")]
+    Store {
+        operation: &'static str,
+        detail: String,
+    },
+}
+
+pub type Outcome = Result<Started, ExecuteError>;
+
+/// Carry out `plan` and nothing else: ensure `tmux_session`, run the plan's
+/// setup commands, open one window for the launch, record the respawn request
+/// for its pane and append `session.respawn_requested`. Never starts any
+/// session the plan does not name.
+pub fn execute(
+    _store: &Store,
+    _env: &Env,
+    _plan: &Plan,
+    _tmux_session: &str,
+    _now: &str,
+) -> Outcome {
+    Err(ExecuteError::Setup {
+        command: String::new(),
+        detail: "not implemented".to_owned(),
     })
 }
 
