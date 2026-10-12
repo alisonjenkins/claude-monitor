@@ -169,6 +169,7 @@
                 {
                   copilot,
                   tmuxHooks,
+                  watch ? false,
                 }:
                 home-manager.lib.homeManagerConfiguration {
                   pkgs = hmPkgs;
@@ -181,6 +182,7 @@
                       programs.claude-monitor.enable = true;
                       programs.claude-monitor.copilot.enable = copilot;
                       programs.claude-monitor.tmuxHooks.enable = tmuxHooks;
+                      programs.claude-monitor.watch.enable = watch;
                       programs.tmux.enable = true;
                     }
                   ];
@@ -269,6 +271,35 @@
                 "pane-died"
                 "window-unlinked"
               ];
+              # watch service: absent by default; when enabled on Linux it is a
+              # user service that restarts on failure, runs the store-path
+              # binary's `watch` and starts with the session.
+              watchServiceName = "claude-monitor-watch";
+              hasWatchService = cfg: builtins.hasAttr watchServiceName cfg.config.systemd.user.services;
+              watchOn =
+                (mkHmConfigWith {
+                  copilot = false;
+                  tmuxHooks = false;
+                  watch = true;
+                }).config.systemd.user.services.${watchServiceName};
+              watchProblems =
+                pkgs.lib.optional (hasWatchService hmConfig) "watch service generated with watch.enable = false"
+                ++ pkgs.lib.optionals pkgs.stdenv.hostPlatform.isLinux (
+                  let
+                    exec = builtins.unsafeDiscardStringContext (
+                      builtins.head (pkgs.lib.toList watchOn.Service.ExecStart)
+                    );
+                  in
+                  pkgs.lib.optional (
+                    !(pkgs.lib.hasPrefix "/nix/store/" exec && pkgs.lib.hasSuffix "/bin/claude-monitor watch" exec)
+                  ) "watch service ExecStart is not the store-path `claude-monitor watch`"
+                  ++ pkgs.lib.optional (
+                    watchOn.Service.Restart != "on-failure"
+                  ) "watch service does not restart on failure"
+                  ++ pkgs.lib.optional (
+                    watchOn.Install.WantedBy != [ "default.target" ]
+                  ) "watch service is not wanted by default.target"
+                );
               expectedEvents = [
                 "SessionStart"
                 "UserPromptSubmit"
@@ -287,6 +318,8 @@
               throw "claude-monitor hm-module: ${builtins.concatStringsSep "; " copilotProblems}"
             else if tmuxProblems != [ ] then
               throw "claude-monitor hm-module: ${builtins.concatStringsSep "; " tmuxProblems}"
+            else if watchProblems != [ ] then
+              throw "claude-monitor hm-module: ${builtins.concatStringsSep "; " watchProblems}"
             else
               hmPkgs.runCommand "claude-monitor-hm-module-check" { } "touch $out";
         }
