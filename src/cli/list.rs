@@ -17,7 +17,7 @@ use crate::store::sessions::parse_state;
 const SHORT_ID_CHARS: usize = 8;
 const TASK_CHARS: usize = 60;
 const STATE_NAMES: &str = "working, needs_permission, idle, finished, interrupted or unknown";
-const SECTION_NAMES: &str = "active, interrupted, finished, done or dismissed";
+const SECTION_NAMES: &str = "active, interrupted, finished, done, unseen or dismissed";
 
 #[derive(Debug, Clone, Default)]
 pub struct ListArgs {
@@ -29,6 +29,7 @@ pub struct ListArgs {
     pub section: Option<String>,
     pub include_dismissed: bool,
     pub expand_finished: bool,
+    pub expand_unseen: bool,
 }
 
 fn parse_states(values: &[String]) -> Result<Vec<State>, Error> {
@@ -56,7 +57,7 @@ fn parse_section(value: Option<&str>) -> Result<Option<SectionName>, Error> {
 
 pub fn run(env: &Env, state_dir: Option<&Path>, args: ListArgs) -> Result<Output, Error> {
     // Compatibility only: finished sessions are never collapsed (FR-019).
-    let _ = args.expand_finished;
+    let _ = (args.expand_finished, args.expand_unseen);
     let states = parse_states(&args.states)?;
     let section = parse_section(args.section.as_deref())?;
     let store = open_viewer_store(env, state_dir)?;

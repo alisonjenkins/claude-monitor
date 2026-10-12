@@ -23,6 +23,7 @@ pub enum Command {
         section: Option<String>,
         include_dismissed: bool,
         expand_finished: bool,
+        expand_unseen: bool,
     },
     Show {
         session: String,
@@ -156,6 +157,7 @@ const ALL: &[CommandInfo] = &[
             section: None,
             include_dismissed: false,
             expand_finished: false,
+            expand_unseen: false,
         },
     },
     CommandInfo {

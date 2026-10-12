@@ -709,3 +709,64 @@ fn the_footer_names_the_first_warning_and_counts_the_rest() {
         Some("warning: a (+2 more)")
     );
 }
+
+fn with_unseen() -> App {
+    loaded(overview(vec![
+        (SectionName::Active, vec![active("a", State::Idle)]),
+        (
+            SectionName::Unseen,
+            vec![
+                entry("u1", State::Unknown, SectionName::Unseen),
+                entry("u2", State::Unknown, SectionName::Unseen),
+            ],
+        ),
+    ]))
+}
+
+#[test]
+#[ignore = "T062a: unseen section"]
+fn the_unseen_section_is_collapsed_to_a_count_by_default() {
+    let app = with_unseen();
+
+    let text = wide(&app);
+
+    assert!(text.contains("Unseen (2)"), "{text}");
+    assert!(!text.contains("task of u1"), "{text}");
+    assert_eq!(ids(&app), ["a"], "collapsed rows are not selectable");
+}
+
+#[test]
+#[ignore = "T062a: unseen section"]
+fn u_expands_and_collapses_the_unseen_section() {
+    let (app, effects) = press(with_unseen(), KeyCode::Char('u'));
+
+    assert!(effects.is_empty());
+    assert_eq!(ids(&app), ["a", "u1", "u2"]);
+    assert!(wide(&app).contains("task of u1"));
+
+    let (app, _) = press(app, KeyCode::Char('u'));
+    assert_eq!(ids(&app), ["a"]);
+}
+
+#[test]
+#[ignore = "T062a: unseen section"]
+fn expanded_unseen_sessions_are_selectable() {
+    let (app, _) = press(with_unseen(), KeyCode::Char('u'));
+    let (app, _) = press(app, KeyCode::Char('j'));
+    let (app, _) = press(app, KeyCode::Char('j'));
+
+    assert_eq!(app.selected_id(), Some("u2"));
+}
+
+#[test]
+#[ignore = "T062a: unseen section"]
+fn unseen_sessions_never_count_toward_the_title() {
+    let app = with_unseen();
+
+    let text = wide(&app);
+
+    assert!(
+        text.contains("0 need permission · 1 idle · 0 working"),
+        "{text}"
+    );
+}

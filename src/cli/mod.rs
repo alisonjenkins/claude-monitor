@@ -73,6 +73,9 @@ enum Commands {
         /// Accepted for compatibility: finished sessions are never collapsed
         #[arg(long)]
         expand_finished: bool,
+        /// List the unseen sessions (found on disk, never reported by a hook)
+        #[arg(long)]
+        expand_unseen: bool,
     },
     /// Show one session in full
     Show {
@@ -133,6 +136,7 @@ impl Cli {
                 section,
                 include_dismissed,
                 expand_finished,
+                expand_unseen,
             }) => Command::List {
                 states: states.clone(),
                 agent: agent.clone(),
@@ -142,6 +146,7 @@ impl Cli {
                 section: section.clone(),
                 include_dismissed: *include_dismissed,
                 expand_finished: *expand_finished,
+                expand_unseen: *expand_unseen,
             },
             Some(Commands::Show { session }) => Command::Show {
                 session: session.clone(),
@@ -195,6 +200,7 @@ pub fn run_with(
             section,
             include_dismissed,
             expand_finished,
+            expand_unseen,
         } => list::run(
             env,
             state_dir,
@@ -207,6 +213,7 @@ pub fn run_with(
                 section,
                 include_dismissed,
                 expand_finished,
+                expand_unseen,
             },
         ),
         Command::Show { session } => show::run(env, state_dir, &session),
@@ -358,6 +365,7 @@ mod tests {
             "finished",
             "--include-dismissed",
             "--expand-finished",
+            "--expand-unseen",
         ])
         .unwrap();
         assert_eq!(
@@ -371,6 +379,7 @@ mod tests {
                 section: Some("finished".to_owned()),
                 include_dismissed: true,
                 expand_finished: true,
+                expand_unseen: true,
             }
         );
     }

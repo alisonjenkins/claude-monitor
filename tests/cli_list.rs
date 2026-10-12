@@ -72,6 +72,7 @@ struct List {
     section: Option<&'static str>,
     include_dismissed: bool,
     expand_finished: bool,
+    expand_unseen: bool,
 }
 
 impl List {
@@ -85,6 +86,7 @@ impl List {
             section: self.section.map(str::to_owned),
             include_dismissed: self.include_dismissed,
             expand_finished: self.expand_finished,
+            expand_unseen: self.expand_unseen,
         }
     }
 }
@@ -260,6 +262,75 @@ fn old_finished_sessions_are_listed_by_default() {
         fx.ids(List::default().command()),
         ["recent", "stale", "ninety"]
     );
+}
+
+#[test]
+#[ignore = "T062a: unseen section"]
+fn json_lists_every_unknown_session_in_the_unseen_section() {
+    let fx = Fixture::new();
+    seed(&fx);
+    fx.put("u1", State::Unknown, "2026-10-01T00:00:00Z", |_| {});
+    fx.put("u2", State::Unknown, "2026-10-05T00:00:00Z", |_| {});
+
+    let value = fx.json(List::default().command());
+
+    let unseen: Vec<(&str, &str)> = value["sessions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|s| s["section"] == "unseen")
+        .map(|s| (s["id"].as_str().unwrap(), s["state"].as_str().unwrap()))
+        .collect();
+    assert_eq!(unseen, [("u2", "unknown"), ("u1", "unknown")]);
+}
+
+#[test]
+#[ignore = "T062a: unseen section"]
+fn text_collapses_unseen_sessions_to_a_count_until_expanded() {
+    let fx = Fixture::new();
+    seed(&fx);
+    fx.put("u1", State::Unknown, "2026-10-01T00:00:00Z", |_| {});
+    fx.put("u2", State::Unknown, "2026-10-05T00:00:00Z", |_| {});
+
+    let collapsed = fx.run(List::default().command()).unwrap().render(false);
+    assert!(!collapsed.contains("u1"), "{collapsed}");
+    assert!(
+        collapsed.contains("2 unseen sessions hidden; use --expand-unseen"),
+        "{collapsed}"
+    );
+
+    let expanded = List {
+        expand_unseen: true,
+        ..List::default()
+    };
+    let text = fx.run(expanded.command()).unwrap().render(false);
+    assert!(text.contains("u1") && text.contains("u2"), "{text}");
+    assert!(!text.contains("unseen sessions hidden"), "{text}");
+}
+
+#[test]
+#[ignore = "T062a: unseen section"]
+fn the_unseen_section_flag_lists_them_without_expanding() {
+    let fx = Fixture::new();
+    seed(&fx);
+    fx.put("u1", State::Unknown, "2026-10-01T00:00:00Z", |_| {});
+    let list = List {
+        section: Some("unseen"),
+        ..List::default()
+    };
+
+    assert_eq!(fx.ids(list.command()), ["u1"]);
+    let text = fx
+        .run(
+            List {
+                section: Some("unseen"),
+                ..List::default()
+            }
+            .command(),
+        )
+        .unwrap()
+        .render(false);
+    assert!(text.contains("u1"), "{text}");
 }
 
 #[test]

@@ -22,6 +22,7 @@ fn list() -> Command {
         section: None,
         include_dismissed: false,
         expand_finished: false,
+        expand_unseen: false,
     }
 }
 

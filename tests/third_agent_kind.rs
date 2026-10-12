@@ -172,6 +172,7 @@ impl Fixture {
             section: None,
             include_dismissed: false,
             expand_finished: false,
+            expand_unseen: false,
         };
         let output = run_in(command, &self.fake.env, Some(self.state.path())).unwrap();
         let value: Value = serde_json::from_str(&output.render(true)).unwrap();
@@ -307,6 +308,7 @@ fn list_text_has_a_line_for_the_third_kind() {
         section: None,
         include_dismissed: false,
         expand_finished: false,
+        expand_unseen: false,
     };
     let text = run_in(command, &fx.fake.env, Some(fx.state.path()))
         .unwrap()

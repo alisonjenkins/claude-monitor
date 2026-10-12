@@ -340,6 +340,67 @@ fn an_undecodable_row_degrades_instead_of_failing_the_query() {
 }
 
 #[test]
+#[ignore = "T062a: unseen section"]
+fn unknown_sessions_get_their_own_unseen_section_newest_first() {
+    let fx = Fixture::new();
+    fx.put("live", State::Working, "2026-10-12T11:00:00Z");
+    fx.put("old-unknown", State::Unknown, "2026-09-01T00:00:00Z");
+    fx.put("new-unknown", State::Unknown, "2026-10-11T00:00:00Z");
+
+    let overview = fx.overview(&OverviewQuery::default());
+
+    assert_eq!(ids(&overview, SectionName::Active), ["live"]);
+    assert_eq!(
+        ids(&overview, SectionName::Unseen),
+        ["new-unknown", "old-unknown"]
+    );
+    let unseen = overview
+        .sections
+        .iter()
+        .flat_map(|s| &s.sessions)
+        .find(|e| e.id == "new-unknown")
+        .unwrap();
+    assert_eq!(unseen.section, SectionName::Unseen);
+    assert!(!unseen.running, "unseen is never counted as active");
+}
+
+#[test]
+#[ignore = "T062a: unseen section"]
+fn a_dismissed_unknown_session_is_dismissed_not_unseen() {
+    let fx = Fixture::new();
+    fx.put_with("gone", State::Unknown, "2026-10-12T11:00:00Z", |s| {
+        s.dismissed = true;
+    });
+
+    let overview = fx.overview(&OverviewQuery {
+        include_dismissed: true,
+        ..OverviewQuery::default()
+    });
+
+    assert_eq!(ids(&overview, SectionName::Dismissed), ["gone"]);
+    assert!(ids(&overview, SectionName::Unseen).is_empty());
+}
+
+#[test]
+#[ignore = "T062a: unseen section"]
+fn an_undecodable_row_stays_in_active_not_unseen() {
+    let fx = Fixture::new();
+    fx.put("bad", State::Working, "2026-10-12T10:00:00Z");
+    let conn = fx.store.connection();
+    conn.execute_batch("PRAGMA ignore_check_constraints = ON")
+        .unwrap();
+    conn.execute("UPDATE sessions SET state = 'bogus' WHERE id = 'bad'", [])
+        .unwrap();
+    conn.execute_batch("PRAGMA ignore_check_constraints = OFF")
+        .unwrap();
+
+    let overview = fx.overview(&OverviewQuery::default());
+
+    assert_eq!(ids(&overview, SectionName::Active), ["bad"]);
+    assert!(ids(&overview, SectionName::Unseen).is_empty());
+}
+
+#[test]
 #[ignore = "benchmark"]
 fn five_hundred_sessions_build_an_overview() {
     let fx = Fixture::new();

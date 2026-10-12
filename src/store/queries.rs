@@ -24,6 +24,7 @@ pub enum SectionName {
     Interrupted,
     Finished,
     Done,
+    Unseen,
     Dismissed,
 }
 
@@ -85,6 +86,7 @@ impl SectionName {
             Self::Interrupted => "interrupted",
             Self::Finished => "finished",
             Self::Done => "done",
+            Self::Unseen => "unseen",
             Self::Dismissed => "dismissed",
         }
     }
@@ -95,6 +97,7 @@ impl SectionName {
             "interrupted" => Self::Interrupted,
             "finished" => Self::Finished,
             "done" => Self::Done,
+            "unseen" => Self::Unseen,
             "dismissed" => Self::Dismissed,
             _ => return None,
         })

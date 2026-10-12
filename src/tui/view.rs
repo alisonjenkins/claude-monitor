@@ -77,6 +77,7 @@ fn section_title(name: SectionName) -> &'static str {
         SectionName::Interrupted => "Interrupted",
         SectionName::Finished => "Finished",
         SectionName::Done => "Done",
+        SectionName::Unseen => "Unseen",
         SectionName::Dismissed => "Dismissed",
     }
 }
