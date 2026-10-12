@@ -176,7 +176,6 @@ mod rows {
     use super::*;
 
     #[test]
-    #[ignore = "T093: figures not read yet"]
     fn the_store_gives_a_figure_per_bound_session_from_stored_steps() {
         use claude_monitor::model::Session;
         let dir = TempDir::new().unwrap();
@@ -206,7 +205,6 @@ mod rows {
     }
 
     #[test]
-    #[ignore = "T093: figures not drawn yet"]
     fn a_bound_row_shows_a_compact_figure() {
         let app = loaded(&["s1", "s2"], &[("s1", (4, 10))]);
         let text = render(&app);

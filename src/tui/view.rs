@@ -128,7 +128,13 @@ fn fit(segments: Vec<(String, Style)>, width: usize) -> Line<'static> {
     Line::from(spans)
 }
 
-fn row(entry: &OverviewEntry, now: &str, selected: bool, width: usize) -> Line<'static> {
+fn row(
+    entry: &OverviewEntry,
+    figure: Option<(u32, u32)>,
+    now: &str,
+    selected: bool,
+    width: usize,
+) -> Line<'static> {
     let marker = if selected {
         "> "
     } else if entry.state == State::NeedsPermission {
@@ -154,6 +160,10 @@ fn row(entry: &OverviewEntry, now: &str, selected: bool, width: usize) -> Line<'
         ),
         (location(entry), plain),
         ("  ".to_owned(), plain),
+        (
+            figure.map_or_else(String::new, |(done, total)| format!("{done}/{total}  ")),
+            Style::default().fg(GREEN),
+        ),
         (task, Style::default().fg(SUBTEXT0)),
     ];
     let line = fit(segments, width);
@@ -204,7 +214,8 @@ fn body_lines(app: &App, width: usize) -> (Vec<Line<'static>>, usize) {
             if selected {
                 selected_line = lines.len();
             }
-            lines.push(row(entry, &snapshot.now, selected, width));
+            let figure = snapshot.figures.get(&entry.id).copied();
+            lines.push(row(entry, figure, &snapshot.now, selected, width));
         }
     }
     if lines.is_empty() {

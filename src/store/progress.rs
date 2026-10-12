@@ -251,7 +251,23 @@ impl Store {
     /// Session id to the stored `(done, total)` of its bound plan; sessions
     /// with no stored steps are absent. One query, no file reads.
     pub fn progress_figures(&self) -> Result<HashMap<String, (u32, u32)>, ProgressStoreError> {
-        Ok(HashMap::new())
+        let operation = "read progress figures";
+        let mut stmt = self
+            .connection()
+            .prepare(
+                "SELECT b.owner_id, COUNT(*), COALESCE(SUM(s.status = 'done'), 0) \
+                 FROM progress_binding b JOIN steps s ON s.binding_id = b.id \
+                 WHERE b.owner_kind = 'session' GROUP BY b.owner_id",
+            )
+            .map_err(db(operation))?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, (row.get(2)?, row.get(1)?)))
+            })
+            .map_err(db(operation))?
+            .collect::<Result<HashMap<_, _>, _>>()
+            .map_err(db(operation))?;
+        Ok(rows)
     }
 
     /// Every binding that reads a file, for the watcher and the refresh pass.
