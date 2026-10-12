@@ -11,15 +11,13 @@
 use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, SecondsFormat, Utc};
-use rusqlite::{Transaction, TransactionBehavior};
-use serde_json::{json, Value};
+use serde_json::Value;
 
 use super::claude::ClaudeKind;
+use super::discover_store::store_report;
+pub use super::discover_store::{DiscoverStoreError, DiscoverSummary};
 use super::{AgentKind, DiscoverError, ScanReport, SessionStub};
 use crate::env::{Env, FileMeta};
-use crate::model::{Author, Session, State};
-use crate::store::events::{EventsError, NewEvent};
-use crate::store::sessions::SessionsError;
 use crate::store::Store;
 
 /// Longest first prompt kept, in characters.
@@ -39,31 +37,6 @@ const HOME_VAR: &str = "HOME";
 const CONFIG_DIR_NAME: &str = ".claude";
 const PROJECTS_DIR_NAME: &str = "projects";
 const TRANSCRIPT_EXTENSION: &str = "jsonl";
-const DISCOVER_COMPONENT: &str = "discover";
-const ENTITY_SESSION: &str = "session";
-const EVENT_DISCOVERED: &str = "session.discovered";
-
-#[derive(Debug, thiserror::Error)]
-pub enum DiscoverStoreError {
-    #[error("{0}")]
-    Scan(#[from] DiscoverError),
-    #[error("{0}")]
-    Sessions(#[from] SessionsError),
-    #[error("{0}")]
-    Events(#[from] EventsError),
-    #[error("cannot begin discovery write transaction: {0}")]
-    Begin(rusqlite::Error),
-    #[error("cannot commit discovery write transaction: {0}")]
-    Commit(rusqlite::Error),
-}
-
-/// What one `discover_and_store` run did.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct DiscoverSummary {
-    pub created: usize,
-    pub updated: usize,
-    pub degraded: usize,
-}
 
 /// `$CLAUDE_CONFIG_DIR` if set, else `$HOME/.claude`.
 pub fn config_dir(env: &Env) -> Result<PathBuf, DiscoverError> {
@@ -285,82 +258,7 @@ fn read_transcript(env: &Env, path: &Path, meta: FileMeta) -> Outcome {
 /// A session a hook reported keeps its hook-derived state and times.
 pub fn discover_and_store(env: &Env, store: &Store) -> Result<DiscoverSummary, DiscoverStoreError> {
     let report = scan(env)?;
-    let kind = ClaudeKind.id();
-    let author = Author::System {
-        component: DISCOVER_COMPONENT.to_owned(),
-    };
-    let mut summary = DiscoverSummary {
-        degraded: report.degraded,
-        ..DiscoverSummary::default()
-    };
-    let now = env.clock.now();
-    // The guard only issues BEGIN IMMEDIATE / COMMIT; the Store methods below
-    // run on the same connection, so they are inside the transaction.
-    let tx = Transaction::new_unchecked(store.connection(), TransactionBehavior::Immediate)
-        .map_err(DiscoverStoreError::Begin)?;
-    for stub in &report.stubs {
-        match store.get_session_by_agent_id(kind, &stub.agent_session_id)? {
-            None => {
-                let session = new_session(kind, stub);
-                store.upsert_session(&session)?;
-                let payload = json!({
-                    "agent_kind": session.agent_kind,
-                    "agent_session_id": session.agent_session_id,
-                    "state": session.state.as_str(),
-                    "cwd": session.cwd,
-                    "branch": session.branch,
-                });
-                store.append_event(&NewEvent {
-                    at: &now,
-                    entity_kind: ENTITY_SESSION,
-                    entity_id: &session.id,
-                    kind: EVENT_DISCOVERED,
-                    payload: &payload,
-                    author: &author,
-                })?;
-                summary.created = summary.created.saturating_add(1);
-            }
-            Some(existing) => {
-                if let Some(filled) = fill_missing(&existing, stub) {
-                    store.upsert_session(&filled)?;
-                    summary.updated = summary.updated.saturating_add(1);
-                }
-            }
-        }
-    }
-    tx.commit().map_err(DiscoverStoreError::Commit)?;
-    Ok(summary)
-}
-
-fn new_session(kind: &str, stub: &SessionStub) -> Session {
-    let mut session = Session::new(
-        &uuid::Uuid::new_v4().to_string(),
-        kind,
-        &stub.agent_session_id,
-        &stub.cwd,
-        &stub.started_at,
-    );
-    session.branch.clone_from(&stub.branch);
-    session.task_description.clone_from(&stub.first_prompt);
-    session.last_activity_at.clone_from(&stub.last_activity_at);
-    session
-}
-
-/// The session with the stub's data added where the session has none, or `None`
-/// when nothing would change. Never touches state or hook-derived times; a
-/// branch is only taken from a transcript recorded in the same working directory.
-fn fill_missing(existing: &Session, stub: &SessionStub) -> Option<Session> {
-    let mut session = existing.clone();
-    if session.branch.is_none() && session.cwd == stub.cwd {
-        session.branch.clone_from(&stub.branch);
-    }
-    if session.task_description.is_none() {
-        session.task_description.clone_from(&stub.first_prompt);
-    }
-    if session.state == State::Unknown && session.last_activity_at < stub.last_activity_at {
-        session.last_activity_at.clone_from(&stub.last_activity_at);
-    }
-    (session != *existing).then_some(session)
+    store_report(env, store, ClaudeKind.id(), &report)
 }
 
 #[cfg(test)]
