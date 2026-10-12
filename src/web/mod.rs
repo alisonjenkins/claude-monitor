@@ -26,6 +26,7 @@ pub mod auth;
 pub mod events;
 pub mod pages;
 pub mod routes;
+pub mod tree;
 
 pub use auth::Token;
 

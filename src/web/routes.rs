@@ -28,7 +28,7 @@ use crate::cli::{self, Command, Output, ProjectAction};
 use crate::env::Env;
 use crate::error::Error;
 use crate::export::links::link_json;
-use crate::model::{OwnerKind, Project};
+use crate::model::{OwnerKind, Project, StepStatus};
 use crate::respawn::{start_batch, Item, PlanFlags, RefusedItem};
 use crate::store::Store;
 
@@ -378,7 +378,7 @@ pub fn router() -> Router<AppState> {
         )
     };
     Router::new()
-        .route("/", get(sessions))
+        .route("/", get(overview))
         .route(
             "/assets/htmx.min.js",
             get(|| asset("text/javascript; charset=utf-8", HTMX)),
@@ -534,6 +534,7 @@ fn entries_of(listed: &Value) -> Vec<Value> {
         .unwrap_or_default()
 }
 
+/// `/sessions`: the flat list, exactly what `list --json` prints.
 async fn sessions(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -541,19 +542,87 @@ async fn sessions(
     Query(params): Query<ListParams>,
 ) -> Response {
     let json = wants_json(&headers);
-    let result = sessions_view(&state, json, &uri, params).await;
+    let result = sessions_view(&state, json, false, &uri, params).await;
     settle(&state, json, result)
+}
+
+/// `/`: the same list, and as JSON also the project tree.
+async fn overview(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    OriginalUri(uri): OriginalUri,
+    Query(params): Query<ListParams>,
+) -> Response {
+    let json = wants_json(&headers);
+    let result = sessions_view(&state, json, true, &uri, params).await;
+    settle(&state, json, result)
+}
+
+/// Every project, and the plan figure of those that have one.
+async fn projects_with_progress(
+    state: &AppState,
+) -> Result<(Vec<Project>, HashMap<String, pages::RowProgress>), ApiError> {
+    let (env, dir) = (state.env.clone(), state.state_dir.clone());
+    blocking(move || -> Result<_, ApiError> {
+        let store = open_viewer_store(&env, Some(&dir))?;
+        let projects = store
+            .list_projects()
+            .map_err(|e| ApiError::internal("list projects", e))?;
+        let mut figures = HashMap::new();
+        for project in &projects {
+            let Some(binding_id) = project.progress_binding_id.as_deref() else {
+                continue;
+            };
+            let steps = store
+                .list_steps(binding_id)
+                .map_err(|e| ApiError::internal("read project steps", e))?;
+            if steps.is_empty() {
+                continue;
+            }
+            let source = store
+                .get_progress_binding(OwnerKind::Project, &project.id)
+                .map_err(|e| ApiError::internal("read progress binding", e))?
+                .map(|binding| binding.source.label())
+                .unwrap_or_default();
+            let done = steps
+                .iter()
+                .filter(|step| step.status == StepStatus::Done)
+                .count();
+            figures.insert(
+                project.id.clone(),
+                pages::RowProgress {
+                    done: u32::try_from(done).unwrap_or(u32::MAX),
+                    total: u32::try_from(steps.len()).unwrap_or(u32::MAX),
+                    source,
+                },
+            );
+        }
+        Ok((projects, figures))
+    })
+    .await?
 }
 
 async fn sessions_view(
     state: &AppState,
     json: bool,
+    tree: bool,
     uri: &Uri,
     params: ListParams,
 ) -> Result<Response, ApiError> {
     let filters = params.filters();
     let output = run(state, params.command()).await?;
-    let listed = output_json(&output, false);
+    let mut listed = output_json(&output, false);
+    if json && tree {
+        let (projects, figures) = projects_with_progress(state).await?;
+        let grown = super::tree::build(
+            &json!(projects).as_array().cloned().unwrap_or_default(),
+            &entries_of(&listed),
+            &figures,
+        );
+        if let (Some(target), Value::Object(grown)) = (listed.as_object_mut(), grown) {
+            target.extend(grown);
+        }
+    }
     let progress = if json {
         HashMap::new()
     } else {

@@ -764,7 +764,6 @@ fn grouping_into_a_missing_project_creates_it_and_a_second_group_moves_the_sessi
 }
 
 #[test]
-#[ignore = "the tree form of / arrives with the next commit"]
 fn the_overview_json_gains_a_project_tree_and_keeps_the_flat_fields() {
     let web = Plain::new();
     web.put("a-work", State::Working);
