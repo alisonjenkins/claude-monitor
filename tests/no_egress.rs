@@ -304,7 +304,7 @@ fn export_writes_session_text_only_to_the_out_file() {
 mod web {
     use super::*;
 
-    use crate::web_support::Request;
+    use crate::web_support::{KillOnDrop, Request};
     use std::io::{BufRead, BufReader};
     use std::net::SocketAddr;
 
@@ -313,17 +313,18 @@ mod web {
         let fixture = export_support::project20();
         let state = fixture.dir.path().to_owned();
         let home = TempDir::new().unwrap();
-        let mut child = Process::new(BIN)
-            .args(["--no-refresh", "--state-dir"])
-            .arg(&state)
-            .args(["serve", "--port", "0"])
-            .env("HOME", home.path())
-            .env("XDG_RUNTIME_DIR", home.path())
-            .env("TMPDIR", home.path())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null())
-            .spawn()
-            .unwrap();
+        let mut child = KillOnDrop::spawn(
+            Process::new(BIN)
+                .args(["--no-refresh", "--state-dir"])
+                .arg(&state)
+                .args(["serve", "--port", "0"])
+                .env("HOME", home.path())
+                .env("XDG_RUNTIME_DIR", home.path())
+                .env("TMPDIR", home.path())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::null()),
+        )
+        .unwrap();
         let mut line = String::new();
         BufReader::new(child.stdout.take().unwrap())
             .read_line(&mut line)

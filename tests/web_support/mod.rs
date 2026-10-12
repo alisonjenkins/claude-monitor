@@ -12,6 +12,8 @@
 
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{SocketAddr, TcpStream};
+use std::ops::{Deref, DerefMut};
+use std::process::{Child, Command as Process};
 use std::time::Duration;
 
 use claude_monitor::cli::{run_in, Command};
@@ -24,6 +26,37 @@ use claude_monitor::web::{self, Server, Token, WebConfig};
 use tempfile::TempDir;
 
 pub const IO_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// A spawned child that is killed and reaped when this drops, so a panicking
+/// test cannot leave a `serve` process running.
+pub struct KillOnDrop(Child);
+
+impl KillOnDrop {
+    pub fn spawn(command: &mut Process) -> std::io::Result<Self> {
+        command.spawn().map(Self)
+    }
+}
+
+impl Deref for KillOnDrop {
+    type Target = Child;
+
+    fn deref(&self) -> &Child {
+        &self.0
+    }
+}
+
+impl DerefMut for KillOnDrop {
+    fn deref_mut(&mut self) -> &mut Child {
+        &mut self.0
+    }
+}
+
+impl Drop for KillOnDrop {
+    fn drop(&mut self) {
+        let _ = self.0.kill();
+        let _ = self.0.wait();
+    }
+}
 
 /// A server over a fresh store with a fake clock and no tmux, plus the means
 /// to seed sessions and to run the same command through the CLI.

@@ -14,40 +14,66 @@ mod web_support;
 use std::io::{BufRead, BufReader};
 use std::net::SocketAddr;
 use std::os::unix::fs::PermissionsExt;
-use std::process::{Child, Command, Stdio};
+use std::process::{Command as Process, Stdio};
 
 use tempfile::TempDir;
-use web_support::Request;
+use web_support::{KillOnDrop, Request};
 
 struct Serving {
-    child: Child,
+    child: KillOnDrop,
     addr: SocketAddr,
     token: String,
     state: TempDir,
 }
 
-impl Drop for Serving {
-    fn drop(&mut self) {
-        let _ = self.child.kill();
-        let _ = self.child.wait();
-    }
+fn is_gone(pid: u32) -> bool {
+    let pid = rustix::process::Pid::from_raw(i32::try_from(pid).unwrap()).unwrap();
+    rustix::process::test_kill_process(pid).is_err()
+}
+
+#[test]
+fn a_dropped_guard_kills_and_reaps_its_child() {
+    let child = KillOnDrop::spawn(Process::new("sleep").arg("60")).unwrap();
+    let pid = child.id();
+    assert!(!is_gone(pid));
+
+    drop(child);
+
+    assert!(is_gone(pid));
+}
+
+#[test]
+fn a_panicking_test_does_not_leave_its_child_running() {
+    let pid = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
+    let seen = std::sync::Arc::clone(&pid);
+    let result = std::panic::catch_unwind(move || {
+        let child = KillOnDrop::spawn(Process::new("sleep").arg("60")).unwrap();
+        seen.store(child.id(), std::sync::atomic::Ordering::SeqCst);
+        panic!("test failed mid-way");
+    });
+
+    assert!(result.is_err());
+    let pid = pid.load(std::sync::atomic::Ordering::SeqCst);
+    assert_ne!(pid, 0);
+    assert!(is_gone(pid));
 }
 
 /// Starts `serve --port 0` against a temporary state directory and reads the
 /// URL it prints.
 fn serve() -> Serving {
     let state = TempDir::new().unwrap();
-    let mut child = Command::new(env!("CARGO_BIN_EXE_claude-monitor"))
-        .args(["--no-refresh", "--state-dir"])
-        .arg(state.path())
-        .args(["serve", "--port", "0"])
-        .env("HOME", state.path())
-        .env_remove("CLAUDE_CONFIG_DIR")
-        .env_remove("COPILOT_HOME")
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()
-        .unwrap();
+    let mut child = KillOnDrop::spawn(
+        Process::new(env!("CARGO_BIN_EXE_claude-monitor"))
+            .args(["--no-refresh", "--state-dir"])
+            .arg(state.path())
+            .args(["serve", "--port", "0"])
+            .env("HOME", state.path())
+            .env_remove("CLAUDE_CONFIG_DIR")
+            .env_remove("COPILOT_HOME")
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null()),
+    )
+    .unwrap();
     let mut line = String::new();
     BufReader::new(child.stdout.take().unwrap())
         .read_line(&mut line)
@@ -97,7 +123,7 @@ fn serve_keeps_its_token_in_a_private_file_in_the_state_dir() {
 
 #[test]
 fn serve_refuses_a_non_loopback_bind() {
-    let out = Command::new(env!("CARGO_BIN_EXE_claude-monitor"))
+    let out = Process::new(env!("CARGO_BIN_EXE_claude-monitor"))
         .args(["serve", "--bind", "0.0.0.0"])
         .output()
         .unwrap();
