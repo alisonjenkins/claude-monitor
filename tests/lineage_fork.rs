@@ -104,6 +104,32 @@ fn a_fork_starts_its_own_chain() {
 }
 
 #[test]
+fn record_fork_refuses_unknown_self_and_already_forked() {
+    let h = Harness::new();
+    h.feed("%1", "SessionStart-startup", "a");
+    h.feed("%2", "SessionStart-startup", "b");
+    h.feed("%3", "SessionStart-startup", "c");
+    let (a, b, c) = (h.session("a"), h.session("b"), h.session("c"));
+    let store = h.store();
+
+    assert!(!store.record_fork(&a.id, &a.id).unwrap(), "self");
+    assert!(
+        !store.record_fork(&a.id, "missing").unwrap(),
+        "unknown child"
+    );
+    assert!(
+        !store.record_fork("missing", &b.id).unwrap(),
+        "unknown parent"
+    );
+    assert!(store.record_fork(&a.id, &b.id).unwrap());
+    assert!(
+        !store.record_fork(&c.id, &b.id).unwrap(),
+        "first parent stays"
+    );
+    assert_eq!(h.session("b").forked_from.as_deref(), Some(a.id.as_str()));
+}
+
+#[test]
 fn chain_head_follows_several_clears() {
     let h = Harness::new();
     h.feed("%1", "SessionStart-startup", "a");
