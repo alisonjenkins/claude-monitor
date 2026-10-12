@@ -1,3 +1,4 @@
+use std::net::IpAddr;
 use std::path::{Path, PathBuf};
 
 use clap::{Parser, Subcommand};
@@ -24,6 +25,7 @@ mod project;
 mod reconcile;
 mod respawn;
 mod restore;
+mod serve;
 mod show;
 mod summarize;
 mod watch;
@@ -162,6 +164,15 @@ enum Commands {
     Summarize {
         /// Session id, or the start of one
         target: String,
+    },
+    /// Serve the web view on loopback; prints the URL that opens it
+    Serve {
+        /// Port to listen on (0 picks a free one)
+        #[arg(long, value_name = "PORT")]
+        port: Option<u16>,
+        /// Loopback address to listen on (127.0.0.1 or ::1); nothing else is accepted
+        #[arg(long, value_name = "ADDR", value_parser = serve::loopback_addr)]
+        bind: Option<IpAddr>,
     },
     /// Show a session's plan progress and the file it comes from
     #[command(args_conflicts_with_subcommands = true, arg_required_else_help = true)]
@@ -486,6 +497,10 @@ impl Cli {
                 include_text: *include_text,
                 out: out.clone(),
             },
+            Some(Commands::Serve { port, bind }) => Command::Serve {
+                port: *port,
+                bind: *bind,
+            },
         }
     }
 }
@@ -506,8 +521,8 @@ pub struct RunOptions {
 /// Run one command; `state_dir` is the `--state-dir` override. `Hook`,
 /// `Dashboard`, `Migrate`, `List`, `Show`, `Reconcile`, `Watch`, `BootCheck`,
 /// `Restore`, `Respawn`, `Summarize`, `ProgressBind`, `Project`, `Group`, `Note`,
-/// `Park`, `Unpark`, `Dismiss`, `Undismiss`, `Done`, `Undone` and `ExportCortexiphan`
-/// are implemented; every other
+/// `Park`, `Unpark`, `Dismiss`, `Undismiss`, `Done`, `Undone`, `ExportCortexiphan`
+/// and `Serve` are implemented; every other
 /// command reports `NotImplemented` until its task lands. Reads the store as it
 /// is; [`run_with`] adds the refresh pass the binary runs.
 pub fn run_in(cmd: Command, env: &Env, state_dir: Option<&Path>) -> Result<Output, Error> {
@@ -635,6 +650,7 @@ pub fn run_with(
         } => link::run_link(env, state_dir, &owner, &cortex, &kind, doc.as_deref()),
         Command::Unlink { owner, cortex } => link::run_unlink(env, state_dir, &owner, &cortex),
         Command::LinksCheck => link::run_links_check(env, state_dir),
+        Command::Serve { port, bind } => serve::run(env, state_dir, port, bind),
         Command::Hook { agent, event } => {
             hook::run(agent.as_deref(), event.as_deref(), state_dir, env);
             Ok(Output::empty())
@@ -804,7 +820,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "implemented by T117"]
     fn serve_flags_map_to_the_serve_command() {
         let cli = Cli::try_parse_from(["claude-monitor", "serve"]).unwrap();
         assert_eq!(
@@ -827,7 +842,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "implemented by T117"]
     fn serve_refuses_a_non_loopback_bind_when_parsing() {
         for bind in ["0.0.0.0", "::", "192.168.1.10", "example.com"] {
             let parsed = Cli::try_parse_from(["claude-monitor", "serve", "--bind", bind]);
@@ -982,15 +996,12 @@ mod tests {
     #[test]
     fn unimplemented_commands_report_not_implemented_with_exit_1() {
         let fake = FakeEnv::new();
-        let err = run(
-            Command::Serve {
-                port: None,
-                bind: None,
-            },
-            &fake.env,
-        )
-        .unwrap_err();
-        assert!(matches!(&err, Error::NotImplemented(name) if name == "serve"));
+        let delete = Command::Delete {
+            session: "s".to_owned(),
+            yes: true,
+        };
+        let err = run(delete, &fake.env).unwrap_err();
+        assert!(matches!(&err, Error::NotImplemented(name) if name == "delete"));
         assert_eq!(err.exit_code(), 1);
     }
 }

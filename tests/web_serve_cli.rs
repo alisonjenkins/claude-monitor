@@ -41,6 +41,9 @@ fn serve() -> Serving {
         .args(["--no-refresh", "--state-dir"])
         .arg(state.path())
         .args(["serve", "--port", "0"])
+        .env("HOME", state.path())
+        .env_remove("CLAUDE_CONFIG_DIR")
+        .env_remove("COPILOT_HOME")
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .spawn()
@@ -63,7 +66,6 @@ fn serve() -> Serving {
 }
 
 #[test]
-#[ignore = "implemented by T117"]
 fn serve_prints_a_loopback_url_whose_token_opens_the_page() {
     let serving = serve();
 
@@ -79,7 +81,6 @@ fn serve_prints_a_loopback_url_whose_token_opens_the_page() {
 }
 
 #[test]
-#[ignore = "implemented by T117"]
 fn serve_keeps_its_token_in_a_private_file_in_the_state_dir() {
     let serving = serve();
 
@@ -95,7 +96,6 @@ fn serve_keeps_its_token_in_a_private_file_in_the_state_dir() {
 }
 
 #[test]
-#[ignore = "implemented by T117"]
 fn serve_refuses_a_non_loopback_bind() {
     let out = Command::new(env!("CARGO_BIN_EXE_claude-monitor"))
         .args(["serve", "--bind", "0.0.0.0"])
@@ -108,7 +108,6 @@ fn serve_refuses_a_non_loopback_bind() {
 }
 
 #[test]
-#[ignore = "implemented by T117"]
 fn serve_stops_cleanly_on_sigterm() {
     let mut serving = serve();
 

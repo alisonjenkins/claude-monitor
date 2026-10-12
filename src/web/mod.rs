@@ -15,6 +15,7 @@ use axum::middleware::from_fn_with_state;
 use axum::routing::get;
 use axum::Router;
 use tokio::net::TcpListener;
+use tokio::signal::unix::{signal, Signal, SignalKind};
 use tokio::sync::watch;
 
 use crate::feed::{ChangeFeed, EventSource, SystemMonotonic};
@@ -101,7 +102,8 @@ pub struct Server {
     addr: SocketAddr,
     closing: Arc<watch::Sender<bool>>,
     feed_stop: Arc<AtomicBool>,
-    threads: Vec<JoinHandle<()>>,
+    server: Option<JoinHandle<()>>,
+    feed: Option<JoinHandle<()>>,
 }
 
 impl Server {
@@ -114,14 +116,14 @@ impl Server {
 
     /// Blocks until the server stops.
     pub fn wait(mut self) {
-        self.join();
+        join(self.server.take());
     }
+}
 
-    fn join(&mut self) {
-        for thread in self.threads.drain(..) {
-            // A panicked server thread has nothing left to report here.
-            let _ = thread.join();
-        }
+fn join(thread: Option<JoinHandle<()>>) {
+    if let Some(thread) = thread {
+        // A panicked server thread has nothing left to report here.
+        let _ = thread.join();
     }
 }
 
@@ -129,7 +131,8 @@ impl Drop for Server {
     fn drop(&mut self) {
         self.feed_stop.store(true, Ordering::Release);
         self.closing.send_replace(true);
-        self.join();
+        join(self.server.take());
+        join(self.feed.take());
     }
 }
 
@@ -157,6 +160,11 @@ pub fn start<S: EventSource + Send + 'static>(
         addr: wanted,
         source,
     })?;
+    let signals = if config.handle_signals {
+        Some(install_signals(&runtime)?)
+    } else {
+        None
+    };
     let (closing, closing_rx) = watch::channel(false);
     let closing = Arc::new(closing);
     let events = events::Events::new(config.store_path, config.keepalive, closing_rx);
@@ -170,13 +178,12 @@ pub fn start<S: EventSource + Send + 'static>(
         .spawn_feed(feed, Arc::clone(&feed_stop))
         .map_err(WebError::Thread)?;
     let serving = Arc::clone(&closing);
-    let handle_signals = config.handle_signals;
     let server_thread = std::thread::Builder::new()
         .name("web-server".to_owned())
         .spawn(move || {
             let served = runtime.block_on(async {
                 axum::serve(listener, app)
-                    .with_graceful_shutdown(shutdown_requested(serving, handle_signals))
+                    .with_graceful_shutdown(shutdown_requested(serving, signals))
                     .await
             });
             if let Err(error) = served {
@@ -196,37 +203,41 @@ pub fn start<S: EventSource + Send + 'static>(
         addr,
         closing,
         feed_stop,
-        threads: vec![server_thread, feed_thread],
+        server: Some(server_thread),
+        feed: Some(feed_thread),
     })
 }
 
-/// Resolves when the server is told to stop, or with `handle_signals` when a
-/// termination signal arrives, which also ends the open event streams.
-async fn shutdown_requested(closing: Arc<watch::Sender<bool>>, handle_signals: bool) {
-    let stopped = events::closed(closing.subscribe());
-    if handle_signals {
-        tokio::select! {
-            () = stopped => {}
-            () = termination_signal() => {
-                closing.send_replace(true);
-            }
-        }
-    } else {
-        stopped.await;
-    }
+struct Signals {
+    interrupt: Signal,
+    terminate: Signal,
 }
 
-async fn termination_signal() {
-    use tokio::signal::unix::{signal, SignalKind};
-    match signal(SignalKind::terminate()) {
-        Ok(mut terminate) => {
-            tokio::select! {
-                _ = tokio::signal::ctrl_c() => {}
-                _ = terminate.recv() => {}
-            }
+/// Installed before [`start`] returns, so a signal sent right after the caller
+/// learns the address already stops the server instead of killing the process.
+fn install_signals(runtime: &tokio::runtime::Runtime) -> Result<Signals, WebError> {
+    let _entered = runtime.enter();
+    Ok(Signals {
+        interrupt: signal(SignalKind::interrupt()).map_err(WebError::Runtime)?,
+        terminate: signal(SignalKind::terminate()).map_err(WebError::Runtime)?,
+    })
+}
+
+/// Resolves when the server is told to stop, or when a signal arrives, which
+/// also ends the open event streams.
+async fn shutdown_requested(closing: Arc<watch::Sender<bool>>, signals: Option<Signals>) {
+    let stopped = events::closed(closing.subscribe());
+    let Some(mut signals) = signals else {
+        stopped.await;
+        return;
+    };
+    tokio::select! {
+        () = stopped => {}
+        _ = signals.interrupt.recv() => {
+            closing.send_replace(true);
         }
-        Err(_) => {
-            let _ = tokio::signal::ctrl_c().await;
+        _ = signals.terminate.recv() => {
+            closing.send_replace(true);
         }
     }
 }
