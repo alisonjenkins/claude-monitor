@@ -161,6 +161,10 @@ impl FakeTmux {
 }
 
 impl Tmux for FakeTmux {
+    fn is_installed(&self) -> bool {
+        lock(&self.0).available
+    }
+
     fn list_panes(&self) -> Result<Option<HashMap<String, PaneLocation>>, EnvError> {
         let mut state = lock(&self.0);
         state.calls.push(TmuxCall::ListPanes);

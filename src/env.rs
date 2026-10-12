@@ -50,6 +50,9 @@ pub trait Processes: Send + Sync {
 }
 
 pub trait Tmux: Send + Sync {
+    /// True when a tmux binary can be run. `list_panes` cannot tell this from
+    /// "no server running", which a respawn can fix by starting one.
+    fn is_installed(&self) -> bool;
     /// Every pane keyed by pane id; `None` when tmux is unavailable.
     fn list_panes(&self) -> Result<Option<HashMap<String, PaneLocation>>, EnvError>;
     /// Create a detached session running `command` in `cwd`; returns the pane id.
@@ -252,6 +255,13 @@ fn tmux_output(operation: &'static str, args: &[&str]) -> Result<String, EnvErro
 }
 
 impl Tmux for SystemTmux {
+    fn is_installed(&self) -> bool {
+        Command::new("tmux")
+            .arg("-V")
+            .output()
+            .is_ok_and(|out| out.status.success())
+    }
+
     fn list_panes(&self) -> Result<Option<HashMap<String, PaneLocation>>, EnvError> {
         crate::tmux::list_panes().map_err(|e| EnvError::Failed {
             operation: "list tmux panes",
