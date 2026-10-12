@@ -110,7 +110,7 @@ impl fmt::Debug for AppState {
 /// The routes behind the guard. Pages and actions are added here; the guard
 /// (Host, token, CSRF, `no-store`) wraps whatever this returns.
 pub fn routes() -> Router<AppState> {
-    Router::new()
+    routes::router()
 }
 
 fn router(state: AppState) -> Router {

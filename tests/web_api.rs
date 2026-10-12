@@ -61,7 +61,6 @@ fn section_of(rig: &Rig, id: &str) -> String {
 }
 
 #[test]
-#[ignore = "T119"]
 fn the_session_list_is_what_list_json_prints() {
     let web = Plain::new();
     web.put("s-work", State::Working);
@@ -76,7 +75,6 @@ fn the_session_list_is_what_list_json_prints() {
 }
 
 #[test]
-#[ignore = "T119"]
 fn list_filters_arrive_as_query_parameters() {
     let web = Plain::new();
     web.put("s-work", State::Working);
@@ -94,7 +92,6 @@ fn list_filters_arrive_as_query_parameters() {
 }
 
 #[test]
-#[ignore = "T119"]
 fn a_session_detail_is_what_show_json_prints() {
     let web = Plain::new();
     web.put("s-fin", State::Finished);
@@ -111,7 +108,6 @@ fn a_session_detail_is_what_show_json_prints() {
 }
 
 #[test]
-#[ignore = "T119"]
 fn an_unknown_session_is_a_404_with_the_refusal_code() {
     let web = Plain::new();
 
@@ -123,7 +119,6 @@ fn an_unknown_session_is_a_404_with_the_refusal_code() {
 }
 
 #[test]
-#[ignore = "T119"]
 fn done_moves_a_finished_session_to_the_done_section_and_undone_returns_it() {
     let web = Plain::new();
     web.put("s-fin", State::Finished);
@@ -140,7 +135,6 @@ fn done_moves_a_finished_session_to_the_done_section_and_undone_returns_it() {
 }
 
 #[test]
-#[ignore = "T119"]
 fn done_on_a_session_that_is_not_finished_is_a_409_with_the_reason() {
     let web = Plain::new();
     web.put("s-work", State::Working);
@@ -156,7 +150,6 @@ fn done_on_a_session_that_is_not_finished_is_a_409_with_the_reason() {
 }
 
 #[test]
-#[ignore = "T119"]
 fn a_write_without_the_csrf_header_changes_nothing() {
     let web = Plain::new();
     web.put("s-fin", State::Finished);
@@ -171,7 +164,6 @@ fn a_write_without_the_csrf_header_changes_nothing() {
 }
 
 #[test]
-#[ignore = "T119"]
 fn dismiss_hides_a_session_by_default_and_undismiss_brings_it_back() {
     let web = Plain::new();
     web.put("s-fin", State::Finished);
@@ -192,7 +184,6 @@ fn dismiss_hides_a_session_by_default_and_undismiss_brings_it_back() {
 }
 
 #[test]
-#[ignore = "T119"]
 fn park_and_unpark_set_and_clear_the_flag() {
     let web = Plain::new();
     web.put("s-fin", State::Finished);
@@ -209,7 +200,6 @@ fn park_and_unpark_set_and_clear_the_flag() {
 }
 
 #[test]
-#[ignore = "T119"]
 fn a_note_is_added_from_a_json_or_a_form_body() {
     let web = Plain::new();
     web.put("s-fin", State::Finished);
@@ -237,7 +227,6 @@ fn a_note_is_added_from_a_json_or_a_form_body() {
 }
 
 #[test]
-#[ignore = "T119"]
 fn an_empty_note_is_a_400() {
     let web = Plain::new();
     web.put("s-fin", State::Finished);
@@ -248,7 +237,6 @@ fn an_empty_note_is_a_400() {
 }
 
 #[test]
-#[ignore = "T119"]
 fn projects_are_created_grouped_renamed_and_listed() {
     let web = Plain::new();
     web.put("s-fin", State::Finished);
@@ -298,7 +286,6 @@ fn projects_are_created_grouped_renamed_and_listed() {
 }
 
 #[test]
-#[ignore = "T119"]
 fn a_projects_done_section_holds_only_its_own_done_sessions() {
     let web = Plain::new();
     web.put("in-a", State::Finished);
@@ -326,7 +313,6 @@ fn a_projects_done_section_holds_only_its_own_done_sessions() {
 }
 
 #[test]
-#[ignore = "T119"]
 fn an_unknown_project_is_a_404() {
     let web = Plain::new();
 
@@ -339,7 +325,6 @@ fn an_unknown_project_is_a_404() {
 }
 
 #[test]
-#[ignore = "T119"]
 fn a_project_note_is_stored() {
     let web = Plain::new();
     let id = post(&web.rig, "/projects", &json!({"name": "alpha"})).json()["project"]["id"]
@@ -359,7 +344,6 @@ fn a_project_note_is_stored() {
 }
 
 #[test]
-#[ignore = "T119"]
 fn the_progress_source_can_be_set_to_none() {
     let web = Plain::new();
     web.put("s-fin", State::Finished);
@@ -375,7 +359,6 @@ fn the_progress_source_can_be_set_to_none() {
 }
 
 #[test]
-#[ignore = "T119"]
 fn summarize_without_a_configured_model_is_refused_not_a_server_error() {
     let web = Plain::new();
     web.put("s-fin", State::Finished);
@@ -387,7 +370,6 @@ fn summarize_without_a_configured_model_is_refused_not_a_server_error() {
 }
 
 #[test]
-#[ignore = "T119"]
 fn links_are_added_listed_and_removed() {
     let web = Plain::new();
     web.put("s-fin", State::Finished);
@@ -423,7 +405,6 @@ fn tmux_fixture() -> Option<(Fixture, Rig)> {
 }
 
 #[test]
-#[ignore = "T119"]
 fn a_respawn_starts_the_session_in_a_private_tmux_pane() {
     let Some((fx, rig)) = tmux_fixture() else {
         return;
@@ -436,11 +417,14 @@ fn a_respawn_starts_the_session_in_a_private_tmux_pane() {
     let body = response.json();
     assert_eq!(body["started"][0]["session"], "int1");
     assert_eq!(body["refused"], json!([]));
-    assert_eq!(fx.pane_ids().len(), 1);
+    assert_eq!(
+        fx.pane_ids().len(),
+        2,
+        "the shell window plus the started session"
+    );
 }
 
 #[test]
-#[ignore = "T119"]
 fn a_respawn_refusal_is_data_in_a_200_response_and_starts_nothing() {
     let Some((fx, rig)) = tmux_fixture() else {
         return;
@@ -460,7 +444,6 @@ fn a_respawn_refusal_is_data_in_a_200_response_and_starts_nothing() {
 }
 
 #[test]
-#[ignore = "T119"]
 fn a_batch_respawn_takes_ids_or_all_interrupted_except() {
     let Some((fx, rig)) = tmux_fixture() else {
         return;
@@ -484,11 +467,15 @@ fn a_batch_respawn_takes_ids_or_all_interrupted_except() {
         .map(|s| s["session"].as_str().unwrap().to_owned())
         .collect();
     assert_eq!(started, ["int1"]);
-    assert_eq!(fx.pane_ids().len(), 2);
+    assert_eq!(rest.json()["skipped"], json!(["int2"]));
+    assert_eq!(
+        fx.pane_ids().len(),
+        3,
+        "the shell window plus the two started sessions"
+    );
 }
 
 #[test]
-#[ignore = "T119"]
 fn a_batch_respawn_that_names_nothing_is_a_400() {
     let Some((_fx, rig)) = tmux_fixture() else {
         return;
@@ -500,7 +487,6 @@ fn a_batch_respawn_that_names_nothing_is_a_400() {
 }
 
 #[test]
-#[ignore = "T119"]
 fn the_restore_preview_lists_interrupted_sessions_and_starts_nothing() {
     let Some((fx, rig)) = tmux_fixture() else {
         return;

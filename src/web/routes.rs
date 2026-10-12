@@ -1,5 +1,33 @@
 //! The pages and actions of the web view, and the table that says which
 //! library command each one offers (SC-011).
+//!
+//! Every action runs the same library call as the CLI, so a refusal reads the
+//! same in both. Reads answer JSON; pages are added on top of the same data.
+
+use std::path::PathBuf;
+
+use axum::body::Bytes;
+use axum::extract::{FromRequest, Path, Query, Request, State};
+use axum::http::header::CONTENT_TYPE;
+use axum::http::{HeaderMap, HeaderName, HeaderValue, StatusCode};
+use axum::response::{IntoResponse, Response};
+use axum::routing::{get, post};
+use axum::Router;
+use serde::Deserialize;
+use serde_json::{json, Map, Value};
+
+use super::AppState;
+use crate::cli::migrate::open_viewer_store;
+use crate::cli::respawn::{plan_all, started_json, usage_error};
+use crate::cli::restore::candidates;
+use crate::cli::show::resolve;
+use crate::cli::{self, Command, Output, ProjectAction};
+use crate::env::Env;
+use crate::error::Error;
+use crate::export::links::link_json;
+use crate::model::{OwnerKind, Project};
+use crate::respawn::{start_batch, Item, PlanFlags, RefusedItem};
+use crate::store::Store;
 
 /// One library command and the web route that offers it. A `{id}` segment is
 /// a session or project id.
@@ -12,6 +40,769 @@ pub struct CommandRoute {
     pub path: &'static str,
 }
 
+const fn route(command: &'static str, method: &'static str, path: &'static str) -> CommandRoute {
+    CommandRoute {
+        command,
+        method,
+        path,
+    }
+}
+
 /// Every command the web view offers. `tests/parity_web.rs` holds the commands
 /// that are deliberately not here, each with its reason.
-pub const COMMAND_ROUTES: &[CommandRoute] = &[];
+pub const COMMAND_ROUTES: &[CommandRoute] = &[
+    route("list", "GET", "/sessions"),
+    route("show", "GET", "/sessions/{id}"),
+    route("restore", "GET", "/restore"),
+    route("restore", "POST", "/respawn"),
+    route("respawn", "POST", "/sessions/{id}/respawn"),
+    route("respawn", "POST", "/respawn"),
+    route("project", "POST", "/projects"),
+    route("project", "POST", "/projects/{id}"),
+    route("group", "POST", "/sessions/{id}/group"),
+    route("note", "POST", "/sessions/{id}/note"),
+    route("note", "POST", "/projects/{id}/note"),
+    route("park", "POST", "/sessions/{id}/park"),
+    route("unpark", "POST", "/sessions/{id}/unpark"),
+    route("dismiss", "POST", "/sessions/{id}/dismiss"),
+    route("undismiss", "POST", "/sessions/{id}/undismiss"),
+    route("done", "POST", "/sessions/{id}/done"),
+    route("undone", "POST", "/sessions/{id}/undone"),
+    route("progress-bind", "POST", "/sessions/{id}/progress-source"),
+    route("summarize", "POST", "/sessions/{id}/summarize"),
+    route("link", "POST", "/sessions/{id}/link"),
+    route("unlink", "POST", "/sessions/{id}/unlink"),
+    route("links-check", "GET", "/links"),
+];
+
+/// Tells the open page that something changed, so its regions re-read.
+const CHANGED: &str = "cc-changed";
+
+#[derive(Debug)]
+pub struct ApiError {
+    status: StatusCode,
+    code: String,
+    message: String,
+}
+
+impl ApiError {
+    fn new(status: StatusCode, code: &str, message: impl Into<String>) -> Self {
+        Self {
+            status,
+            code: code.to_owned(),
+            message: message.into(),
+        }
+    }
+
+    fn usage(message: impl Into<String>) -> Self {
+        Self::new(StatusCode::BAD_REQUEST, "usage", message)
+    }
+
+    fn internal(operation: &str, detail: impl std::fmt::Display) -> Self {
+        Self::new(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "internal",
+            format!("{operation}: {detail}"),
+        )
+    }
+
+    fn unknown_project(key: &str) -> Self {
+        Self::new(
+            StatusCode::NOT_FOUND,
+            "unknown_project",
+            format!("no project matches {key:?}"),
+        )
+    }
+
+    pub fn status(&self) -> StatusCode {
+        self.status
+    }
+
+    pub fn message(&self) -> &str {
+        &self.message
+    }
+}
+
+impl From<Error> for ApiError {
+    fn from(error: Error) -> Self {
+        let message = error.to_string();
+        match &error {
+            Error::Refused { code, .. } if code.starts_with("unknown_") => {
+                Self::new(StatusCode::NOT_FOUND, code, message)
+            }
+            Error::Refused { code, .. } => Self::new(StatusCode::CONFLICT, code, message),
+            Error::Usage(_) => Self::new(StatusCode::BAD_REQUEST, "usage", message),
+            Error::Config(_) => Self::new(StatusCode::BAD_REQUEST, "config", message),
+            Error::NotImplemented(_) => {
+                Self::new(StatusCode::NOT_IMPLEMENTED, "not_implemented", message)
+            }
+            Error::Partial { .. } => {
+                Self::new(StatusCode::INTERNAL_SERVER_ERROR, "partial", message)
+            }
+            Error::Io { .. } | Error::Store { .. } => {
+                Self::new(StatusCode::INTERNAL_SERVER_ERROR, "internal", message)
+            }
+        }
+    }
+}
+
+impl IntoResponse for ApiError {
+    fn into_response(self) -> Response {
+        json_response(
+            self.status,
+            &json!({ "ok": false, "error": self.message, "code": self.code }),
+        )
+    }
+}
+
+pub fn json_response(status: StatusCode, value: &Value) -> Response {
+    (
+        status,
+        [(CONTENT_TYPE, "application/json")],
+        value.to_string(),
+    )
+        .into_response()
+}
+
+/// A write's answer: the JSON, plus the header that makes the page refresh.
+fn changed(value: &Value) -> Response {
+    let mut response = json_response(StatusCode::OK, value);
+    response.headers_mut().insert(
+        HeaderName::from_static("hx-trigger"),
+        HeaderValue::from_static(CHANGED),
+    );
+    response
+}
+
+/// Runs a blocking library call off the async runtime.
+async fn blocking<T, F>(job: F) -> Result<T, ApiError>
+where
+    T: Send + 'static,
+    F: FnOnce() -> T + Send + 'static,
+{
+    tokio::task::spawn_blocking(job)
+        .await
+        .map_err(|e| ApiError::internal("run the request", e))
+}
+
+async fn run(state: &AppState, command: Command) -> Result<Output, ApiError> {
+    let (env, dir) = (state.env.clone(), state.state_dir.clone());
+    blocking(move || cli::run_in(command, &env, Some(&dir)))
+        .await?
+        .map_err(ApiError::from)
+}
+
+/// What the CLI prints with `--json`; `message` adds its text line for the
+/// page's status line.
+fn output_json(output: &Output, message: bool) -> Value {
+    match output {
+        Output::Dual { text, json } => {
+            let mut json = json.clone();
+            if let (true, Value::Object(map)) = (message, &mut json) {
+                map.insert("message".to_owned(), json!(text));
+            }
+            json
+        }
+        Output::Json(value) => value.clone(),
+        Output::Text(text) | Output::Raw(text) => json!({ "ok": true, "message": text }),
+    }
+}
+
+async fn act(state: &AppState, command: Command) -> Result<Response, ApiError> {
+    let output = run(state, command).await?;
+    Ok(changed(&output_json(&output, true)))
+}
+
+/// A write's body: JSON, or the urlencoded form htmx sends, as one object. A
+/// key that repeats (checkboxes) becomes an array.
+#[derive(Debug, Default)]
+pub struct Payload(Map<String, Value>);
+
+impl<S: Send + Sync> FromRequest<S> for Payload {
+    type Rejection = ApiError;
+
+    async fn from_request(request: Request, state: &S) -> Result<Self, ApiError> {
+        let content_type = request
+            .headers()
+            .get(CONTENT_TYPE)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or_default()
+            .to_ascii_lowercase();
+        let body = Bytes::from_request(request, state)
+            .await
+            .map_err(|e| ApiError::usage(format!("cannot read the request body: {e}")))?;
+        if body.is_empty() {
+            return Ok(Self::default());
+        }
+        if content_type.starts_with("application/json") {
+            return match serde_json::from_slice(&body) {
+                Ok(Value::Object(map)) => Ok(Self(map)),
+                Ok(_) => Err(ApiError::usage("the JSON body must be an object")),
+                Err(e) => Err(ApiError::usage(format!("the JSON body is invalid: {e}"))),
+            };
+        }
+        if content_type.starts_with("application/x-www-form-urlencoded") {
+            return Ok(Self(form_object(&body)));
+        }
+        Err(ApiError::new(
+            StatusCode::UNSUPPORTED_MEDIA_TYPE,
+            "usage",
+            "send the body as application/json or a urlencoded form",
+        ))
+    }
+}
+
+fn form_object(body: &[u8]) -> Map<String, Value> {
+    let mut map = Map::new();
+    for (key, value) in form_urlencoded::parse(body) {
+        let value = Value::String(value.into_owned());
+        match map.get_mut(key.as_ref()) {
+            Some(Value::Array(all)) => all.push(value),
+            Some(first) => *first = Value::Array(vec![first.take(), value]),
+            None => {
+                map.insert(key.into_owned(), value);
+            }
+        }
+    }
+    map
+}
+
+impl Payload {
+    fn text(&self, key: &str) -> Option<String> {
+        match self.0.get(key)? {
+            Value::String(text) => Some(text.clone()),
+            Value::Number(number) => Some(number.to_string()),
+            _ => None,
+        }
+    }
+
+    fn flag(&self, key: &str) -> bool {
+        match self.0.get(key) {
+            Some(Value::Bool(on)) => *on,
+            Some(Value::String(text)) => truthy(text),
+            _ => false,
+        }
+    }
+
+    /// A list given as an array, as repeated form keys, or as a bare value.
+    fn list(&self, key: &str) -> Vec<String> {
+        match self.0.get(key) {
+            Some(Value::Array(all)) => all
+                .iter()
+                .filter_map(|v| v.as_str().map(str::to_owned))
+                .collect(),
+            Some(Value::String(one)) if !one.is_empty() => vec![one.clone()],
+            _ => Vec::new(),
+        }
+    }
+}
+
+fn truthy(text: &str) -> bool {
+    matches!(text.trim(), "1" | "true" | "on" | "yes")
+}
+
+fn blank(value: Option<String>) -> Option<String> {
+    value
+        .map(|v| v.trim().to_owned())
+        .filter(|value| !value.is_empty())
+}
+
+#[derive(Debug, Default, Deserialize)]
+pub struct ListParams {
+    state: Option<String>,
+    agent: Option<String>,
+    repo: Option<String>,
+    project: Option<String>,
+    text: Option<String>,
+    section: Option<String>,
+    include_dismissed: Option<String>,
+}
+
+impl ListParams {
+    fn command(self) -> Command {
+        let states = blank(self.state)
+            .map(|all| all.split(',').map(|s| s.trim().to_owned()).collect())
+            .unwrap_or_default();
+        Command::List {
+            states,
+            agent: blank(self.agent),
+            repo: blank(self.repo),
+            project: blank(self.project),
+            text: blank(self.text),
+            section: blank(self.section),
+            include_dismissed: self.include_dismissed.as_deref().is_some_and(truthy),
+            expand_finished: false,
+            expand_unseen: false,
+        }
+    }
+}
+
+pub fn router() -> Router<AppState> {
+    let session = |action: fn(String) -> Command| {
+        post(
+            move |State(state): State<AppState>, Path(id): Path<String>| async move {
+                act(&state, action(id)).await
+            },
+        )
+    };
+    Router::new()
+        .route("/sessions", get(sessions))
+        .route("/sessions/{id}", get(session_detail))
+        .route(
+            "/sessions/{id}/park",
+            session(|target| Command::Park { target }),
+        )
+        .route(
+            "/sessions/{id}/unpark",
+            session(|target| Command::Unpark { target }),
+        )
+        .route(
+            "/sessions/{id}/dismiss",
+            session(|target| Command::Dismiss { target }),
+        )
+        .route(
+            "/sessions/{id}/undismiss",
+            session(|target| Command::Undismiss { target }),
+        )
+        .route(
+            "/sessions/{id}/done",
+            session(|id| Command::Done { sessions: vec![id] }),
+        )
+        .route(
+            "/sessions/{id}/undone",
+            session(|id| Command::Undone { sessions: vec![id] }),
+        )
+        .route(
+            "/sessions/{id}/summarize",
+            session(|target| Command::Summarize { target }),
+        )
+        .route("/sessions/{id}/note", post(session_note))
+        .route("/sessions/{id}/group", post(session_group))
+        .route("/sessions/{id}/progress-source", post(progress_source))
+        .route("/sessions/{id}/link", post(link))
+        .route("/sessions/{id}/unlink", post(unlink))
+        .route("/sessions/{id}/respawn", post(respawn_one))
+        .route("/respawn", post(respawn_many))
+        .route("/restore", get(restore))
+        .route("/projects", get(projects).post(project_create))
+        .route("/projects/{id}", get(project_detail).post(project_update))
+        .route("/projects/{id}/note", post(project_note))
+        .route("/links", get(links))
+}
+
+async fn sessions(
+    State(state): State<AppState>,
+    Query(params): Query<ListParams>,
+) -> Result<Response, ApiError> {
+    let output = run(&state, params.command()).await?;
+    Ok(json_response(StatusCode::OK, &output_json(&output, false)))
+}
+
+async fn session_detail(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Result<Response, ApiError> {
+    let output = run(&state, Command::Show { session: id }).await?;
+    Ok(json_response(StatusCode::OK, &output_json(&output, false)))
+}
+
+async fn session_note(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    body: Payload,
+) -> Result<Response, ApiError> {
+    let text = body.text("text").unwrap_or_default();
+    act(&state, Command::Note { target: id, text }).await
+}
+
+async fn session_group(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    body: Payload,
+) -> Result<Response, ApiError> {
+    let project = blank(body.text("project"))
+        .ok_or_else(|| ApiError::usage("name the project, or \"-\" for none"))?;
+    act(
+        &state,
+        Command::Group {
+            project,
+            sessions: vec![id],
+        },
+    )
+    .await
+}
+
+async fn progress_source(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    body: Payload,
+) -> Result<Response, ApiError> {
+    let (file, source) = (
+        blank(body.text("path")).map(PathBuf::from),
+        blank(body.text("source")),
+    );
+    act(
+        &state,
+        Command::ProgressBind {
+            owner: id,
+            file,
+            source,
+        },
+    )
+    .await
+}
+
+async fn link(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    body: Payload,
+) -> Result<Response, ApiError> {
+    let cortex = blank(body.text("cortex")).unwrap_or_default();
+    let kind = blank(body.text("kind")).unwrap_or_else(|| "task".to_owned());
+    let doc = blank(body.text("doc"));
+    act(
+        &state,
+        Command::Link {
+            owner: id,
+            cortex,
+            kind,
+            doc,
+        },
+    )
+    .await
+}
+
+async fn unlink(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    body: Payload,
+) -> Result<Response, ApiError> {
+    let cortex = blank(body.text("cortex")).unwrap_or_default();
+    act(&state, Command::Unlink { owner: id, cortex }).await
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CheckParams {
+    check: Option<String>,
+}
+
+async fn links(
+    State(state): State<AppState>,
+    Query(params): Query<CheckParams>,
+) -> Result<Response, ApiError> {
+    let (env, dir) = (state.env.clone(), state.state_dir.clone());
+    let stored = blocking(move || -> Result<Vec<Value>, Error> {
+        let store = open_viewer_store(&env, Some(&dir))?;
+        let all = store.all_links().map_err(|e| Error::Store {
+            operation: "list links".to_owned(),
+            path: None,
+            detail: e.to_string(),
+        })?;
+        Ok(all.iter().map(link_json).collect())
+    })
+    .await??;
+    let mut body = Map::new();
+    body.insert("links".to_owned(), json!(stored));
+    if params.check.as_deref().is_some_and(truthy) {
+        let output = run(&state, Command::LinksCheck).await?;
+        body.insert("check".to_owned(), output_json(&output, false));
+    }
+    Ok(json_response(StatusCode::OK, &Value::Object(body)))
+}
+
+fn find_project(store: &Store, key: &str) -> Result<Project, ApiError> {
+    store
+        .list_projects()
+        .map_err(|e| ApiError::internal("list projects", e))?
+        .into_iter()
+        .find(|p| p.id == key || p.name == key)
+        .ok_or_else(|| ApiError::unknown_project(key))
+}
+
+async fn projects(State(state): State<AppState>) -> Result<Response, ApiError> {
+    let (env, dir) = (state.env.clone(), state.state_dir.clone());
+    let all = blocking(move || -> Result<Vec<Project>, ApiError> {
+        let store = open_viewer_store(&env, Some(&dir))?;
+        store
+            .list_projects()
+            .map_err(|e| ApiError::internal("list projects", e))
+    })
+    .await??;
+    Ok(json_response(StatusCode::OK, &json!({ "projects": all })))
+}
+
+async fn project_create(
+    State(state): State<AppState>,
+    body: Payload,
+) -> Result<Response, ApiError> {
+    let name = blank(body.text("name")).ok_or_else(|| ApiError::usage("a project needs a name"))?;
+    act(
+        &state,
+        Command::Project {
+            action: ProjectAction::Add,
+            name,
+            value: None,
+        },
+    )
+    .await
+}
+
+async fn project_named(state: &AppState, key: String) -> Result<Project, ApiError> {
+    let (env, dir) = (state.env.clone(), state.state_dir.clone());
+    blocking(move || {
+        let store = open_viewer_store(&env, Some(&dir))?;
+        find_project(&store, &key)
+    })
+    .await?
+}
+
+async fn project_detail(
+    State(state): State<AppState>,
+    Path(key): Path<String>,
+) -> Result<Response, ApiError> {
+    let project = project_named(&state, key).await?;
+    let notes = {
+        let (env, dir, id) = (
+            state.env.clone(),
+            state.state_dir.clone(),
+            project.id.clone(),
+        );
+        blocking(move || -> Result<Value, ApiError> {
+            let store = open_viewer_store(&env, Some(&dir))?;
+            let notes = store
+                .notes_for(OwnerKind::Project, &id)
+                .map_err(|e| ApiError::internal("read notes", e))?;
+            Ok(json!(notes))
+        })
+        .await??
+    };
+    let listed = run(
+        &state,
+        ListParams {
+            project: Some(project.name.clone()),
+            ..ListParams::default()
+        }
+        .command(),
+    )
+    .await?;
+    let sessions = output_json(&listed, false)
+        .get("sessions")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    Ok(json_response(
+        StatusCode::OK,
+        &json!({ "project": project, "sessions": sessions, "notes": notes }),
+    ))
+}
+
+async fn project_update(
+    State(state): State<AppState>,
+    Path(key): Path<String>,
+    body: Payload,
+) -> Result<Response, ApiError> {
+    let mut name = project_named(&state, key).await?.name;
+    let (rename, status, sessions) = (
+        blank(body.text("name")),
+        blank(body.text("status")),
+        body.list("sessions"),
+    );
+    if rename.is_none() && status.is_none() && sessions.is_empty() {
+        return Err(ApiError::usage(
+            "send a new name, a status or sessions to group",
+        ));
+    }
+    let mut last = None;
+    if let Some(new_name) = rename {
+        let command = Command::Project {
+            action: ProjectAction::Rename,
+            name: name.clone(),
+            value: Some(new_name.clone()),
+        };
+        last = Some(run(&state, command).await?);
+        name = new_name;
+    }
+    if let Some(status) = status {
+        let command = Command::Project {
+            action: ProjectAction::SetStatus,
+            name: name.clone(),
+            value: Some(status),
+        };
+        last = Some(run(&state, command).await?);
+    }
+    if !sessions.is_empty() {
+        let command = Command::Group {
+            project: name,
+            sessions,
+        };
+        last = Some(run(&state, command).await?);
+    }
+    let output = last.ok_or_else(|| ApiError::usage("nothing to change"))?;
+    Ok(changed(&output_json(&output, true)))
+}
+
+async fn project_note(
+    State(state): State<AppState>,
+    Path(key): Path<String>,
+    body: Payload,
+) -> Result<Response, ApiError> {
+    let project = project_named(&state, key).await?;
+    let text = body.text("text").unwrap_or_default();
+    act(
+        &state,
+        Command::Note {
+            target: project.name,
+            text,
+        },
+    )
+    .await
+}
+
+fn refused_json(item: &RefusedItem) -> Value {
+    json!({
+        "id": item.session_id,
+        "code": item.code,
+        "message": item.message,
+        "alternatives": item.alternatives.iter().map(|a| json!({
+            "description": a.description,
+            "command": a.command,
+        })).collect::<Vec<_>>(),
+    })
+}
+
+/// The outcome of a batch: `started` and `refused` are both data, so a
+/// refusal is a 200.
+fn batch_json(items: &[Item], skipped: &[String]) -> Value {
+    let refused: Vec<Value> = items
+        .iter()
+        .filter_map(|item| match item {
+            Item::Refused(r) => Some(refused_json(r)),
+            Item::Started(_) => None,
+        })
+        .collect();
+    let started = started_json(items);
+    json!({
+        "ok": true,
+        "executed": true,
+        "message": format!("started {}, refused {}", started.len(), refused.len()),
+        "started": started,
+        "refused": refused,
+        "skipped": skipped,
+    })
+}
+
+/// Plans and starts `ids` with `flags`, the way `respawn` and `restore` do.
+fn start_sessions(
+    store: &Store,
+    env: &Env,
+    ids: Vec<String>,
+    skipped: &[String],
+    flags: PlanFlags,
+) -> Result<Value, Error> {
+    if ids.is_empty() {
+        return Ok(batch_json(&[], skipped));
+    }
+    let planned = plan_all(store, env, &ids, &flags)?;
+    if let Some(error) = usage_error(&planned) {
+        return Err(error);
+    }
+    let items = start_batch(store, env, planned);
+    Ok(batch_json(&items, skipped))
+}
+
+fn flags_of(body: &Payload) -> PlanFlags {
+    PlanFlags {
+        fresh: body.flag("fresh"),
+        in_dir: blank(body.text("in")).map(PathBuf::from),
+        recreate_worktree: body.flag("recreate_worktree"),
+    }
+}
+
+async fn respawn_one(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    body: Payload,
+) -> Result<Response, ApiError> {
+    let flags = flags_of(&body);
+    let (env, dir) = (state.env.clone(), state.state_dir.clone());
+    let report = blocking(move || -> Result<Value, Error> {
+        let store = open_viewer_store(&env, Some(&dir))?;
+        let id = resolve(&store, &id)?;
+        start_sessions(&store, &env, vec![id], &[], flags)
+    })
+    .await??;
+    Ok(changed(&report))
+}
+
+async fn respawn_many(State(state): State<AppState>, body: Payload) -> Result<Response, ApiError> {
+    let flags = flags_of(&body);
+    let ids = body.list("ids");
+    let all_interrupted = body.flag("all_interrupted");
+    let include_finished = body.flag("include_finished");
+    let except = body.list("except");
+    if ids.is_empty() && !all_interrupted {
+        return Err(ApiError::usage(
+            "name the sessions in \"ids\", or set \"all_interrupted\"",
+        ));
+    }
+    let (env, dir) = (state.env.clone(), state.state_dir.clone());
+    let report = blocking(move || -> Result<Value, Error> {
+        let store = open_viewer_store(&env, Some(&dir))?;
+        let mut skipped = Vec::new();
+        for id in &except {
+            let id = resolve(&store, id)?;
+            if !skipped.contains(&id) {
+                skipped.push(id);
+            }
+        }
+        let named: Vec<String> = if all_interrupted {
+            candidates(&store, include_finished)?
+                .into_iter()
+                .map(|s| s.id)
+                .collect()
+        } else {
+            ids.iter()
+                .map(|id| resolve(&store, id))
+                .collect::<Result<_, _>>()?
+        };
+        let mut chosen = Vec::new();
+        for id in named {
+            if !skipped.contains(&id) && !chosen.contains(&id) {
+                chosen.push(id);
+            }
+        }
+        start_sessions(&store, &env, chosen, &skipped, flags)
+    })
+    .await??;
+    Ok(changed(&report))
+}
+
+#[derive(Debug, Default, Deserialize)]
+pub struct RestoreParams {
+    include_finished: Option<String>,
+}
+
+async fn restore(
+    State(state): State<AppState>,
+    Query(params): Query<RestoreParams>,
+) -> Result<Response, ApiError> {
+    let output = run(
+        &state,
+        Command::Restore {
+            all_interrupted: false,
+            include_finished: params.include_finished.as_deref().is_some_and(truthy),
+            fresh: false,
+            skip: Vec::new(),
+            yes: false,
+        },
+    )
+    .await?;
+    Ok(json_response(StatusCode::OK, &output_json(&output, false)))
+}
+
+/// Whether the caller asked for JSON rather than a page.
+pub fn wants_json(headers: &HeaderMap) -> bool {
+    headers
+        .get(axum::http::header::ACCEPT)
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|accept| accept.contains("application/json"))
+}
