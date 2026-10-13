@@ -16,6 +16,8 @@ pub enum WebAction {
     /// Show where the install's CA certificate is and how to trust it; with
     /// `print`, write the PEM to stdout instead.
     Ca { print: bool },
+    /// Ask the running `serve` for a fresh single-use login URL.
+    Login,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -109,7 +111,7 @@ pub enum Command {
         /// A loopback address; anything else is refused when parsing.
         bind: Option<IpAddr>,
     },
-    /// Helpers for the web view's TLS and login: `web ca`.
+    /// Helpers for the web view's TLS and login: `web ca`, `web login`.
     Web {
         action: WebAction,
     },

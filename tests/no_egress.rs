@@ -270,10 +270,11 @@ fn files_containing(dir: &Path, needle: &str, found: &mut Vec<PathBuf>) {
         let path = entry.unwrap().path();
         if path.is_dir() {
             files_containing(&path, needle, found);
-        } else if fs::read(&path)
-            .unwrap()
-            .windows(needle.len())
-            .any(|w| w == needle.as_bytes())
+        } else if path.is_file()
+            && fs::read(&path)
+                .unwrap()
+                .windows(needle.len())
+                .any(|w| w == needle.as_bytes())
         {
             found.push(path);
         }

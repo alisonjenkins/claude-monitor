@@ -9,6 +9,7 @@
 //! values and none is stored on disk.
 
 use std::fmt;
+use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -44,6 +45,13 @@ const LOGIN_CODE_KEY: &str = "code";
 const CONTENT_SECURITY_POLICY_VALUE: &str =
     "default-src 'self'; style-src 'self' 'unsafe-inline'; \
      base-uri 'none'; form-action 'self'; frame-ancestors 'none'";
+
+/// The URL that logs a browser in with `code`, once.
+pub fn login_url(addr: SocketAddr, code: &str) -> Zeroizing<String> {
+    Zeroizing::new(format!(
+        "https://{addr}{LOGIN_PATH}?{LOGIN_CODE_KEY}={code}"
+    ))
+}
 
 tokio::task_local! {
     static CSRF: String;

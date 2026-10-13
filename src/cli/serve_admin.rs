@@ -31,7 +31,7 @@ mod enabled {
     use crate::cli::Output;
     use crate::error::Error;
     use crate::store::{resolve_state_dir, StateDirEnv};
-    use crate::web::tls;
+    use crate::web::{control, tls};
 
     const TRUST_HINT: &str = "Import it once as a certificate authority: Firefox: Settings > \
         Privacy & Security > Certificates > View Certificates > Authorities > Import; \
@@ -54,7 +54,17 @@ mod enabled {
         let dir = state_dir_of(state_dir)?;
         match action {
             WebAction::Ca { print } => ca(&dir, print),
+            WebAction::Login => login(&dir),
         }
+    }
+
+    fn login(dir: &Path) -> Result<Output, Error> {
+        let url =
+            control::request_login_url(dir).map_err(|e| failed("ask serve for a login URL", e))?;
+        Ok(Output::Dual {
+            text: url.as_str().to_owned(),
+            json: json!({ "url": url.as_str() }),
+        })
     }
 
     fn ca(dir: &Path, print: bool) -> Result<Output, Error> {

@@ -28,6 +28,7 @@ use crate::feed::{ChangeFeed, EventSource, SystemMonotonic};
 
 pub mod auth;
 pub mod clock;
+pub mod control;
 pub mod events;
 pub mod login;
 pub mod pages;
@@ -52,6 +53,8 @@ pub enum WebError {
     Random { detail: String },
     #[error("TLS setup failed: {0}")]
     Tls(#[from] tls::TlsError),
+    #[error("{0}")]
+    Control(#[from] control::ControlError),
     #[error("cannot start the async runtime: {0}")]
     Runtime(io::Error),
     #[error("cannot listen on {addr}: {source}")]
@@ -166,12 +169,7 @@ impl Server {
     /// ever appears in a URL.
     pub fn issue_login_url(&self) -> Result<zeroize::Zeroizing<String>, WebError> {
         let code = self.issue_login_code()?;
-        Ok(zeroize::Zeroizing::new(format!(
-            "https://{}{}?code={}",
-            self.addr,
-            auth::LOGIN_PATH,
-            code.as_str()
-        )))
+        Ok(auth::login_url(self.addr, code.as_str()))
     }
 
     /// Stops accepting and joins the server thread.
@@ -235,6 +233,25 @@ pub fn start<S: EventSource + Send + 'static>(
     } else {
         None
     };
+    // The control socket only serves `web login`; a path too long for a unix
+    // socket must not stop the web view itself.
+    let control = {
+        let _entered = runtime.enter();
+        match control::bind(&tls_dir, &tls_paths.dir) {
+            Ok(Some(socket)) => Some(socket),
+            Ok(None) => {
+                eprintln!(
+                    "claude-monitor: another serve owns {}; `web login` will reach that one",
+                    control::socket_path(&tls_dir).display()
+                );
+                None
+            }
+            Err(error) => {
+                eprintln!("claude-monitor: no control socket, `web login` will not work: {error}");
+                None
+            }
+        }
+    };
     let (closing, closing_rx) = watch::channel(false);
     let closing = Arc::new(closing);
     let state_dir = config
@@ -261,10 +278,24 @@ pub fn start<S: EventSource + Send + 'static>(
         .spawn_feed(feed, Arc::clone(&feed_stop))
         .map_err(WebError::Thread)?;
     let serving = Arc::clone(&closing);
+    let control_auth = Arc::clone(&auth);
     let server_thread = std::thread::Builder::new()
         .name("web-server".to_owned())
         .spawn(move || {
-            runtime.block_on(serve_tls(listener, acceptor, app, serving, signals));
+            runtime.block_on(async {
+                let control_task = control.map(|socket| {
+                    tokio::spawn(control::serve(
+                        socket,
+                        control_auth,
+                        addr,
+                        serving.subscribe(),
+                    ))
+                });
+                serve_tls(listener, acceptor, app, serving, signals).await;
+                if let Some(task) = control_task {
+                    let _ = task.await;
+                }
+            });
         })
         .map_err(WebError::Thread);
     let server_thread = match server_thread {

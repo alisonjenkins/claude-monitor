@@ -313,6 +313,8 @@ enum WebCommands {
         #[arg(long)]
         print: bool,
     },
+    /// Print a fresh single-use login URL from the running `serve`
+    Login,
 }
 
 #[derive(Subcommand)]
@@ -533,6 +535,7 @@ impl Cli {
             Some(Commands::Web { action }) => Command::Web {
                 action: match action {
                     WebCommands::Ca { print } => WebAction::Ca { print: *print },
+                    WebCommands::Login => WebAction::Login,
                 },
             },
         }
