@@ -83,6 +83,17 @@ notification fires when a session starts needing you.
 | `links check` | Show linked records whose two sides disagree; writes neither |
 | `export cortexiphan` | Write projects, steps, notes and sessions as JSON Lines for cortexiphan |
 
+Every refresh also reads Claude Code's live-session registry
+(`~/.claude/sessions/<pid>.json`). A live entry (pid running, start time
+matching) revives a session that was marked interrupted, so a
+`claude --resume` of the same conversation shows as running again, and it
+updates the stored pid, cwd and tmux pane and session name. Finished sessions
+stay finished. When the registry lists at least one live session, an active
+Claude session that has no live entry, no recorded pid and a state older than
+two minutes is marked interrupted (`registry_missing`); a pane id that tmux has
+since reused for something else no longer keeps it alive. Copilot sessions are
+not in this registry and are never judged by it.
+
 `restore` and `respawn` put each session back in the tmux session and window it
 was last seen in (recorded by the hook and by every refresh; shown by `show`).
 A session with no recorded placement opens in the `agents` session. Setting
