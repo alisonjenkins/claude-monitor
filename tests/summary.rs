@@ -144,6 +144,29 @@ mod verbatim {
     }
 
     #[test]
+    fn an_empty_stop_message_does_not_overwrite_a_good_left_off() {
+        let h = Harness::new();
+        h.event("Stop", json!({"last_assistant_message": "good text"}));
+        h.event("Stop", json!({"last_assistant_message": ""}));
+        h.event("Stop", json!({"last_assistant_message": "  \n"}));
+        assert_eq!(h.session().left_off.as_deref(), Some("good text"));
+    }
+
+    #[test]
+    fn an_empty_stop_message_falls_back_to_the_transcript() {
+        let h = Harness::new();
+        write_transcript(&h.transcript, &[assistant_line("from the transcript")]);
+        h.event(
+            "Stop",
+            json!({
+                "last_assistant_message": "",
+                "transcript_path": h.transcript.to_str().unwrap(),
+            }),
+        );
+        assert_eq!(h.session().left_off.as_deref(), Some("from the transcript"));
+    }
+
+    #[test]
     fn missing_transcript_leaves_left_off_empty() {
         let h = Harness::new();
         h.event(

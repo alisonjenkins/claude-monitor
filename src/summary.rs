@@ -4,8 +4,8 @@
 
 use std::fs::OpenOptions;
 use std::io::{Read, Seek, SeekFrom, Write};
-use std::os::unix::fs::OpenOptionsExt;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream};
+use std::os::unix::fs::OpenOptionsExt;
 use std::path::Path;
 use std::time::Duration;
 
@@ -78,7 +78,7 @@ fn assistant_text(line: &[u8]) -> Option<String> {
 /// The "left off" text for a `Stop`: the payload's message when it has one,
 /// else the transcript tail.
 pub fn left_off(stop_message: Option<&str>, transcript_path: Option<&Path>) -> Option<String> {
-    match stop_message {
+    match stop_message.filter(|message| !message.trim().is_empty()) {
         Some(message) => Some(message.to_owned()),
         None => {
             transcript_path.and_then(|path| transcript_tail_message(path, TRANSCRIPT_TAIL_BYTES))
