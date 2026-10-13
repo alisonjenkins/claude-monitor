@@ -179,6 +179,42 @@ fn an_idle_stream_sends_keepalive_comment_lines() {
     }
 }
 
+/// Reads to EOF, skipping keepalive comments; `false` if the stream is still
+/// open after `limit` lines.
+fn ends_within(stream: &mut Stream, limit: usize) -> bool {
+    (0..limit).any(|_| stream.next_line().is_none())
+}
+
+#[test]
+fn a_stream_ends_when_its_session_passes_the_absolute_expiry() {
+    let rig = Rig::start_with(|config| config.keepalive = Duration::from_millis(100));
+    let mut stream = open_events(&rig, None);
+    assert_eq!(stream.head.status, 200);
+
+    rig.ticks.advance(Duration::from_secs(25 * 3600));
+
+    assert!(
+        ends_within(&mut stream, 100),
+        "an expired session must not keep receiving change notices"
+    );
+}
+
+#[test]
+fn a_stream_ends_when_its_session_is_evicted() {
+    let rig = Rig::start_with(|config| config.keepalive = Duration::from_millis(100));
+    let mut stream = open_events(&rig, None);
+    assert_eq!(stream.head.status, 200);
+
+    for _ in 0..claude_monitor::web::session::MAX_SESSIONS {
+        rig.another_session();
+    }
+
+    assert!(
+        ends_within(&mut stream, 100),
+        "an evicted session must not keep receiving change notices"
+    );
+}
+
 #[test]
 fn shutting_the_server_down_ends_open_streams() {
     let rig = Rig::start();

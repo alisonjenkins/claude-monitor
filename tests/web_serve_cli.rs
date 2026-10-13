@@ -1,5 +1,5 @@
-//! `claude-monitor serve` as a process: the printed URL, the token file and
-//! the cookie hand-off over a real loopback socket.
+//! `claude-monitor serve` as a process: the printed login URL, the private
+//! TLS files and the code-for-cookie hand-off over a real loopback socket.
 #![cfg(feature = "web")]
 #![allow(
     clippy::unwrap_used,
@@ -22,7 +22,7 @@ use web_support::{KillOnDrop, Request};
 struct Serving {
     child: KillOnDrop,
     addr: SocketAddr,
-    token: String,
+    code: String,
     state: TempDir,
 }
 
@@ -135,45 +135,48 @@ fn serve() -> Serving {
         panic!("expected a URL on the first line of stdout, got {line:?}");
     });
     let (authority, rest) = url.split_once('/').unwrap();
-    let token = rest.strip_prefix("?token=").unwrap().to_owned();
+    let code = rest.strip_prefix("login?code=").unwrap().to_owned();
     let addr: std::net::SocketAddr = authority.parse().unwrap();
     web_support::trust(addr.port(), &state.path().join("tls").join("ca.pem"));
     Serving {
         child,
         addr,
-        token,
+        code,
         state,
     }
 }
 
 #[test]
-fn serve_prints_a_loopback_url_whose_token_opens_the_page() {
+fn serve_prints_a_loopback_login_url_whose_code_opens_the_page_once() {
     let serving = serve();
 
     assert!(serving.addr.ip().is_loopback());
-    let first = Request::get(&format!("/?token={}", serving.token)).send(serving.addr);
+    assert_eq!(serving.code.len(), 64);
+    let first = Request::get(&format!("/login?code={}", serving.code)).send(serving.addr);
     assert_eq!(first.status, 303);
     assert_eq!(first.header("location"), Some("/"));
+    let cookie = web_support::cookie_pair(&first).unwrap();
     let health = Request::get("/healthz")
-        .header("Cookie", format!("cc_token={}", serving.token))
+        .header("Cookie", cookie)
         .send(serving.addr);
     assert_eq!(health.status, 200);
     assert_eq!(Request::get("/healthz").send(serving.addr).status, 401);
+    let replay = Request::get(&format!("/login?code={}", serving.code)).send(serving.addr);
+    assert_eq!(replay.status, 401);
 }
 
 #[test]
-fn serve_keeps_its_token_in_a_private_file_in_the_state_dir() {
+fn serve_writes_no_token_file_and_keeps_its_tls_files_private() {
     let serving = serve();
+    let state = serving.state.path();
 
-    let path = serving.state.path().join("web.token");
-    assert_eq!(
-        std::fs::read_to_string(&path).unwrap().trim(),
-        serving.token
-    );
-    assert_eq!(
-        std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
-        0o600
-    );
+    assert!(!state.join("web.token").exists());
+    let mode =
+        |path: &std::path::Path| std::fs::metadata(path).unwrap().permissions().mode() & 0o777;
+    assert_eq!(mode(&state.join("tls")), 0o700);
+    for file in ["ca.pem", "ca.key", "server.pem", "server.key"] {
+        assert_eq!(mode(&state.join("tls").join(file)), 0o600, "{file}");
+    }
 }
 
 #[test]

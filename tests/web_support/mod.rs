@@ -30,7 +30,8 @@ use claude_monitor::feed::{ChangeFeed, FakeHandle, FakeSource, SystemMonotonic};
 use claude_monitor::model::{Session, State};
 use claude_monitor::store::{legacy, Store, StoreOptions};
 use claude_monitor::testing::FakeEnv;
-use claude_monitor::web::{self, Server, Token, WebConfig};
+use claude_monitor::web::clock::ManualTicks;
+use claude_monitor::web::{self, Server, WebConfig};
 use tempfile::TempDir;
 
 pub const IO_TIMEOUT: Duration = Duration::from_secs(5);
@@ -194,10 +195,19 @@ impl Plain {
     }
 }
 
+/// What a browser holds after logging in: the session cookie and the CSRF
+/// value the page handed it.
+#[derive(Clone, Debug)]
+pub struct Login {
+    pub cookie: String,
+    pub csrf: String,
+}
+
 pub struct Rig {
     pub dir: TempDir,
     pub server: Server,
-    pub token: Token,
+    pub session: Login,
+    pub ticks: Arc<ManualTicks>,
     pub wake: FakeHandle,
     pub writer: Store,
 }
@@ -230,20 +240,33 @@ impl Rig {
             SystemMonotonic,
         )
         .unwrap();
-        let token = Token::generate().unwrap();
         let ca = db.parent().unwrap().join("tls").join("ca.pem");
-        let mut config = WebConfig::new(token.clone(), db);
+        let ticks = Arc::new(ManualTicks::new());
+        let mut config = WebConfig::new(db);
         config.port = 0;
+        config.clock = ticks.clone();
+        config.max_auth_failures = usize::MAX;
         tweak(&mut config);
         let server = web::start(config, feed).unwrap();
         trust(server.addr().port(), &ca);
+        let session = log_in(&server);
         Self {
             dir,
             server,
-            token,
+            session,
+            ticks,
             wake,
             writer,
         }
+    }
+
+    /// A second, independent login.
+    pub fn another_session(&self) -> Login {
+        log_in(&self.server)
+    }
+
+    pub fn csrf(&self) -> &str {
+        &self.session.csrf
     }
 
     pub fn addr(&self) -> SocketAddr {
@@ -255,8 +278,32 @@ impl Rig {
     }
 
     pub fn cookie(&self) -> String {
-        format!("cc_token={}", self.token.as_str())
+        self.session.cookie.clone()
     }
+}
+
+/// Logs in the way a browser does: the single-use URL, then the page that
+/// carries the CSRF value.
+pub fn log_in(server: &Server) -> Login {
+    let code = server.issue_login_code().unwrap();
+    let addr = server.addr();
+    let response = Request::get(&format!("/login?code={}", code.as_str())).send(addr);
+    assert_eq!(response.status, 303, "login: {response:?}");
+    let cookie = cookie_pair(&response).expect("a session cookie");
+    let page = Request::get("/")
+        .header("Cookie", cookie.clone())
+        .send(addr);
+    assert_eq!(page.status, 200, "{page:?}");
+    let marker = "<meta name=\"cc-csrf\" content=\"";
+    let start = page.body.find(marker).expect("csrf meta tag") + marker.len();
+    let csrf = page.body[start..].split('"').next().unwrap().to_owned();
+    Login { cookie, csrf }
+}
+
+/// `name=value` of the first `Set-Cookie`, as a `Cookie` header wants it.
+pub fn cookie_pair(response: &Response) -> Option<String> {
+    let line = response.headers_named("set-cookie").into_iter().next()?;
+    Some(line.split(';').next()?.to_owned())
 }
 
 #[derive(Debug)]
@@ -332,7 +379,7 @@ impl<'a> Request<'a> {
     /// The headers a browser sends once signed in, plus the CSRF header.
     pub fn signed_in(self, rig: &Rig) -> Self {
         self.header("Cookie", rig.cookie())
-            .header("X-CC-Token", rig.token.as_str())
+            .header("X-CC-Token", rig.csrf())
     }
 
     pub fn host(mut self, host: impl Into<String>) -> Self {

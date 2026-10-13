@@ -18,7 +18,7 @@ use serde::Deserialize;
 use serde_json::{json, Map, Value};
 
 use super::pages::{self, seg};
-use super::AppState;
+use super::{auth, AppState};
 use crate::cli::confirm::{self, Question};
 use crate::cli::migrate::open_viewer_store;
 use crate::cli::respawn::{plan_all, started_json, usage_error};
@@ -468,8 +468,9 @@ fn settle(state: &AppState, json: bool, result: Result<Response, ApiError>) -> R
         Ok(response) => response,
         Err(error) if json => error.into_response(),
         Err(error) => {
+            let csrf = auth::current_csrf();
             let ctx = pages::Ctx {
-                csrf: state.auth.token().as_str(),
+                csrf: &csrf,
                 now: &state.env.clock.now(),
             };
             let page = pages::error(&ctx, error.status.as_u16(), &error.message);
@@ -488,8 +489,9 @@ fn page_or_json(
     if json {
         return json_response(StatusCode::OK, data);
     }
+    let csrf = auth::current_csrf();
     let ctx = pages::Ctx {
-        csrf: state.auth.token().as_str(),
+        csrf: &csrf,
         now: &state.env.clock.now(),
     };
     html_response(StatusCode::OK, render(&ctx))
@@ -914,8 +916,9 @@ async fn confirmation(
         let page = if headers.contains_key("hx-request") {
             pages::confirm_fragment(&panel)
         } else {
+            let csrf = auth::current_csrf();
             let ctx = pages::Ctx {
-                csrf: state.auth.token().as_str(),
+                csrf: &csrf,
                 now: &state.env.clock.now(),
             };
             pages::confirm_page(&ctx, &panel)

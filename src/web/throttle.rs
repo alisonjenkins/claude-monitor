@@ -1,6 +1,6 @@
-//! A global failure limit: after `max_failures` failed logins or
-//! unauthenticated requests inside `window`, further ones are refused until
-//! the oldest failure ages out. Global, not per client: on loopback every
+//! A global failure limit: after `max_failures` failed logins inside
+//! `window`, further login attempts are refused until the oldest failure ages
+//! out. Global, not per client: on loopback every
 //! client looks alike, and a logged-in browser is never throttled.
 
 use std::collections::VecDeque;

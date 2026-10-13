@@ -38,8 +38,6 @@ pub mod throttle;
 pub mod tls;
 pub mod tree;
 
-pub use auth::Token;
-
 /// Where `serve` listens unless told otherwise.
 pub const DEFAULT_PORT: u16 = 8765;
 
@@ -52,8 +50,6 @@ pub enum WebError {
     NotLoopback { addr: IpAddr },
     #[error("cannot read the OS random number generator: {detail}")]
     Random { detail: String },
-    #[error("cannot write the token file {path}: {source}")]
-    TokenFile { path: PathBuf, source: io::Error },
     #[error("TLS setup failed: {0}")]
     Tls(#[from] tls::TlsError),
     #[error("cannot start the async runtime: {0}")]
@@ -68,13 +64,17 @@ pub enum WebError {
 pub struct WebConfig {
     pub bind: IpAddr,
     pub port: u16,
-    pub token: Token,
     pub store_path: PathBuf,
     pub keepalive: Duration,
     /// Stop on SIGINT or SIGTERM; off for tests, which stop the server by hand.
     pub handle_signals: bool,
     /// The providers every action runs against; tests swap in a private tmux.
     pub env: Env,
+    /// Time for login-code, session and throttle expiry; tests move it by hand.
+    pub clock: Arc<dyn clock::Ticks>,
+    /// Failed logins tolerated per window.
+    pub max_auth_failures: usize,
+    pub failure_window: Duration,
 }
 
 impl fmt::Debug for WebConfig {
@@ -90,15 +90,17 @@ impl fmt::Debug for WebConfig {
 }
 
 impl WebConfig {
-    pub fn new(token: Token, store_path: PathBuf) -> Self {
+    pub fn new(store_path: PathBuf) -> Self {
         Self {
             bind: IpAddr::V4(Ipv4Addr::LOCALHOST),
             port: DEFAULT_PORT,
-            token,
             store_path,
             keepalive: DEFAULT_KEEPALIVE,
             handle_signals: false,
             env: Env::real(),
+            clock: Arc::new(clock::MonotonicTicks::new()),
+            max_auth_failures: throttle::DEFAULT_MAX_FAILURES,
+            failure_window: throttle::DEFAULT_WINDOW,
         }
     }
 }
@@ -122,7 +124,7 @@ impl fmt::Debug for AppState {
 }
 
 /// The routes behind the guard. Pages and actions are added here; the guard
-/// (Host, token, CSRF, `no-store`) wraps whatever this returns.
+/// (Host, session, CSRF, `no-store`) wraps whatever this returns.
 pub fn routes() -> Router<AppState> {
     routes::router()
 }
@@ -143,6 +145,7 @@ async fn healthz() -> &'static str {
 #[derive(Debug)]
 pub struct Server {
     addr: SocketAddr,
+    auth: Arc<auth::Auth>,
     closing: Arc<watch::Sender<bool>>,
     feed_stop: Arc<AtomicBool>,
     server: Option<JoinHandle<()>>,
@@ -152,6 +155,23 @@ pub struct Server {
 impl Server {
     pub fn addr(&self) -> SocketAddr {
         self.addr
+    }
+
+    /// A fresh single-use login code, good for five minutes.
+    pub fn issue_login_code(&self) -> Result<zeroize::Zeroizing<String>, WebError> {
+        self.auth.issue_login_code()
+    }
+
+    /// The URL that logs a browser in, once. It holds the only secret that
+    /// ever appears in a URL.
+    pub fn issue_login_url(&self) -> Result<zeroize::Zeroizing<String>, WebError> {
+        let code = self.issue_login_code()?;
+        Ok(zeroize::Zeroizing::new(format!(
+            "https://{}{}?code={}",
+            self.addr,
+            auth::LOGIN_PATH,
+            code.as_str()
+        )))
     }
 
     /// Stops accepting and joins the server thread.
@@ -223,8 +243,14 @@ pub fn start<S: EventSource + Send + 'static>(
         .map(PathBuf::from)
         .unwrap_or_default();
     let events = events::Events::new(config.store_path, config.keepalive, closing_rx);
+    let auth = Arc::new(auth::Auth::new(
+        addr.port(),
+        config.clock,
+        config.max_auth_failures,
+        config.failure_window,
+    ));
     let state = AppState {
-        auth: Arc::new(auth::Auth::new(config.token, addr.port())),
+        auth: Arc::clone(&auth),
         events: events.clone(),
         env: config.env,
         state_dir,
@@ -251,6 +277,7 @@ pub fn start<S: EventSource + Send + 'static>(
     };
     Ok(Server {
         addr,
+        auth,
         closing,
         feed_stop,
         server: Some(server_thread),

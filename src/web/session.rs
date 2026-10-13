@@ -60,6 +60,16 @@ impl Sessions {
         Ok(NewSession { id, csrf })
     }
 
+    /// Whether a session with this id is still live. Unlike [`Self::lookup`]
+    /// this is not a use, so a held-open stream cannot keep a session alive.
+    pub fn is_live(&self, id: &str) -> bool {
+        let now = self.clock.now();
+        let mut live = self.live.lock().unwrap_or_else(|e| e.into_inner());
+        prune(&mut live, now);
+        live.iter()
+            .fold(false, |found, entry| ct_eq(&entry.id, id) | found)
+    }
+
     /// The CSRF value of the live session with this id, which counts as use.
     /// Every session is compared, so timing does not say how close an id was.
     pub fn lookup(&self, id: &str) -> Option<String> {

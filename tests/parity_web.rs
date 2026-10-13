@@ -125,7 +125,7 @@ fn every_mapped_route_exists_with_its_method() {
         // one 404; no handler runs.
         let response = Request::new("PUT", &path)
             .header("Cookie", rig.cookie())
-            .header("X-CC-Token", rig.token.as_str())
+            .header("X-CC-Token", rig.csrf())
             .send(rig.addr());
         assert_eq!(response.status, 405, "{route:?} is not a route");
     }

@@ -239,7 +239,7 @@ fn the_page_is_wired_for_live_updates_and_the_csrf_header() {
     assert!(html.contains("hx-select=\"#sessions\""));
     assert!(html.contains(&format!(
         "<meta name=\"cc-csrf\" content=\"{}\">",
-        web.rig.token.as_str()
+        web.rig.csrf()
     )));
     assert!(html.contains("href=\"#sessions\""), "skip link");
     assert!(html.contains("role=\"status\""), "flash line");

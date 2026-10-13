@@ -22,6 +22,9 @@ use futures_util::stream::{self, Stream};
 use serde_json::json;
 use tokio::sync::{broadcast, watch};
 
+use zeroize::Zeroizing;
+
+use super::auth::{current_session_id, Auth};
 use super::AppState;
 use crate::feed::{ChangeFeed, EventSource, SystemMonotonic};
 use crate::store::events::EventRow;
@@ -38,6 +41,9 @@ const BROADCAST_CAPACITY: usize = 1024;
 
 /// Rows read from the table per catch-up query.
 const CATCH_UP_PAGE: u32 = 500;
+
+/// How often an idle stream rechecks that its session is still live.
+const SESSION_RECHECK: Duration = Duration::from_secs(1);
 
 const KEEPALIVE_TEXT: &str = "keepalive";
 
@@ -107,6 +113,8 @@ pub async fn events(
     headers: HeaderMap,
 ) -> Result<Sse<impl Stream<Item = Result<Event, Infallible>>>, StatusCode> {
     let events = state.events;
+    let auth = state.auth;
+    let session_id = current_session_id().ok_or(StatusCode::UNAUTHORIZED)?;
     let resume = headers
         .get("last-event-id")
         .and_then(|v| v.to_str().ok())
@@ -138,6 +146,8 @@ pub async fn events(
         queue: VecDeque::new(),
         catch_up: resume.is_some(),
         closing: events.closing,
+        auth,
+        session_id,
     };
     let keep_alive = KeepAlive::new()
         .interval(events.keepalive)
@@ -154,11 +164,18 @@ struct Subscriber {
     /// The table holds rows after `last_sent` that the channel did not carry.
     catch_up: bool,
     closing: watch::Receiver<bool>,
+    /// The stream was authenticated once, when it opened; it ends as soon as
+    /// that session expires or is evicted.
+    auth: Arc<Auth>,
+    session_id: Zeroizing<String>,
 }
 
 impl Subscriber {
     async fn next(mut self) -> Option<(Result<Event, Infallible>, Self)> {
         loop {
+            if !self.auth.session_is_live(&self.session_id) {
+                return None;
+            }
             if let Some(row) = self.queue.pop_front() {
                 self.last_sent = row.seq;
                 return Some((Ok(message(&row)), self));
@@ -175,6 +192,7 @@ impl Subscriber {
                     Err(broadcast::error::RecvError::Closed) => return None,
                 },
                 () = closed(self.closing.clone()) => return None,
+                () = tokio::time::sleep(SESSION_RECHECK) => {}
             }
         }
     }

@@ -342,14 +342,15 @@ mod web {
             .unwrap();
         let url = line.trim().strip_prefix("https://").unwrap();
         let (authority, rest) = url.split_once('/').unwrap();
-        let token = rest.strip_prefix("?token=").unwrap();
+        let code = rest.strip_prefix("login?code=").unwrap();
         let addr: SocketAddr = authority.parse().unwrap();
         assert!(addr.ip().is_loopback());
         crate::web_support::trust(addr.port(), &state.join("tls").join("ca.pem"));
 
-        let cookie = format!("cc_token={token}");
         let anonymous = Request::get("/healthz").send(addr);
         assert_eq!(anonymous.status, 401);
+        let login = Request::get(&format!("/login?code={code}")).send(addr);
+        let cookie = crate::web_support::cookie_pair(&login).unwrap();
         let authed = Request::get("/healthz").header("Cookie", cookie).send(addr);
         assert_eq!(authed.status, 200);
 

@@ -56,7 +56,7 @@ mod enabled {
     use crate::feed::{ChangeFeed, FsWatcherSource, SystemMonotonic};
     use crate::live::{build_sources, spawn_live};
     use crate::store::{Store, StoreOptions};
-    use crate::web::{self, auth, WebConfig, WebError};
+    use crate::web::{self, WebConfig, WebError};
 
     fn failed(operation: &str, source: impl std::fmt::Display) -> Error {
         Error::Io {
@@ -108,9 +108,7 @@ mod enabled {
         )
         .map_err(|e| failed("start the live refresh", e))?;
 
-        let token =
-            auth::issue_token_file(&dir).map_err(|e| web_error("write the web token", e))?;
-        let mut config = WebConfig::new(token.clone(), db);
+        let mut config = WebConfig::new(db);
         config.port = port.unwrap_or(web::DEFAULT_PORT);
         if let Some(bind) = bind {
             config.bind = bind;
@@ -119,9 +117,11 @@ mod enabled {
         config.env = env.clone();
         let server = web::start(config, feed).map_err(|e| web_error("start the web server", e))?;
 
+        let url = server
+            .issue_login_url()
+            .map_err(|e| web_error("make a login URL", e))?;
         let mut out = std::io::stdout().lock();
-        let printed = writeln!(out, "https://{}/?token={}", server.addr(), token.as_str())
-            .and_then(|()| out.flush());
+        let printed = writeln!(out, "{}", url.as_str()).and_then(|()| out.flush());
         drop(out);
         if let Err(error) = printed {
             return Err(failed("print the web address", error));
