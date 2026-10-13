@@ -33,6 +33,7 @@ pub mod login;
 pub mod pages;
 pub mod routes;
 pub mod secret;
+pub mod session;
 pub mod tls;
 pub mod tree;
 
