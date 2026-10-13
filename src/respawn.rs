@@ -252,20 +252,32 @@ pub fn plan_respawn_with(
         launch,
         setup,
         notices,
-        label: session
-            .tmux_window_name
-            .clone()
-            .filter(|name| !name.is_empty())
-            .unwrap_or_else(|| session_name(&target)),
-        tmux_session: tmux_session_override(env)
-            .or_else(|| session.tmux_session.clone().filter(|name| !name.is_empty()))
-            .unwrap_or_else(|| DEFAULT_TMUX_SESSION.to_owned()),
+        label: window_label(&target),
+        tmux_session: target_tmux_session(session, env),
         window_index: session
             .tmux_window_index
             .as_deref()
             .and_then(|index| index.parse().ok()),
         pane: PanePlacement::recorded(session),
     })
+}
+
+/// The tmux session a respawn of `session` goes to: the explicit override,
+/// else the recorded session, else [`DEFAULT_TMUX_SESSION`].
+pub fn target_tmux_session(session: &Session, env: &Env) -> String {
+    tmux_session_override(env)
+        .or_else(|| session.tmux_session.clone().filter(|name| !name.is_empty()))
+        .unwrap_or_else(|| DEFAULT_TMUX_SESSION.to_owned())
+}
+
+/// The name of the window a respawn of `session` opens: the recorded window
+/// name, else one made from the branch or directory.
+pub fn window_label(session: &Session) -> String {
+    session
+        .tmux_window_name
+        .clone()
+        .filter(|name| !name.is_empty())
+        .unwrap_or_else(|| session_name(session))
 }
 
 /// The tmux session respawned windows go into.
