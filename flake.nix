@@ -437,6 +437,9 @@
                     ++ pkgs.lib.optional (
                       (serveDarwinAgent mtls).KeepAlive != true
                     ) "${label}: Darwin agent is not KeepAlive"
+                    ++ pkgs.lib.optional (
+                      (serveDarwinAgent mtls).Umask or null != 63
+                    ) "${label}: Darwin agent has no Umask 0077, so the log holding the login URL is world-readable"
                     ++ pkgs.lib.optional (builtins.hasAttr serveServiceName (serveCfgFor "aarch64-darwin" mtls).systemd.user.services) "${label}: systemd unit generated on Darwin"
                     ++ pkgs.lib.optional (builtins.hasAttr serveServiceName (serveCfgFor "x86_64-linux" mtls).launchd.agents) "${label}: launchd agent generated on Linux"
                   )

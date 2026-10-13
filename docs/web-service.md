@@ -49,6 +49,8 @@ from the web view works without a login shell.
 `serve` prints a single-use login URL, valid for five minutes, each time it
 starts. It lands in the log above (`journalctl --user -u claude-monitor-serve
 -n 5` on Linux, `tail ~/Library/Logs/claude-monitor-serve.log` on macOS).
+The macOS agent runs with `Umask` 0077, so that log is mode 0600 and no other
+local user can read the URL.
 Once it is used or expired, ask the running service for a new one:
 
 ```
