@@ -131,7 +131,11 @@ and this view).
   which lists the chosen sessions (id and the start of the task) and carries
   the ids in the panel's form. `POST /restore/dismiss` takes the same `ids`
   and `confirm`, resolves every id first (one unknown id is a 404 and
-  nothing changes), then dismisses each. It needs the session cookie and the
+  nothing changes), then dismisses each and carries on past a failure. All
+  dismissed: 200. None: the first failure's own error. Some of each: 409
+  `partly_dismissed` with `dismissed` (ids) and `failed` (`{session, error}`);
+  the dismissals that happened stay, the lists refresh, and the page shows an
+  error naming both sets. It needs the session cookie and the
   CSRF header like every write, and `POST /respawn` is unchanged.
 - **Panel, not modal.** A Dismiss button `hx-get`s the
   fragment into `#confirm-slot`, above the page and outside the live region
@@ -197,7 +201,7 @@ history and the journal for as long as it lived.
 | Files | `<state-dir>/tls/` mode 0700; `ca.pem`, `ca.key`, `server.pem`, `server.key` mode 0600 from creation (0600 staging file, then rename); keys are never printed or logged | The state directory is the trust boundary. |
 | Login | A random 256-bit code in a printed URL: single use, 5 minutes, in memory only, compared in constant time | A URL that leaks later is already useless. The long-lived secret is gone. |
 | Session | Random 256-bit id in a `__Host-`, `Secure`, `HttpOnly`, `SameSite=Strict`, `Path=/` cookie; server-side table, 8 h idle and 24 h absolute expiry, 64 entries; its own random CSRF value per session | The cookie is not the code and not anything on disk, so reading a file or a log never yields a live credential. A restart signs everyone out, which is the intended cost of keeping sessions off disk. |
-| Throttle | 5 failed logins or unauthenticated requests per minute, globally, then 429 with `Retry-After`; a valid session is never throttled | On loopback every client looks alike, so the limit is global. It also refuses a valid code while locked out, so it is not an oracle. A local process can therefore lock new logins out for a minute; it can already stop the server. |
+| Throttle | 5 failed logins (bad or expired code on `/login`) per minute, globally, then 429 with `Retry-After` on `/login`; other unauthenticated requests get 401 and are not counted, so a cross-origin page cannot spend the budget; a valid session is never throttled | On loopback every client looks alike, so the limit is global. It also refuses a valid code while locked out, so it is not an oracle. A local process can therefore lock new logins out for a minute; it can already stop the server. |
 | Control socket | `<state-dir>/web.sock`, mode 0600, peer uid checked, one request (`login`) | New login URL without a restart and without a network listener. Bound in the 0700 `tls/` directory and renamed into place so it is never connectable by others. If the path is too long for a unix socket, `serve` runs without it and says so. |
 | Mutual TLS | `serve --mtls` requires a client certificate in the handshake; `web client-cert` writes a PKCS#12 (`p12-keystore`, pure Rust, MIT OR Apache-2.0, AES-256 with HMAC-SHA256) | Refuses a connection before any HTTP is parsed. Off by default; login still applies. |
 | One CA or two for mTLS | One CA. The server leaf carries the serverAuth usage and client certificates clientAuth, and rustls enforces the usage in each direction (tested: the server's own leaf is refused as a client certificate) | A second CA is a second key in the same directory and a second thing to import, with no extra isolation. |
