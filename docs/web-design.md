@@ -124,7 +124,16 @@ and this view).
   confirmation: JSON (`confirmation_required`, `action`, `consequence`,
   `confirm_with`) for scripts, an inline fragment for htmx requests, a whole
   page otherwise. `unlink` takes `?cortex=<node>`.
-- **Panel, not modal.** The session page's Dismiss button `hx-get`s the
+- **Dismiss from a list.** A waiting row (interrupted or needs permission,
+  not dismissed) in the band or a project node has a Dismiss button beside Respawn, and `/restore` has Dismiss selected beside
+  Restore selected. Both only ask for the panel; nothing is dismissed by the
+  click. Dismiss selected sends the checked `ids` to `GET /restore/dismiss`,
+  which lists the chosen sessions (id and the start of the task) and carries
+  the ids in the panel's form. `POST /restore/dismiss` takes the same `ids`
+  and `confirm`, resolves every id first (one unknown id is a 404 and
+  nothing changes), then dismisses each. It needs the session cookie and the
+  CSRF header like every write, and `POST /respawn` is unchanged.
+- **Panel, not modal.** A Dismiss button `hx-get`s the
   fragment into `#confirm-slot`, above the page and outside the live region
   so a background refresh does not close it. It is a bordered panel in ink,
   not the signal colour: it names the target as a question, says the
@@ -151,7 +160,7 @@ and this view).
 | Project | `/projects/{id}` | Deep link: header with name, status and notes, then the same node component for that one project. |
 | Projects | `/projects` | 302 to `/` for pages; `Accept: application/json` still returns the project list. No nav entry. |
 | Session | `/sessions/{id}` | Verbatim task and left-off, progress with source label, lineage (resumed from / by), notes, labelled generated summaries, actions, and the stored tmux placement in the wording of `show` (or "no recorded tmux window"). Overview rows carry a muted `tmux session:window` hint when one is recorded (pages only; the list JSON keeps its shape). No transcript, no conversation text beyond what `show` prints. |
-| Restore | `/restore`, `/restore?session={id}` | The interrupted list from `restore` without `--yes`, a checkbox per row (all selected), refusals listed with their alternatives, one confirm button posting to `/respawn`. With `session`, the preview of that one session, which is where the Respawn buttons lead. Below the list, a read-only "Live sessions — would restore as" panel (also `live` in the JSON) shows where each running session with a recorded tmux session would be put back, by the planner's target rules (override, then recorded session, then `agents`), and warns when two share a window and pane slot. It has no checkbox or button and does not change what `/respawn` starts. |
+| Restore | `/restore`, `/restore?session={id}` | The interrupted list from `restore` without `--yes`, a checkbox per row (all selected), refusals listed with their alternatives, one confirm button posting to `/respawn`, and Dismiss selected, which asks for a confirmation panel listing the checked sessions before `POST /restore/dismiss` hides them. With `session`, the preview of that one session, which is where the Respawn buttons lead. Below the list, a read-only "Live sessions — would restore as" panel (also `live` in the JSON) shows where each running session with a recorded tmux session would be put back, by the planner's target rules (override, then recorded session, then `agents`), and warns when two share a window and pane slot. It has no checkbox or button and does not change what `/respawn` starts. |
 | Links | `/links` | Stored cortexiphan links; `?check=1` runs `links check` and marks disagreements. |
 
 ## Parity (SC-011)

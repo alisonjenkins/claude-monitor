@@ -99,6 +99,12 @@ session's page, as a hint on its row, and on `/restore` in a read-only panel
 that lists the live sessions with where each would be restored, warning when
 two would land in the same window and pane.
 
+Sessions you closed on purpose can be dismissed from the web view without
+opening each one: waiting rows have a Dismiss button, and `/restore` has
+Dismiss selected beside Restore selected. Both show a confirmation first (the
+second lists the chosen sessions); nothing is deleted and Undismiss brings a
+session back.
+
 `claude-monitor --help` and `claude-monitor <command> --help` list every flag.
 Nothing here sends session content off the machine: `summarize` talks only to
 a loopback endpoint and `links check` only runs the `cortexiphan` client when
