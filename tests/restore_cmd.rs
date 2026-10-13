@@ -111,6 +111,124 @@ fn all_interrupted_yes_starts_only_the_interrupted_ones() {
     assert_eq!(events.len(), 2, "{events:?}");
 }
 
+fn place(fx: &Fixture, id: &str, session: &str, window: &str, index: &str) {
+    let mut s = fx.store().get_session(id).unwrap().unwrap();
+    s.tmux_session = Some(session.to_owned());
+    s.tmux_window_name = Some(window.to_owned());
+    s.tmux_window_index = Some(index.to_owned());
+    fx.save(&s);
+}
+
+/// `(tmux session, window name)` of every window on the private server, in
+/// window index order within each session.
+fn windows(fx: &Fixture) -> Vec<(String, String)> {
+    let out = fx.tmux(&[
+        "list-windows",
+        "-a",
+        "-F",
+        "#{session_name}\t#{window_name}",
+    ]);
+    let mut rows: Vec<(String, String)> = String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .filter_map(|line| line.split_once('\t'))
+        .map(|(session, window)| (session.to_owned(), window.to_owned()))
+        .collect();
+    rows.sort_by(|a, b| a.0.cmp(&b.0));
+    rows
+}
+
+#[test]
+fn each_session_returns_to_its_original_tmux_session_and_window() {
+    let Some(fx) = Fixture::new() else { return };
+    fx.add_session("int1", State::Interrupted, "a");
+    fx.add_session("int2", State::Interrupted, "b");
+    fx.add_session("int3", State::Interrupted, "c");
+    place(&fx, "int1", "my project", "api: build", "3");
+    place(&fx, "int2", "my project", "web", "1");
+    place(&fx, "int3", "notes", "docs", "0");
+
+    let out = json(run_in(
+        restore(true, false, &[], true),
+        &fx.env,
+        Some(&fx.state_dir),
+    ));
+
+    assert_eq!(out["executed"], true);
+    assert_eq!(
+        windows(&fx),
+        [
+            ("my project".to_owned(), "web".to_owned()),
+            ("my project".to_owned(), "api: build".to_owned()),
+            ("notes".to_owned(), "docs".to_owned()),
+        ],
+        "windows in index order, no placeholder, no `agents` session"
+    );
+}
+
+#[test]
+fn the_override_variable_puts_every_session_in_one_tmux_session() {
+    let Some(fx) = Fixture::new() else { return };
+    fx.add_session("int1", State::Interrupted, "a");
+    fx.add_session("int2", State::Interrupted, "b");
+    place(&fx, "int1", "one", "api", "0");
+    place(&fx, "int2", "two", "web", "0");
+    fx.vars.set("CLAUDE_MONITOR_TMUX_SESSION", "all-here");
+
+    json(run_in(
+        restore(true, false, &[], true),
+        &fx.env,
+        Some(&fx.state_dir),
+    ));
+
+    assert_eq!(
+        windows(&fx),
+        [
+            ("all-here".to_owned(), "api".to_owned()),
+            ("all-here".to_owned(), "web".to_owned()),
+        ]
+    );
+}
+
+#[test]
+fn a_session_without_a_placement_still_goes_to_the_agents_session() {
+    let Some(fx) = Fixture::new() else { return };
+    fx.add_session("int1", State::Interrupted, "a");
+    fx.add_session("int2", State::Interrupted, "b");
+    place(&fx, "int2", "notes", "docs", "0");
+
+    json(run_in(
+        restore(true, false, &[], true),
+        &fx.env,
+        Some(&fx.state_dir),
+    ));
+
+    let rows = windows(&fx);
+    assert_eq!(rows.len(), 2, "{rows:?}");
+    assert!(rows.contains(&("notes".to_owned(), "docs".to_owned())));
+    assert!(rows.iter().any(|(session, _)| session == "agents"));
+}
+
+#[test]
+fn an_existing_tmux_session_gains_the_window_instead_of_being_recreated() {
+    let Some(fx) = Fixture::new() else { return };
+    fx.add_session("int1", State::Interrupted, "a");
+    place(&fx, "int1", "notes", "docs", "0");
+    assert!(fx
+        .tmux(&["new-session", "-d", "-s", "notes", "-n", "mine"])
+        .status
+        .success());
+
+    json(run_in(
+        restore(true, false, &[], true),
+        &fx.env,
+        Some(&fx.state_dir),
+    ));
+
+    let rows = windows(&fx);
+    assert!(rows.contains(&("notes".to_owned(), "mine".to_owned())));
+    assert!(rows.contains(&("notes".to_owned(), "docs".to_owned())));
+}
+
 #[test]
 fn finished_sessions_are_included_only_with_include_finished() {
     let Some(fx) = Fixture::new() else { return };

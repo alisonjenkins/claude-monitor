@@ -5,7 +5,7 @@
 use crossterm::event::KeyCode;
 
 use crate::env::Env;
-use crate::respawn::{plan_batch, start_one, tmux_session_for, Item, PlanFlags, SPAWN_FAILED};
+use crate::respawn::{plan_batch, start_one, Item, PlanFlags, SPAWN_FAILED};
 use crate::store::queries::{Overview, OverviewEntry, SectionName};
 use crate::store::Store;
 
@@ -66,22 +66,19 @@ pub fn run_restore(store: &Store, env: &Env, ids: &[String], emit: &mut dyn FnMu
             return;
         }
     };
-    let tmux_session = tmux_session_for(env);
     let now = env.clock.now();
     for (session, plan) in planned {
-        emit(
-            match start_one(store, env, &session, plan, &tmux_session, &now) {
-                Item::Started(item) => RestoreResult::Started {
-                    session_id: item.started.session_id,
-                    pane: item.started.pane_id,
-                },
-                Item::Refused(refused) => RestoreResult::Refused {
-                    session_id: refused.session_id,
-                    code: refused.code.to_owned(),
-                    message: refused.message,
-                },
+        emit(match start_one(store, env, &session, plan, &now) {
+            Item::Started(item) => RestoreResult::Started {
+                session_id: item.started.session_id,
+                pane: item.started.pane_id,
             },
-        );
+            Item::Refused(refused) => RestoreResult::Refused {
+                session_id: refused.session_id,
+                code: refused.code.to_owned(),
+                message: refused.message,
+            },
+        });
     }
 }
 

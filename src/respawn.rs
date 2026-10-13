@@ -75,8 +75,14 @@ pub struct Plan {
     pub launch: Launch,
     pub setup: Vec<Launch>,
     pub notices: Vec<String>,
-    /// The tmux window name: the branch, else the directory name.
+    /// The tmux window name: the one recorded for the session, else the
+    /// branch, else the directory name.
     pub label: String,
+    /// The tmux session the window opens in: the configured override, else the
+    /// one recorded for the session, else [`DEFAULT_TMUX_SESSION`].
+    pub tmux_session: String,
+    /// The window index recorded for the session, used only to order windows.
+    pub window_index: Option<u32>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -187,7 +193,18 @@ pub fn plan_respawn_with(
         launch,
         setup,
         notices,
-        label: session_name(&target),
+        label: session
+            .tmux_window_name
+            .clone()
+            .filter(|name| !name.is_empty())
+            .unwrap_or_else(|| session_name(&target)),
+        tmux_session: tmux_session_override(env)
+            .or_else(|| session.tmux_session.clone().filter(|name| !name.is_empty()))
+            .unwrap_or_else(|| DEFAULT_TMUX_SESSION.to_owned()),
+        window_index: session
+            .tmux_window_index
+            .as_deref()
+            .and_then(|index| index.parse().ok()),
     })
 }
 
@@ -225,12 +242,18 @@ pub fn launcher_for(env: &Env, agent_kind: &str) -> LauncherConfig {
         .unwrap_or(from_env)
 }
 
-/// The effective tmux session: the environment variable, else `config.json`,
-/// else [`DEFAULT_TMUX_SESSION`].
-pub fn tmux_session_for(env: &Env) -> String {
+/// The tmux session the user forces every respawn into: the environment
+/// variable, else `config.json`; `None` when neither is set.
+pub fn tmux_session_override(env: &Env) -> Option<String> {
     env.vars
         .var(TMUX_SESSION_VAR)
-        .unwrap_or_else(|| crate::config::tmux_session(env))
+        .or_else(|| crate::config::tmux_session_override(env))
+}
+
+/// The tmux session a respawn goes to when the session has no recorded
+/// placement: the override, else [`DEFAULT_TMUX_SESSION`].
+pub fn tmux_session_for(env: &Env) -> String {
+    tmux_session_override(env).unwrap_or_else(|| DEFAULT_TMUX_SESSION.to_owned())
 }
 
 /// A respawn that started: the new window and the request awaiting the new
@@ -260,14 +283,15 @@ pub enum ExecuteError {
 
 pub type Outcome = Result<Started, ExecuteError>;
 
-/// Carry out `plan` and nothing else: ensure `tmux_session`, run the plan's
-/// setup commands, open one window for the launch, record the respawn request
-/// for its pane and append `session.respawn_requested`. Never starts any
-/// session the plan does not name.
+/// Carry out `plan` and nothing else: run the plan's setup commands, ensure
+/// the plan's tmux session, open one window for the launch, record the respawn
+/// request for its pane and append `session.respawn_requested`. Never starts
+/// any session the plan does not name.
 ///
 /// Setup runs before tmux is touched: a failed `git worktree add` leaves no
 /// window and no tmux server behind, and the new window's directory exists.
-pub fn execute(store: &Store, env: &Env, plan: &Plan, tmux_session: &str, now: &str) -> Outcome {
+pub fn execute(store: &Store, env: &Env, plan: &Plan, now: &str) -> Outcome {
+    let tmux_session = plan.tmux_session.as_str();
     for command in &plan.setup {
         run_setup(command)?;
     }
@@ -362,8 +386,44 @@ pub enum Item {
     Refused(RefusedItem),
 }
 
-/// Plan each session id with `flags`, in order. Plans only; nothing starts.
+/// Plan each session id with `flags`. Plans only; nothing starts. The
+/// sessions that can start are ordered by target tmux session, then recorded
+/// window index, then the order of `ids`, so windows reopen in their original
+/// order; refusals keep the places they were asked in.
 pub fn plan_batch(
+    store: &Store,
+    env: &Env,
+    ids: &[String],
+    flags: &PlanFlags,
+) -> Result<Planned, PlanBatchError> {
+    let planned = plan_each(store, env, ids, flags)?;
+    let mut startable: Vec<_> = planned
+        .iter()
+        .filter(|(_, plan)| plan.is_ok())
+        .cloned()
+        .collect();
+    startable.sort_by_key(|(_, plan)| {
+        plan.as_ref().ok().map(|plan| {
+            (
+                plan.tmux_session.clone(),
+                plan.window_index.unwrap_or(u32::MAX),
+            )
+        })
+    });
+    let mut sorted = startable.into_iter();
+    Ok(planned
+        .into_iter()
+        .map(|entry| {
+            if entry.1.is_ok() {
+                sorted.next().unwrap_or(entry)
+            } else {
+                entry
+            }
+        })
+        .collect())
+}
+
+fn plan_each(
     store: &Store,
     env: &Env,
     ids: &[String],
@@ -397,7 +457,6 @@ pub fn start_one(
     env: &Env,
     session: &Session,
     plan: Result<Plan, Refusal>,
-    tmux_session: &str,
     now: &str,
 ) -> Item {
     match plan {
@@ -407,7 +466,7 @@ pub fn start_one(
             message: refusal.message,
             alternatives: refusal.alternatives,
         }),
-        Ok(plan) => match execute(store, env, &plan, tmux_session, now) {
+        Ok(plan) => match execute(store, env, &plan, now) {
             Ok(started) => Item::Started(Box::new(StartedItem { started, plan })),
             Err(error) => Item::Refused(RefusedItem {
                 session_id: session.id.clone(),
@@ -422,11 +481,10 @@ pub fn start_one(
 /// Execute every plan that exists, in order. A failure to start one does not
 /// stop the others.
 pub fn start_batch(store: &Store, env: &Env, planned: Planned) -> Vec<Item> {
-    let tmux_session = tmux_session_for(env);
     let now = env.clock.now();
     planned
         .into_iter()
-        .map(|(session, plan)| start_one(store, env, &session, plan, &tmux_session, &now))
+        .map(|(session, plan)| start_one(store, env, &session, plan, &now))
         .collect()
 }
 

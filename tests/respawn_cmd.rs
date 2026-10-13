@@ -78,6 +78,8 @@ mod execute_with_a_fake_tmux {
             setup: Vec::new(),
             notices: Vec::new(),
             label: "proj".to_owned(),
+            tmux_session: "agents".to_owned(),
+            window_index: None,
         }
     }
 
@@ -85,7 +87,7 @@ mod execute_with_a_fake_tmux {
     fn ensures_the_session_then_opens_one_window_with_the_plans_argv_cwd_and_label() {
         let s = setup();
 
-        let started = execute(&s.store, &s.fake.env, &plan(), "agents", NOW).unwrap();
+        let started = execute(&s.store, &s.fake.env, &plan(), NOW).unwrap();
 
         let calls = s.fake.tmux.calls();
         assert_eq!(
@@ -111,7 +113,7 @@ mod execute_with_a_fake_tmux {
     fn records_an_open_request_for_the_new_pane() {
         let s = setup();
 
-        let started = execute(&s.store, &s.fake.env, &plan(), "agents", NOW).unwrap();
+        let started = execute(&s.store, &s.fake.env, &plan(), NOW).unwrap();
 
         let request = s
             .store
@@ -127,7 +129,7 @@ mod execute_with_a_fake_tmux {
     fn appends_a_user_authored_respawn_requested_event() {
         let s = setup();
 
-        let started = execute(&s.store, &s.fake.env, &plan(), "agents", NOW).unwrap();
+        let started = execute(&s.store, &s.fake.env, &plan(), NOW).unwrap();
 
         let events = s.store.events_since(0, 100).unwrap();
         let event = events
@@ -151,7 +153,7 @@ mod execute_with_a_fake_tmux {
         let s = setup();
         let before = s.store.list_sessions().unwrap();
 
-        execute(&s.store, &s.fake.env, &plan(), "agents", NOW).unwrap();
+        execute(&s.store, &s.fake.env, &plan(), NOW).unwrap();
 
         assert_eq!(s.store.list_sessions().unwrap(), before);
     }
@@ -161,7 +163,7 @@ mod execute_with_a_fake_tmux {
         let s = setup();
         s.fake.tmux.fail_creates("no server");
 
-        let error = execute(&s.store, &s.fake.env, &plan(), "agents", NOW).unwrap_err();
+        let error = execute(&s.store, &s.fake.env, &plan(), NOW).unwrap_err();
 
         assert!(matches!(error, ExecuteError::Tmux(_)), "{error}");
         assert!(s.store.events_since(0, 100).unwrap().is_empty());
@@ -178,7 +180,7 @@ mod execute_with_a_fake_tmux {
             env: Vec::new(),
         });
 
-        let error = execute(&s.store, &s.fake.env, &plan, "agents", NOW).unwrap_err();
+        let error = execute(&s.store, &s.fake.env, &plan, NOW).unwrap_err();
 
         assert!(matches!(error, ExecuteError::Setup { .. }), "{error}");
         assert!(

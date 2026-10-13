@@ -297,3 +297,62 @@ fn refusal_codes_map_to_contract_strings_and_exit_code_2() {
         assert_eq!(code.exit_code(), 2);
     }
 }
+
+fn placed(tmux_session: &str, window: &str, index: &str) -> Session {
+    let mut s = session(State::Interrupted);
+    s.tmux_session = Some(tmux_session.to_owned());
+    s.tmux_window_name = Some(window.to_owned());
+    s.tmux_window_index = Some(index.to_owned());
+    s
+}
+
+#[test]
+fn a_recorded_placement_names_the_target_session_and_window() {
+    let fake = ready();
+
+    let plan = plan(
+        &fake,
+        &placed("my project", "api build", "3"),
+        &Options::default(),
+    )
+    .unwrap();
+
+    assert_eq!(plan.tmux_session, "my project");
+    assert_eq!(plan.label, "api build");
+    assert_eq!(plan.window_index, Some(3));
+}
+
+#[test]
+fn without_a_placement_the_default_session_and_the_branch_label_apply() {
+    let fake = ready();
+
+    let plan = plan(&fake, &session(State::Interrupted), &Options::default()).unwrap();
+
+    assert_eq!(plan.tmux_session, "agents");
+    assert_eq!(plan.label, "feature");
+    assert_eq!(plan.window_index, None);
+}
+
+#[test]
+fn the_env_override_forces_one_session_but_keeps_the_window_name() {
+    let fake = ready();
+    fake.vars.set("CLAUDE_MONITOR_TMUX_SESSION", "everything");
+
+    let plan = plan(&fake, &placed("work", "api", "3"), &Options::default()).unwrap();
+
+    assert_eq!(plan.tmux_session, "everything");
+    assert_eq!(plan.label, "api");
+}
+
+#[test]
+fn the_config_file_override_forces_one_session_too() {
+    let fake = ready();
+    fake.fs.add_file(
+        "/home/u/.config/claude-monitor/config.json",
+        r#"{"tmuxSession":"everything"}"#,
+    );
+
+    let plan = plan(&fake, &placed("work", "api", "3"), &Options::default()).unwrap();
+
+    assert_eq!(plan.tmux_session, "everything");
+}

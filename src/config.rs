@@ -71,12 +71,15 @@ pub fn load_launchers(env: &Env) -> BTreeMap<String, LauncherConfig> {
         .collect()
 }
 
+/// The tmux session the config file forces every respawn into; `None` when
+/// the file does not set one.
+pub fn tmux_session_override(env: &Env) -> Option<String> {
+    load(env).tmux_session.filter(|name| !name.is_empty())
+}
+
 /// Name of the tmux session respawned agents run in.
 pub fn tmux_session(env: &Env) -> String {
-    load(env)
-        .tmux_session
-        .filter(|name| !name.is_empty())
-        .unwrap_or_else(|| DEFAULT_TMUX_SESSION.to_owned())
+    tmux_session_override(env).unwrap_or_else(|| DEFAULT_TMUX_SESSION.to_owned())
 }
 
 #[cfg(test)]
