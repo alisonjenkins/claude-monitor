@@ -88,10 +88,9 @@ pub fn run(env: &Env, state_dir: Option<&Path>, id: &str) -> Result<Output, Erro
         .as_ref()
         .map(|s| (s.resumed_from.clone(), s.forked_from.clone()))
         .unwrap_or_default();
-    let tmux = session.as_ref().and_then(tmux_placement);
     let mut text = detail_text(
         &entry,
-        tmux.as_deref(),
+        session.as_ref(),
         resumed_from.as_deref(),
         forked_from.as_deref(),
         &resumed_by,
@@ -176,13 +175,15 @@ pub(crate) fn placement_text(
 
 fn detail_text(
     entry: &OverviewEntry,
-    tmux: Option<&str>,
+    session: Option<&Session>,
     resumed_from: Option<&str>,
     forked_from: Option<&str>,
     resumed_by: &[String],
     notes: &[Note],
     now: &str,
 ) -> String {
+    let name = session.and_then(|s| s.session_name.as_deref());
+    let tmux = session.and_then(tmux_placement);
     let mut lines = Vec::new();
     let mut put = |label: &str, value: Option<&str>| {
         if let Some(value) = value.filter(|v| !v.is_empty()) {
@@ -203,13 +204,14 @@ fn detail_text(
     put("id", Some(&entry.id));
     put("agent", Some(&entry.agent_kind));
     put("agent session", Some(&entry.agent_session_id));
+    put("name", name);
     put("state", Some(&state));
     put("section", Some(entry.section.as_str()));
     put("flags", Some(&flags.join(", ")));
     put("repo", entry.repo.as_deref());
     put("branch", entry.branch.as_deref());
     put("cwd", Some(&entry.cwd));
-    put("tmux", tmux);
+    put("tmux", tmux.as_deref());
     put("project", entry.project.as_deref());
     put("last active", Some(&active));
     put("task", entry.task_description.as_deref());

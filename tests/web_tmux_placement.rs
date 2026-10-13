@@ -93,6 +93,25 @@ fn the_session_json_carries_the_placement_fields() {
     assert_eq!(json["tmux_window_panes"], "1");
 }
 
+#[test]
+fn the_session_page_and_json_carry_the_session_name() {
+    let web = Plain::new();
+    web.put("s-named", State::Working);
+    web.put("s-plain", State::Working);
+    let mut s = web.session("s-named");
+    s.session_name = Some("aq <b>uero".to_owned());
+    web.save(&s);
+
+    let html = page(&web.rig, "/sessions/s-named").body;
+    let json = json_page(&web.rig, "/sessions/s-named").json();
+    let plain = page(&web.rig, "/sessions/s-plain").body;
+
+    assert!(html.contains("<dt>Name</dt>"), "{html}");
+    assert!(html.contains("aq &lt;b&gt;uero"), "{html}");
+    assert_eq!(json["session_name"], "aq <b>uero");
+    assert!(!plain.contains("<dt>Name</dt>"), "{plain}");
+}
+
 fn live_panel(html: &str) -> &str {
     let start = html
         .find("id=\"live-restore\"")

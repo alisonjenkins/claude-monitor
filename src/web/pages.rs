@@ -891,6 +891,7 @@ pub fn session(ctx: &Ctx<'_>, detail: &Value) -> String {
         dl.facts {
             dt { "Id" } dd.mono { (id) }
             dt { "Agent" } dd { (str_of(detail, "agent_kind").unwrap_or_default()) }
+            @if let Some(name) = str_of(detail, "session_name") { dt { "Name" } dd { (name) } }
             @if let Some(repo) = str_of(detail, "repo") { dt { "Repo" } dd { (repo) } }
             @if let Some(branch) = str_of(detail, "branch") { dt { "Branch" } dd.mono { (branch) } }
             dt { "Directory" } dd.mono { (str_of(detail, "cwd").unwrap_or_default()) }

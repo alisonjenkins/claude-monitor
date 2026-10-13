@@ -179,6 +179,29 @@ fn show_names_the_recorded_pane_and_the_panes_in_its_window() {
 }
 
 #[test]
+fn show_names_the_session_when_the_user_gave_it_a_name() {
+    let rig = rig();
+    rig.session("s1", "main");
+    rig.session("s2", "main");
+    let mut session = rig.store().get_session("s1").unwrap().unwrap();
+    session.session_name = Some("aquero".to_owned());
+    rig.store().upsert_session(&session).unwrap();
+
+    let named = rig.show_text("s1");
+    let unnamed = rig.show_text("s2");
+
+    assert!(
+        named
+            .lines()
+            .any(|l| l.starts_with("name") && l.ends_with("aquero")),
+        "{named}"
+    );
+    assert!(!unnamed.lines().any(|l| l.starts_with("name")), "{unnamed}");
+    assert_eq!(rig.show_json("s1")["session_name"], "aquero");
+    assert!(rig.show_json("s2")["session_name"].is_null());
+}
+
+#[test]
 fn json_keeps_verbatim_and_generated_summaries_apart() {
     let rig = bound_rig();
     rig.store()
