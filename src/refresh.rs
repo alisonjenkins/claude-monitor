@@ -15,7 +15,7 @@ use crate::agents::{claude_discover, copilot_discover, AgentKind};
 use crate::env::Env;
 use crate::model::{Author, Session, State};
 use crate::progress::binding::{self, SyncSummary};
-use crate::reconcile::{reconcile, ReconcileReport, Scope};
+use crate::reconcile::{reconcile_with_registry, LiveRegistryIds, ReconcileReport, Scope};
 use crate::store::events::{EventsError, NewEvent};
 use crate::store::sessions::SessionsError;
 use crate::store::Store;
@@ -69,9 +69,9 @@ enum SyncError {
 pub fn refresh(store: &Store, env: &Env, now: &str) -> RefreshReport {
     let mut report = RefreshReport::default();
     discover(store, env, &mut report);
-    sync_registry(store, env, now, &mut report);
+    let live_ids = sync_registry(store, env, now, &mut report);
     sync_progress(store, env, now, &mut report);
-    match reconcile(store, env, Scope::All, now) {
+    match reconcile_with_registry(store, env, Scope::All, now, live_ids.as_ref()) {
         Ok(done) => report.reconcile = Some(done),
         Err(e) => report.warnings.push(format!("reconcile: {e}")),
     }
@@ -104,18 +104,26 @@ fn discover(store: &Store, env: &Env, report: &mut RefreshReport) {
     }
 }
 
-fn sync_registry(store: &Store, env: &Env, now: &str, report: &mut RefreshReport) {
+/// Syncs live registry entries into the store. Returns the live session ids
+/// when the scan worked and listed at least one, else `None`.
+fn sync_registry(
+    store: &Store,
+    env: &Env,
+    now: &str,
+    report: &mut RefreshReport,
+) -> Option<LiveRegistryIds> {
     let registry = match claude_registry::scan(env) {
         Ok(registry) => registry,
         Err(e) => {
             report.warnings.push(format!("claude registry: {e}"));
-            return;
+            return None;
         }
     };
     let live = claude_registry::live_by_session_id(&registry);
     if live.is_empty() {
-        return;
+        return None;
     }
+    let live_ids: LiveRegistryIds = live.keys().cloned().collect();
     let mut entries: Vec<&RegistryEntry> = live.into_values().collect();
     entries.sort_by_key(|entry| entry.pid);
     let boot_id = env.boot_id.current().ok();
@@ -125,7 +133,7 @@ fn sync_registry(store: &Store, env: &Env, now: &str, report: &mut RefreshReport
             report
                 .warnings
                 .push(format!("claude registry: cannot begin transaction: {e}"));
-            return;
+            return Some(live_ids);
         }
     };
     for entry in entries {
@@ -148,6 +156,7 @@ fn sync_registry(store: &Store, env: &Env, now: &str, report: &mut RefreshReport
             .warnings
             .push(format!("claude registry: cannot commit: {e}"));
     }
+    Some(live_ids)
 }
 
 enum Change {

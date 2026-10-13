@@ -5,12 +5,14 @@
 //! providers and writes the result. Reconcile is idempotent: it appends one
 //! event per real change and nothing when a second pass finds the same facts.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 use rusqlite::{Transaction, TransactionBehavior};
 use serde_json::json;
 
+use crate::agents::claude::ClaudeKind;
+use crate::agents::AgentKind;
 use crate::env::Env;
 use crate::model::{Author, Liveness, Session, State};
 use crate::store::events::{EventsError, NewEvent};
@@ -35,6 +37,8 @@ pub enum Reason {
     ProcessGone,
     BootChanged,
     PaneGone,
+    /// Claude's live-session registry has no entry for it and no pid is recorded.
+    RegistryMissing,
 }
 
 impl Reason {
@@ -43,16 +47,25 @@ impl Reason {
             Self::ProcessGone => "process_gone",
             Self::BootChanged => "boot_changed",
             Self::PaneGone => "pane_gone",
+            Self::RegistryMissing => "registry_missing",
         }
     }
 
     fn liveness(self) -> Liveness {
         match self {
             Self::BootChanged => Liveness::BootChanged,
-            Self::ProcessGone | Self::PaneGone => Liveness::ProcessGone,
+            Self::ProcessGone | Self::PaneGone | Self::RegistryMissing => Liveness::ProcessGone,
         }
     }
 }
+
+/// A session this young may not have a registry file yet: its hook can beat it.
+const REGISTRY_GRACE_SECS: i64 = 120;
+
+/// The session ids Claude's registry lists as running. Pass it only from a scan
+/// that succeeded and found at least one: an empty or failed scan cannot vouch
+/// for absence.
+pub type LiveRegistryIds = HashSet<String>;
 
 /// What the providers say about one session; `None` means "could not tell".
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -63,6 +76,9 @@ pub struct Observation<'a> {
     pub process_alive: Option<bool>,
     /// Whether the recorded tmux pane still exists.
     pub pane_exists: Option<bool>,
+    /// A Claude session old enough to be in the registry, which has no live
+    /// entry for it. False when the registry could not be trusted.
+    pub registry_missing: bool,
 }
 
 /// The rule: `Some(reason)` when `session` must become interrupted.
@@ -71,7 +87,8 @@ pub struct Observation<'a> {
 /// are over, interrupted ones already are, and unknown ones were never seen
 /// by a hook, so nothing says they should be running. A different boot id
 /// beats everything. Without a pid the session is not judged by processes; a
-/// vanished tmux pane is a secondary signal used only then.
+/// vanished tmux pane, then a missing registry entry, are secondary signals
+/// used only then.
 pub fn decide(session: &Session, observation: &Observation<'_>) -> Option<Reason> {
     if !session.state.is_active() {
         return None;
@@ -87,7 +104,9 @@ pub fn decide(session: &Session, observation: &Observation<'_>) -> Option<Reason
     if session.tmux_pane.is_some() && observation.pane_exists == Some(false) {
         return Some(Reason::PaneGone);
     }
-    None
+    observation
+        .registry_missing
+        .then_some(Reason::RegistryMissing)
 }
 
 /// A row that could not be read or updated; reconcile skips it.
@@ -136,6 +155,17 @@ pub fn reconcile(
     scope: Scope,
     now: &str,
 ) -> Result<ReconcileReport, ReconcileError> {
+    reconcile_with_registry(store, env, scope, now, None)
+}
+
+/// [`reconcile`] that also interrupts Claude sessions `live_ids` does not list.
+pub fn reconcile_with_registry(
+    store: &Store,
+    env: &Env,
+    scope: Scope,
+    now: &str,
+    live_ids: Option<&LiveRegistryIds>,
+) -> Result<ReconcileReport, ReconcileError> {
     let rows = store.list_sessions_lenient()?;
     let mut report = ReconcileReport::default();
     let mut sessions = Vec::new();
@@ -162,7 +192,9 @@ pub fn reconcile(
         .map_err(ReconcileError::Begin)?;
     for session in sessions {
         report.checked = report.checked.saturating_add(1);
-        let observation = observe(env, &session, boot_id.as_deref(), panes.as_ref());
+        let mut observation = observe(env, &session, boot_id.as_deref(), panes.as_ref());
+        observation.registry_missing =
+            live_ids.is_some_and(|ids| missing_from_registry(&session, ids, now));
         let id = session.id.clone();
         match apply(store, env, session, &observation, panes.as_ref(), now) {
             Ok(Outcome::Unchanged) => report.unchanged = report.unchanged.saturating_add(1),
@@ -224,7 +256,23 @@ fn observe<'a>(
         boot_id,
         process_alive,
         pane_exists,
+        registry_missing: false,
     }
+}
+
+/// Only Claude writes the registry, and a session whose last state change is
+/// within the grace period may simply not have its file yet.
+fn missing_from_registry(session: &Session, live_ids: &LiveRegistryIds, now: &str) -> bool {
+    if session.agent_kind != ClaudeKind.id() || live_ids.contains(&session.agent_session_id) {
+        return false;
+    }
+    let (Ok(since), Ok(now)) = (
+        chrono::DateTime::parse_from_rfc3339(&session.state_since),
+        chrono::DateTime::parse_from_rfc3339(now),
+    ) else {
+        return false;
+    };
+    now.signed_duration_since(since).num_seconds() >= REGISTRY_GRACE_SECS
 }
 
 enum Outcome {
@@ -320,6 +368,7 @@ mod tests {
             boot_id: Some("boot-1"),
             process_alive: alive,
             pane_exists: None,
+            registry_missing: false,
         }
     }
 
@@ -347,6 +396,7 @@ mod tests {
             boot_id: Some("boot-2"),
             process_alive: Some(false),
             pane_exists: Some(false),
+            registry_missing: true,
         };
         for state in [State::Finished, State::Interrupted, State::Unknown] {
             assert_eq!(decide(&session(state), &reboot), None, "{state}");
@@ -359,6 +409,7 @@ mod tests {
             boot_id: Some("boot-2"),
             process_alive: Some(true),
             pane_exists: None,
+            registry_missing: true,
         };
         assert_eq!(
             decide(&session(State::Idle), &observation),
@@ -374,6 +425,7 @@ mod tests {
             boot_id: Some("boot-2"),
             process_alive: None,
             pane_exists: None,
+            registry_missing: false,
         };
         assert_eq!(decide(&s, &observation), None);
     }
@@ -384,6 +436,7 @@ mod tests {
             boot_id: Some("boot-1"),
             process_alive: Some(true),
             pane_exists: Some(false),
+            registry_missing: false,
         };
         let mut with_pid = session(State::Idle);
         with_pid.tmux_pane = Some("%1".to_owned());
@@ -412,7 +465,51 @@ mod tests {
     }
 
     #[test]
+    fn a_missing_registry_entry_interrupts_only_a_session_with_no_pid() {
+        let missing = Observation {
+            boot_id: Some("boot-1"),
+            process_alive: None,
+            pane_exists: Some(true),
+            registry_missing: true,
+        };
+        let mut no_pid = session(State::Idle);
+        no_pid.pid = None;
+        no_pid.pid_start = None;
+        assert_eq!(decide(&no_pid, &missing), Some(Reason::RegistryMissing));
+        assert_eq!(
+            decide(
+                &no_pid,
+                &Observation {
+                    registry_missing: false,
+                    ..missing
+                }
+            ),
+            None
+        );
+        assert_eq!(decide(&session(State::Idle), &missing), None);
+        let mut done = no_pid.clone();
+        done.state = State::Finished;
+        assert_eq!(decide(&done, &missing), None);
+    }
+
+    #[test]
+    fn a_gone_pane_is_reported_before_a_missing_registry_entry() {
+        let gone = Observation {
+            boot_id: Some("boot-1"),
+            process_alive: None,
+            pane_exists: Some(false),
+            registry_missing: true,
+        };
+        let mut s = session(State::Idle);
+        s.pid = None;
+        s.pid_start = None;
+        s.tmux_pane = Some("%1".to_owned());
+        assert_eq!(decide(&s, &gone), Some(Reason::PaneGone));
+    }
+
+    #[test]
     fn reasons_have_stable_names() {
+        assert_eq!(Reason::RegistryMissing.as_str(), "registry_missing");
         assert_eq!(Reason::ProcessGone.as_str(), "process_gone");
         assert_eq!(Reason::BootChanged.as_str(), "boot_changed");
         assert_eq!(Reason::PaneGone.as_str(), "pane_gone");

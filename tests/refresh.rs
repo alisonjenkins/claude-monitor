@@ -466,6 +466,112 @@ fn a_revived_session_stays_alive_on_the_next_pass() {
     assert!(!report.changed(), "{report:?}");
 }
 
+const OLD: &str = "2026-10-12T08:00:00Z";
+
+fn ghost(fx: &Fx, kind: &str, id: &str, since: &str) -> Session {
+    let mut s = Session::new(&format!("ghost-{id}"), kind, id, CWD, since);
+    s.state = State::Idle;
+    s.tmux_pane = Some("%9".to_owned());
+    fx.store.upsert_session(&s).unwrap();
+    s
+}
+
+fn ghost_fx() -> Fx {
+    let fx = Fx::new();
+    fx.registry(10, "sess-live", "idle", true);
+    fx.fake.tmux.add_pane("%9", location("work", "api", "2"));
+    fx
+}
+
+#[test]
+fn a_session_with_no_registry_entry_and_no_process_is_interrupted() {
+    let fx = ghost_fx();
+    ghost(&fx, "claude", "sess-ghost", OLD);
+
+    fx.run();
+
+    assert_eq!(fx.session("sess-ghost").unwrap().state, State::Interrupted);
+    let event = fx
+        .events()
+        .into_iter()
+        .find(|e| e.payload["reason"] == "registry_missing")
+        .expect("registry_missing event");
+    assert_eq!(event.payload["from"], "idle");
+}
+
+#[test]
+fn a_session_with_a_live_registry_entry_is_not_a_ghost() {
+    let fx = ghost_fx();
+    ghost(&fx, "claude", "sess-live", OLD);
+
+    fx.run();
+
+    assert_eq!(fx.session("sess-live").unwrap().state, State::Idle);
+}
+
+#[test]
+fn a_session_whose_recorded_process_is_alive_is_not_a_ghost() {
+    let fx = ghost_fx();
+    let mut s = ghost(&fx, "claude", "sess-ghost", OLD);
+    s.pid = Some(77);
+    s.pid_start = Some(PROC_START);
+    fx.store.upsert_session(&s).unwrap();
+    fx.fake.processes.spawn(77, PROC_START);
+
+    fx.run();
+
+    assert_eq!(fx.session("sess-ghost").unwrap().state, State::Idle);
+}
+
+#[test]
+fn a_copilot_session_is_never_a_ghost() {
+    let fx = ghost_fx();
+    ghost(&fx, "copilot", "cs-1", OLD);
+
+    fx.run();
+
+    let kept = fx
+        .store
+        .get_session_by_agent_id("copilot", "cs-1")
+        .unwrap()
+        .unwrap();
+    assert_eq!(kept.state, State::Idle);
+}
+
+#[test]
+fn a_session_younger_than_two_minutes_is_not_a_ghost() {
+    let fx = ghost_fx();
+    ghost(&fx, "claude", "sess-ghost", "2026-10-12T11:58:30Z");
+
+    fx.run();
+
+    assert_eq!(fx.session("sess-ghost").unwrap().state, State::Idle);
+}
+
+#[test]
+fn an_empty_registry_marks_nothing_as_a_ghost() {
+    let fx = Fx::new();
+    fx.fake.tmux.add_pane("%9", location("work", "api", "2"));
+    ghost(&fx, "claude", "sess-ghost", OLD);
+
+    fx.run();
+
+    assert_eq!(fx.session("sess-ghost").unwrap().state, State::Idle);
+}
+
+#[test]
+fn a_ghost_that_was_interrupted_stays_quiet_on_the_next_pass() {
+    let fx = ghost_fx();
+    ghost(&fx, "claude", "sess-ghost", OLD);
+    fx.run();
+    let seq = fx.store.last_seq().unwrap();
+
+    let report = fx.run();
+
+    assert_eq!(fx.store.last_seq().unwrap(), seq);
+    assert!(!report.changed(), "{report:?}");
+}
+
 const MOVED: &str = "/home/ali/git/proj/.claude/worktrees/moved";
 
 #[test]
