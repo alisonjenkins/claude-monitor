@@ -260,6 +260,13 @@ prints what would change, and writes nothing, not even the CA.
   runs it on every activation (Linux), with `autoSelect` and `browsers`
   options. It never fails the activation: an open profile or a missing tool
   prints one line instead.
+- **Keep it running.** `programs.claude-monitor.serve.enable = true;` runs
+  `claude-monitor serve` as a background user service on Linux (systemd) and
+  macOS (launchd), with `serve.port` and `serve.mtls = true` for `--mtls`.
+  The login URL goes to the journal or to
+  `~/Library/Logs/claude-monitor-serve.log`; `claude-monitor web login` prints
+  a fresh one. Browser setup stays Linux-only. See
+  [docs/web-service.md](docs/web-service.md).
 - **The limit.** The client key ends up in the browser profile, readable by
   anything running as your user. This makes the setup painless; it does not
   stop malware that runs as you.
