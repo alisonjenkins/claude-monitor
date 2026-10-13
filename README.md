@@ -110,6 +110,29 @@ session's page, as a hint on its row, and on `/restore` in a read-only panel
 that lists the live sessions with where each would be restored, warning when
 two would land in the same window and pane.
 
+A Claude session whose directory is `<repo>/.claude/worktrees/<name>` (or a
+subdirectory of it) is a Claude-managed worktree session, and Claude Code
+resumes it only from the repository with `--worktree`. `restore` and `respawn`
+therefore run
+
+```
+cd <repo> && claude --worktree <name> --resume <session id>
+```
+
+and `--fresh` runs `cd <repo> && claude --worktree <name>`, so the new session
+lands in the same worktree. Sessions anywhere else are unchanged
+(`claude --resume <id>` in the recorded directory). If the worktree directory
+is gone, the restore is still refused as `missing_directory`; nothing lets
+`--worktree` quietly create a new one. `--recreate-worktree` is the way back,
+as before. The plan shows the exact line (`run: cd ... && ...` in text, a
+`command` field in the JSON, and a `run:` line under the session on `/restore`)
+so you can check it before confirming. A launcher template (`launchers.claude`
+or `CLAUDE_MONITOR_LAUNCHER_CLAUDE`) is left as written unless it has a
+`{worktree_args}` word, for example
+`claude {worktree_args} --resume {session_id}`: that word becomes
+`--worktree <name>` for a worktree session (nothing otherwise), and the launch
+then starts in the repository.
+
 Sessions you closed on purpose can be dismissed from the web view without
 opening each one: waiting rows have a Dismiss button, and `/restore` has
 Dismiss selected beside Restore selected. Both show a confirmation first (the
@@ -256,7 +279,7 @@ progress and export do not change. The full contract is
 5. Register its hooks in `nix/hm-module.nix`, or rely on `discover` if the
    agent has none. Launch commands are configuration, not code:
    `programs.claude-monitor.launchers.<name>` with the placeholders
-   `{session_id}`, `{cwd}` and `{name}`.
+   `{session_id}`, `{cwd}` and `{name}` (and `{worktree_args}`, see above).
 
 Current kinds: `claude` and `copilot`.
 
