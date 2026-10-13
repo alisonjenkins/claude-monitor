@@ -35,6 +35,8 @@ const CA_VALIDITY_DAYS: i64 = 5 * 365 + 1;
 const LEAF_VALIDITY_DAYS: i64 = 90;
 /// A client certificate is imported into a browser by hand, so it lasts a year.
 const CLIENT_VALIDITY_DAYS: i64 = 365;
+/// The CA's subject name, which a browser policy can match an issuer on.
+pub const CA_COMMON_NAME: &str = "claude-monitor local CA";
 pub const CLIENT_ALIAS: &str = "claude-monitor web client";
 /// A persisted client certificate with less than this left is replaced.
 const CLIENT_RENEW_WITHIN_DAYS: i64 = 30;
@@ -377,7 +379,7 @@ fn shifted(from: OffsetDateTime, days: i64) -> Result<OffsetDateTime, TlsError> 
 fn ca_params(now: OffsetDateTime) -> Result<CertificateParams, TlsError> {
     let mut params = CertificateParams::default();
     let mut name = DistinguishedName::new();
-    name.push(DnType::CommonName, "claude-monitor local CA");
+    name.push(DnType::CommonName, CA_COMMON_NAME);
     params.distinguished_name = name;
     params.is_ca = IsCa::Ca(BasicConstraints::Constrained(0));
     params.key_usages = vec![KeyUsagePurpose::KeyCertSign, KeyUsagePurpose::CrlSign];
