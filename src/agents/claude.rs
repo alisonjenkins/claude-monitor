@@ -33,7 +33,15 @@ impl AgentKind for ClaudeKind {
         cfg: &LauncherConfig,
     ) -> Result<Launch, LaunchError> {
         let worktree = Worktree::from_cwd(&session.cwd);
-        standard_launch(self.id(), PROGRAM, session, mode, cfg, worktree.as_ref())
+        standard_launch(
+            self.id(),
+            PROGRAM,
+            session,
+            mode,
+            cfg,
+            worktree.as_ref(),
+            session.session_name.as_deref(),
+        )
     }
 
     /// The transcript sits in the project directory of the cwd the session

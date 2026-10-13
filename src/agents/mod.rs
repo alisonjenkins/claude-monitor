@@ -151,8 +151,8 @@ pub struct Precondition {
 }
 
 /// Launch command templates per kind; placeholders `{session_id}`, `{cwd}`,
-/// `{name}` and, as a word of its own, `{worktree_args}` (see
-/// [`standard_launch`]).
+/// `{name}` and, as words of their own, `{worktree_args}` and `{name_args}`
+/// (see [`standard_launch`]).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct LauncherConfig {
     pub template: Option<String>,
@@ -202,6 +202,10 @@ pub trait AgentKind: Send + Sync {
 /// session that lives in a worktree it manages. A configured template gets
 /// that only through a `{worktree_args}` word; without one it runs as written
 /// in the recorded directory.
+///
+/// With a `display_name` the launch also passes `--name <name>`, after
+/// `--worktree` and before `--resume`; a template gets it through a
+/// `{name_args}` word.
 pub(crate) fn standard_launch(
     kind: &'static str,
     program: &str,
@@ -209,10 +213,16 @@ pub(crate) fn standard_launch(
     mode: LaunchMode,
     cfg: &LauncherConfig,
     worktree: Option<&Worktree>,
+    display_name: Option<&str>,
 ) -> Result<Launch, LaunchError> {
     let mut cwd = PathBuf::from(&session.cwd);
     let worktree_args = |worktree: Option<&Worktree>| {
-        worktree.map_or_else(Vec::new, |w| vec!["--worktree".to_owned(), w.name.clone()])
+        let mut args =
+            worktree.map_or_else(Vec::new, |w| vec!["--worktree".to_owned(), w.name.clone()]);
+        if let Some(name) = display_name {
+            args.extend(["--name".to_owned(), name.to_owned()]);
+        }
+        args
     };
     let (program, args) = match (mode, cfg.template.as_deref()) {
         (LaunchMode::Fresh, _) => {
@@ -230,11 +240,12 @@ pub(crate) fn standard_launch(
             (program.to_owned(), args)
         }
         (LaunchMode::Resume, Some(template)) => {
-            let expanded = crate::respawn::expand_template_in(template, session, worktree)
-                .map_err(|detail| LaunchError::BadTemplate {
-                    kind,
-                    detail: detail.to_string(),
-                })?;
+            let expanded =
+                crate::respawn::expand_template_in(template, session, worktree, display_name)
+                    .map_err(|detail| LaunchError::BadTemplate {
+                        kind,
+                        detail: detail.to_string(),
+                    })?;
             if let (true, Some(worktree)) = (expanded.uses_worktree_args, worktree) {
                 cwd = PathBuf::from(&worktree.repo_root);
             }

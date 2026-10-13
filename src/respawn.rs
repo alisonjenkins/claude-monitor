@@ -1001,9 +1001,13 @@ pub fn expand_template(
     template: &str,
     session: &Session,
 ) -> Result<(String, Vec<String>), TemplateError> {
-    let expanded = expand_template_in(template, session, None)?;
+    let expanded = expand_template_in(template, session, None, None)?;
     Ok((expanded.program, expanded.args))
 }
+
+/// The placeholder that stands for `--name <name>`, or for nothing when the
+/// session has no user-set name. It must be a word of its own.
+pub const NAME_ARGS_PLACEHOLDER: &str = "{name_args}";
 
 /// The placeholder that stands for `--worktree <name>`, or for nothing when
 /// the session is not in a Claude worktree. It must be a word of its own.
@@ -1021,16 +1025,25 @@ pub struct ExpandedTemplate {
 
 /// [`expand_template`] that also expands a word that is exactly
 /// `{worktree_args}` into `--worktree <name>` (two arguments) when `worktree`
-/// is given, and into nothing otherwise.
+/// is given, and into nothing otherwise. A word that is exactly `{name_args}`
+/// becomes `--name <display_name>` the same way.
 pub fn expand_template_in(
     template: &str,
     session: &Session,
     worktree: Option<&Worktree>,
+    display_name: Option<&str>,
 ) -> Result<ExpandedTemplate, TemplateError> {
     let name = session_name(session);
     let mut uses_worktree_args = false;
     let mut words = Vec::new();
     for word in split_words(template)? {
+        if word == NAME_ARGS_PLACEHOLDER {
+            if let Some(display_name) = display_name {
+                words.push("--name".to_owned());
+                words.push(display_name.to_owned());
+            }
+            continue;
+        }
         if word == WORKTREE_ARGS_PLACEHOLDER {
             uses_worktree_args = true;
             if let Some(worktree) = worktree {
