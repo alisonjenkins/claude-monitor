@@ -14,6 +14,7 @@ use crate::env::{Env, EnvError, SpawnedWindow, Vars};
 use crate::model::{Author, Session};
 use crate::store::events::NewEvent;
 use crate::store::Store;
+use crate::worktree::Worktree;
 
 /// Why a respawn was refused. Codes are the strings stored in
 /// `RespawnRequest.outcome` as `refused:<code>`.
@@ -971,14 +972,57 @@ pub fn expand_template(
     template: &str,
     session: &Session,
 ) -> Result<(String, Vec<String>), TemplateError> {
+    let expanded = expand_template_in(template, session, None)?;
+    Ok((expanded.program, expanded.args))
+}
+
+/// The placeholder that stands for `--worktree <name>`, or for nothing when
+/// the session is not in a Claude worktree. It must be a word of its own.
+pub const WORKTREE_ARGS_PLACEHOLDER: &str = "{worktree_args}";
+
+/// A launcher template after expansion.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExpandedTemplate {
+    pub program: String,
+    pub args: Vec<String>,
+    /// The template has a `{worktree_args}` word, so it expects to be started
+    /// from the repository rather than from the recorded directory.
+    pub uses_worktree_args: bool,
+}
+
+/// [`expand_template`] that also expands a word that is exactly
+/// `{worktree_args}` into `--worktree <name>` (two arguments) when `worktree`
+/// is given, and into nothing otherwise.
+pub fn expand_template_in(
+    template: &str,
+    session: &Session,
+    worktree: Option<&Worktree>,
+) -> Result<ExpandedTemplate, TemplateError> {
     let name = session_name(session);
-    let mut words = split_words(template)?.into_iter().map(|word| {
-        word.replace("{session_id}", &session.agent_session_id)
-            .replace("{cwd}", &session.cwd)
-            .replace("{name}", &name)
-    });
+    let mut uses_worktree_args = false;
+    let mut words = Vec::new();
+    for word in split_words(template)? {
+        if word == WORKTREE_ARGS_PLACEHOLDER {
+            uses_worktree_args = true;
+            if let Some(worktree) = worktree {
+                words.push("--worktree".to_owned());
+                words.push(worktree.name.clone());
+            }
+            continue;
+        }
+        words.push(
+            word.replace("{session_id}", &session.agent_session_id)
+                .replace("{cwd}", &session.cwd)
+                .replace("{name}", &name),
+        );
+    }
+    let mut words = words.into_iter();
     let program = words.next().ok_or(TemplateError::Empty)?;
-    Ok((program, words.collect()))
+    Ok(ExpandedTemplate {
+        program,
+        args: words.collect(),
+        uses_worktree_args,
+    })
 }
 
 /// What `{name}` stands for: the branch, else the directory's last component,

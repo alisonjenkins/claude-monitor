@@ -48,7 +48,7 @@ impl AgentKind for CopilotKind {
         mode: LaunchMode,
         cfg: &LauncherConfig,
     ) -> Result<Launch, LaunchError> {
-        standard_launch(self.id(), PROGRAM, session, mode, cfg)
+        standard_launch(self.id(), PROGRAM, session, mode, cfg, None)
     }
 
     fn resume_preconditions(&self, session: &Session, env: &Env) -> Vec<Precondition> {

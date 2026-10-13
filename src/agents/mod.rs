@@ -11,6 +11,7 @@ use thiserror::Error;
 
 use crate::env::{Env, Vars};
 use crate::model::{Event, Session};
+use crate::worktree::Worktree;
 
 pub mod claude;
 pub mod claude_discover;
@@ -149,7 +150,9 @@ pub struct Precondition {
     pub required_path: PathBuf,
 }
 
-/// Launch command templates per kind; placeholders `{session_id}`, `{cwd}`, `{name}`.
+/// Launch command templates per kind; placeholders `{session_id}`, `{cwd}`,
+/// `{name}` and, as a word of its own, `{worktree_args}` (see
+/// [`standard_launch`]).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct LauncherConfig {
     pub template: Option<String>,
@@ -193,25 +196,50 @@ pub trait AgentKind: Send + Sync {
 /// `<program>` for a fresh start, in the session's recorded directory. A
 /// configured template replaces the resume command only; a fresh start never
 /// has a session id to put in it.
+///
+/// With a `worktree` the launch starts in the repository and passes
+/// `--worktree <name>` ahead of `--resume`, which is how Claude Code finds a
+/// session that lives in a worktree it manages. A configured template gets
+/// that only through a `{worktree_args}` word; without one it runs as written
+/// in the recorded directory.
 pub(crate) fn standard_launch(
     kind: &'static str,
     program: &str,
     session: &Session,
     mode: LaunchMode,
     cfg: &LauncherConfig,
+    worktree: Option<&Worktree>,
 ) -> Result<Launch, LaunchError> {
-    let cwd = PathBuf::from(&session.cwd);
+    let mut cwd = PathBuf::from(&session.cwd);
+    let worktree_args = |worktree: Option<&Worktree>| {
+        worktree.map_or_else(Vec::new, |w| vec!["--worktree".to_owned(), w.name.clone()])
+    };
     let (program, args) = match (mode, cfg.template.as_deref()) {
-        (LaunchMode::Fresh, _) => (program.to_owned(), Vec::new()),
-        (LaunchMode::Resume, None) => (
-            program.to_owned(),
-            vec!["--resume".to_owned(), session.agent_session_id.clone()],
-        ),
-        (LaunchMode::Resume, Some(template)) => crate::respawn::expand_template(template, session)
-            .map_err(|detail| LaunchError::BadTemplate {
-                kind,
-                detail: detail.to_string(),
-            })?,
+        (LaunchMode::Fresh, _) => {
+            if let Some(worktree) = worktree {
+                cwd = PathBuf::from(&worktree.repo_root);
+            }
+            (program.to_owned(), worktree_args(worktree))
+        }
+        (LaunchMode::Resume, None) => {
+            if let Some(worktree) = worktree {
+                cwd = PathBuf::from(&worktree.repo_root);
+            }
+            let mut args = worktree_args(worktree);
+            args.extend(["--resume".to_owned(), session.agent_session_id.clone()]);
+            (program.to_owned(), args)
+        }
+        (LaunchMode::Resume, Some(template)) => {
+            let expanded = crate::respawn::expand_template_in(template, session, worktree)
+                .map_err(|detail| LaunchError::BadTemplate {
+                    kind,
+                    detail: detail.to_string(),
+                })?;
+            if let (true, Some(worktree)) = (expanded.uses_worktree_args, worktree) {
+                cwd = PathBuf::from(&worktree.repo_root);
+            }
+            (expanded.program, expanded.args)
+        }
     };
     Ok(Launch {
         program,

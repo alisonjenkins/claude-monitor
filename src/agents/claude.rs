@@ -6,6 +6,7 @@ use super::{
 };
 use crate::env::Env;
 use crate::model::{Event, NotificationKind, Session, StartSource};
+use crate::worktree::Worktree;
 
 const PROGRAM: &str = "claude";
 
@@ -31,7 +32,8 @@ impl AgentKind for ClaudeKind {
         mode: LaunchMode,
         cfg: &LauncherConfig,
     ) -> Result<Launch, LaunchError> {
-        standard_launch(self.id(), PROGRAM, session, mode, cfg)
+        let worktree = Worktree::from_cwd(&session.cwd);
+        standard_launch(self.id(), PROGRAM, session, mode, cfg, worktree.as_ref())
     }
 
     /// The transcript sits in the project directory of the cwd the session
