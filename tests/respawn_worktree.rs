@@ -177,6 +177,27 @@ fn a_template_with_worktree_args_expands_them_and_starts_in_the_repo() {
 }
 
 #[test]
+fn the_command_line_shows_the_directory_and_the_exact_command() {
+    let fake = ready(WORKTREE);
+    let plan = plan_for(&fake, WORKTREE, &Options::default()).unwrap();
+    assert_eq!(
+        plan.command_line(),
+        "cd /w/proj && claude --worktree deep-wishing-squirrel --resume agent-1"
+    );
+}
+
+#[test]
+fn the_command_line_quotes_what_a_shell_would_split() {
+    let cwd = format!("{ROOT}/.claude/worktrees/it's odd");
+    let fake = ready(&cwd);
+    let plan = plan_for(&fake, &cwd, &Options::default()).unwrap();
+    assert_eq!(
+        plan.command_line(),
+        "cd /w/proj && claude --worktree 'it'\\''s odd' --resume agent-1"
+    );
+}
+
+#[test]
 fn worktree_args_vanish_for_a_session_outside_a_worktree() {
     let fake = ready(ROOT);
     let plan = plan_for(

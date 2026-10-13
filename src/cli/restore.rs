@@ -208,6 +208,7 @@ fn preview(
                     plan.launch.cwd.display(),
                     plan.tmux_target()
                 ));
+                lines.push(format!("  run: {}", plan.command_line()));
                 lines.extend(plan.notices.iter().map(|n| format!("  note: {n}")));
                 start.push(would_start_json(session, plan));
             }

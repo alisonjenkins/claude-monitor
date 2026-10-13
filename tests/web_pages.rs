@@ -767,6 +767,21 @@ mod respawn_through_the_restore_preview {
     }
 
     #[test]
+    fn the_preview_shows_the_command_that_will_run() {
+        let Some(fx) = Fixture::new() else { return };
+        fx.add_session("int1", State::Interrupted, "a");
+        let rig = Rig::start_on(&fx.state_dir, fx.env.clone());
+
+        let html = page(&rig, "/restore?session=int1").body;
+        let body = json_page(&rig, "/restore?session=int1").json();
+
+        let command = body["would_start"][0]["command"].as_str().unwrap();
+        assert!(command.starts_with("cd "), "{command}");
+        let escaped = command.replace('&', "&amp;");
+        assert!(html.contains(&format!("run: {escaped}")), "{html}");
+    }
+
+    #[test]
     fn a_finished_session_can_be_previewed_too() {
         let Some(fx) = Fixture::new() else { return };
         fx.add_session("fin1", State::Finished, "c");

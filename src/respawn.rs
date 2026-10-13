@@ -135,6 +135,21 @@ impl Plan {
             .map(|pane| pane.pane_index)
     }
 
+    /// The launch as a line a shell could run: `cd <dir> && <command>`, every
+    /// word quoted as needed. For showing the user what will start; tmux is
+    /// handed the words themselves, not this line.
+    pub fn command_line(&self) -> String {
+        let words = launch_argv(&self.launch)
+            .iter()
+            .map(|word| shell_quote(word))
+            .collect::<Vec<_>>()
+            .join(" ");
+        format!(
+            "cd {} && {words}",
+            shell_quote(&self.launch.cwd.to_string_lossy())
+        )
+    }
+
     /// `session:window-name`, where the window will open, plus `.pane` when
     /// the session opens as one of several panes of that window.
     pub fn tmux_target(&self) -> String {
@@ -805,6 +820,20 @@ fn launch_argv(launch: &Launch) -> Vec<String> {
     argv.push(launch.program.clone());
     argv.extend(launch.args.iter().cloned());
     argv
+}
+
+/// `word` as one POSIX shell word: unchanged when it holds only characters a
+/// shell never treats specially, else in single quotes.
+fn shell_quote(word: &str) -> String {
+    let plain = !word.is_empty()
+        && word
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || "_@%+=:,./-".contains(c));
+    if plain {
+        word.to_owned()
+    } else {
+        format!("'{}'", word.replace('\'', "'\\''"))
+    }
 }
 
 fn run_setup(command: &Launch) -> Result<(), ExecuteError> {

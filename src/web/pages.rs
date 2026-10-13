@@ -1047,6 +1047,9 @@ pub fn restore(
                                     (str_of(item, "cwd").unwrap_or_default())
                                     " as tmux " (str_of(item, "tmux_target").unwrap_or_default())
                                 }
+                                @if let Some(command) = str_of(item, "command") {
+                                    p.meta.mono { "run: " (command) }
+                                }
                                 @for notice in list_of(item, "notices") {
                                     p.warn { (notice.as_str().unwrap_or_default()) }
                                 }

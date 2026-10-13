@@ -459,6 +459,27 @@ fn the_preview_reports_refusals_and_still_exits_0() {
 }
 
 #[test]
+fn the_plan_shows_the_command_that_will_run() {
+    let Some(fx) = Fixture::new() else { return };
+    fx.add_session("int1", State::Interrupted, "a");
+    let plan = || {
+        run_in(
+            restore(true, false, &[], false),
+            &fx.env,
+            Some(&fx.state_dir),
+        )
+        .unwrap()
+    };
+
+    let out: Value = serde_json::from_str(&plan().render(true)).unwrap();
+    let command = out["would_start"][0]["command"].as_str().unwrap();
+    assert!(command.starts_with("cd "), "{command}");
+
+    let text = plan().render(false);
+    assert!(text.contains(&format!("  run: {command}")), "{text}");
+}
+
+#[test]
 fn nothing_to_restore_is_success() {
     let Some(fx) = Fixture::new() else { return };
     fx.add_session("wrk1", State::Working, "e");
