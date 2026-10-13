@@ -24,6 +24,7 @@ pub fn preview_restore(store: &Store, env: &Env, ids: &[String]) -> Vec<PreviewR
                     session_id: session.id,
                     mode: plan.mode.as_str().to_owned(),
                     cwd: plan.launch.cwd.display().to_string(),
+                    tmux_target: plan.tmux_target(),
                     notices: plan.notices,
                 },
                 Err(refusal) => PreviewRow::Refuse {
@@ -104,6 +105,8 @@ pub enum PreviewRow {
         session_id: String,
         mode: String,
         cwd: String,
+        /// `session:window-name` the window opens as.
+        tmux_target: String,
         notices: Vec<String>,
     },
     Refuse {

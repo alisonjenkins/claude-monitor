@@ -85,6 +85,13 @@ pub struct Plan {
     pub window_index: Option<u32>,
 }
 
+impl Plan {
+    /// `session:window-name`, where the window will open.
+    pub fn tmux_target(&self) -> String {
+        format!("{}:{}", self.tmux_session, self.label)
+    }
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Options {
     /// Run `git worktree add` for a missing worktree whose branch still exists.

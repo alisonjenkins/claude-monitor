@@ -1004,6 +1004,27 @@ mod restore_flow {
         }
     }
 
+    #[test]
+    fn the_confirm_preview_names_the_original_tmux_window() {
+        let w = World::new();
+        w.add("p1", State::Interrupted, true);
+        let mut placed = w.store.get_session("p1").unwrap().unwrap();
+        placed.tmux_session = Some("notes".to_owned());
+        placed.tmux_window_name = Some("docs".to_owned());
+        w.store.upsert_session(&placed).unwrap();
+
+        let rows = preview_restore(&w.store, &w.fake.env, &["p1".to_owned()]);
+
+        assert!(
+            matches!(
+                rows.as_slice(),
+                [claude_monitor::tui::restore::PreviewRow::Start { tmux_target, .. }]
+                    if tmux_target == "notes:docs"
+            ),
+            "{rows:?}"
+        );
+    }
+
     const R: KeyCode = KeyCode::Char('R');
     const SPACE: KeyCode = KeyCode::Char(' ');
     const DOWN: KeyCode = KeyCode::Char('j');

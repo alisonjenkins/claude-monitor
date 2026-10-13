@@ -751,6 +751,22 @@ mod respawn_through_the_restore_preview {
     }
 
     #[test]
+    fn the_preview_shows_the_original_tmux_window_as_session_and_name() {
+        let Some(fx) = Fixture::new() else { return };
+        let mut s = fx.add_session("int1", State::Interrupted, "a");
+        s.tmux_session = Some("notes".to_owned());
+        s.tmux_window_name = Some("docs".to_owned());
+        fx.save(&s);
+        let rig = Rig::start_on(&fx.state_dir, fx.env.clone());
+
+        let html = page(&rig, "/restore?session=int1").body;
+        let body = json_page(&rig, "/restore?session=int1").json();
+
+        assert!(html.contains("notes:docs"), "{html}");
+        assert_eq!(body["would_start"][0]["tmux_target"], "notes:docs");
+    }
+
+    #[test]
     fn a_finished_session_can_be_previewed_too() {
         let Some(fx) = Fixture::new() else { return };
         fx.add_session("fin1", State::Finished, "c");

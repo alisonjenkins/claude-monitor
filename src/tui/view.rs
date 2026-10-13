@@ -602,10 +602,13 @@ fn confirm_lines(rows: &[PreviewRow]) -> Vec<Line<'static>> {
             session_id,
             mode,
             cwd,
+            tmux_target,
             notices,
         } = row
         {
-            lines.push(Line::from(format!("  {session_id}  {mode}  {cwd}")));
+            lines.push(Line::from(format!(
+                "  {session_id}  {mode}  {cwd}  as tmux {tmux_target}"
+            )));
             lines.extend(notices.iter().map(|n| dim(format!("      note: {n}"))));
         }
     }

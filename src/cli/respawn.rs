@@ -126,10 +126,11 @@ fn started_text(items: &[Item], skipped: &[String]) -> String {
     for item in items {
         if let Item::Started(item) = item {
             lines.push(format!(
-                "started {} ({}) in {} as pane {}",
+                "started {} ({}) in {} as tmux {} (pane {})",
                 item.started.session_id,
                 item.plan.mode.as_str(),
                 item.plan.launch.cwd.display(),
+                item.plan.tmux_target(),
                 item.started.pane_id
             ));
             lines.extend(item.plan.notices.iter().map(|n| format!("  note: {n}")));
@@ -164,6 +165,8 @@ pub(crate) fn started_json(items: &[Item]) -> Vec<Value> {
                 "request": item.started.request_id,
                 "cwd": item.plan.launch.cwd,
                 "label": item.plan.label,
+                "tmux_session": item.plan.tmux_session,
+                "tmux_target": item.plan.tmux_target(),
                 "notices": item.plan.notices,
             })),
             Item::Refused(_) => None,
@@ -178,6 +181,8 @@ pub(super) fn would_start_json(session: &Session, plan: &Plan) -> Value {
         "mode": plan.mode.as_str(),
         "cwd": plan.launch.cwd,
         "label": plan.label,
+        "tmux_session": plan.tmux_session,
+        "tmux_target": plan.tmux_target(),
         "setup": plan.setup.iter().map(|s| {
             let mut words = vec![s.program.clone()];
             words.extend(s.args.iter().cloned());

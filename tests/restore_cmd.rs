@@ -166,6 +166,59 @@ fn each_session_returns_to_its_original_tmux_session_and_window() {
 }
 
 #[test]
+fn the_plan_shows_each_sessions_target_tmux_session_and_window() {
+    let Some(fx) = Fixture::new() else { return };
+    fx.add_session("int1", State::Interrupted, "a");
+    fx.add_session("int2", State::Interrupted, "b");
+    place(&fx, "int1", "my project", "api: build", "3");
+
+    let out = run_in(
+        restore(true, false, &[], false),
+        &fx.env,
+        Some(&fx.state_dir),
+    )
+    .unwrap();
+
+    let text = out.render(false);
+    assert!(text.contains("my project:api: build"), "{text}");
+    assert!(text.contains("agents:"), "{text}");
+    let body: Value = serde_json::from_str(&out.render(true)).unwrap();
+    let target = |id: &str| {
+        let entry = body["would_start"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|e| e["session"] == id)
+            .unwrap();
+        (
+            entry["tmux_session"].as_str().unwrap().to_owned(),
+            entry["tmux_target"].as_str().unwrap().to_owned(),
+        )
+    };
+    assert_eq!(
+        target("int1"),
+        ("my project".to_owned(), "my project:api: build".to_owned())
+    );
+    assert_eq!(target("int2").0, "agents");
+    assert!(!fx.server_has_sessions(), "a preview started tmux");
+}
+
+#[test]
+fn a_started_session_reports_the_window_it_opened_in() {
+    let Some(fx) = Fixture::new() else { return };
+    fx.add_session("int1", State::Interrupted, "a");
+    place(&fx, "int1", "notes", "docs", "0");
+
+    let out = json(run_in(
+        restore(true, false, &[], true),
+        &fx.env,
+        Some(&fx.state_dir),
+    ));
+
+    assert_eq!(out["started"][0]["tmux_target"], "notes:docs");
+}
+
+#[test]
 fn the_override_variable_puts_every_session_in_one_tmux_session() {
     let Some(fx) = Fixture::new() else { return };
     fx.add_session("int1", State::Interrupted, "a");

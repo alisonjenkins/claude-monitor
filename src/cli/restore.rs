@@ -132,10 +132,11 @@ fn preview(
         match plan {
             Ok(plan) => {
                 lines.push(format!(
-                    "would start {} ({}) in {}",
+                    "would start {} ({}) in {} as tmux {}",
                     session.id,
                     plan.mode.as_str(),
-                    plan.launch.cwd.display()
+                    plan.launch.cwd.display(),
+                    plan.tmux_target()
                 ));
                 lines.extend(plan.notices.iter().map(|n| format!("  note: {n}")));
                 start.push(would_start_json(session, plan));
@@ -161,10 +162,9 @@ fn preview(
     if planned.is_empty() {
         lines.push("nothing to restore".to_owned());
     } else {
-        lines.push(format!(
-            "nothing started; run with --all-interrupted --yes to start these in tmux session {}",
-            tmux_session(env)
-        ));
+        lines.push(
+            "nothing started; run with --all-interrupted --yes to start these in tmux".to_owned(),
+        );
     }
     Output::Dual {
         text: lines.join("\n"),

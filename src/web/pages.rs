@@ -932,7 +932,8 @@ pub fn restore(
             h1 { "Restore" }
         }
         p.muted {
-            "Nothing starts until you confirm. Sessions open as windows in tmux session "
+            "Nothing starts until you confirm. Each session reopens as the tmux window it had before; "
+            "one with no recorded window opens in tmux session "
             span.mono { (str_of(preview, "tmux_session").unwrap_or_default()) } "."
         }
         @if only.is_some() {
@@ -962,6 +963,7 @@ pub fn restore(
                                 p.meta.mono {
                                     (str_of(item, "mode").unwrap_or_default()) " in "
                                     (str_of(item, "cwd").unwrap_or_default())
+                                    " as tmux " (str_of(item, "tmux_target").unwrap_or_default())
                                 }
                                 @for notice in list_of(item, "notices") {
                                     p.warn { (notice.as_str().unwrap_or_default()) }
