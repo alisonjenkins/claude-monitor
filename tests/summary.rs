@@ -215,6 +215,38 @@ mod verbatim {
             Some("kept")
         );
     }
+
+    /// A FIFO transcript_path must not block the hook waiting for a writer.
+    #[test]
+    fn a_fifo_transcript_is_refused_without_blocking() {
+        use std::ffi::CString;
+        use std::os::unix::ffi::OsStrExt;
+        use std::sync::mpsc;
+        use std::time::Duration;
+
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("pipe.jsonl");
+        let c_path = CString::new(path.as_os_str().as_bytes()).unwrap();
+        assert_eq!(unsafe { libc::mkfifo(c_path.as_ptr(), 0o600) }, 0);
+
+        let (done, result) = mpsc::channel();
+        let reader_path = path.clone();
+        std::thread::spawn(move || {
+            let _ = done.send(summary::transcript_tail_message(
+                &reader_path,
+                summary::TRANSCRIPT_TAIL_BYTES,
+            ));
+        });
+        let outcome = result.recv_timeout(Duration::from_secs(5));
+        if outcome.is_err() {
+            // Release the blocked reader so the thread ends, then fail.
+            let _ = std::fs::OpenOptions::new()
+                .read(true)
+                .write(true)
+                .open(&path);
+        }
+        assert_eq!(outcome, Ok(None), "the FIFO read blocked or returned text");
+    }
 }
 
 mod endpoint {

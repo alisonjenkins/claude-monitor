@@ -2,8 +2,9 @@
 //! session itself, and the on-demand model-written summary kept apart from it
 //! (FR-017, FR-017a, FR-020).
 
-use std::fs::File;
+use std::fs::OpenOptions;
 use std::io::{Read, Seek, SeekFrom, Write};
+use std::os::unix::fs::OpenOptionsExt;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream};
 use std::path::Path;
 use std::time::Duration;
@@ -21,9 +22,17 @@ pub const TRANSCRIPT_TAIL_BYTES: u64 = 256 * 1024;
 /// `path`, text only and untouched. `None` when there is none in that window or
 /// the file cannot be read.
 pub fn transcript_tail_message(path: &Path, max_bytes: u64) -> Option<String> {
-    let mut file = File::open(path).ok()?;
+    // Opening a FIFO blocks until a writer appears, so refuse before opening.
+    if !std::fs::metadata(path).ok()?.is_file() {
+        return None;
+    }
+    // O_NONBLOCK covers the file being swapped for a FIFO after the check.
+    let mut file = OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NONBLOCK)
+        .open(path)
+        .ok()?;
     let meta = file.metadata().ok()?;
-    // A FIFO or device would block the hook.
     if !meta.is_file() {
         return None;
     }
