@@ -27,11 +27,12 @@ mod reconcile;
 pub(crate) mod respawn;
 pub(crate) mod restore;
 mod serve;
+mod serve_admin;
 pub(crate) mod show;
 mod summarize;
 mod watch;
 
-pub use command::{Command, CommandInfo, ProjectAction};
+pub use command::{Command, CommandInfo, ProjectAction, WebAction};
 #[cfg(any(feature = "tui", feature = "web"))]
 pub(crate) use list::age;
 pub use output::Output;
@@ -175,6 +176,11 @@ enum Commands {
         #[arg(long, value_name = "ADDR", value_parser = serve::loopback_addr)]
         bind: Option<IpAddr>,
     },
+    /// Set up and reach the web view's TLS and login
+    Web {
+        #[command(subcommand)]
+        action: WebCommands,
+    },
     /// Show a session's plan progress and the file it comes from
     #[command(args_conflicts_with_subcommands = true, arg_required_else_help = true)]
     Progress {
@@ -296,6 +302,16 @@ enum ProgressAction {
         /// Source other than a file: agent_todo or none
         #[arg(long, value_name = "SOURCE")]
         source: Option<String>,
+    },
+}
+
+#[derive(Subcommand)]
+enum WebCommands {
+    /// Show where the CA certificate is and how to trust it once in a browser
+    Ca {
+        /// Write the certificate (PEM) to stdout instead
+        #[arg(long)]
+        print: bool,
     },
 }
 
@@ -514,6 +530,11 @@ impl Cli {
                 port: *port,
                 bind: *bind,
             },
+            Some(Commands::Web { action }) => Command::Web {
+                action: match action {
+                    WebCommands::Ca { print } => WebAction::Ca { print: *print },
+                },
+            },
         }
     }
 }
@@ -669,6 +690,7 @@ pub fn run_with(
         } => link::run_unlink(env, state_dir, &owner, &cortex),
         Command::LinksCheck => link::run_links_check(env, state_dir),
         Command::Serve { port, bind } => serve::run(env, state_dir, port, bind),
+        Command::Web { action } => serve_admin::run(state_dir, action),
         Command::Hook { agent, event } => {
             hook::run(agent.as_deref(), event.as_deref(), state_dir, env);
             Ok(Output::empty())

@@ -12,6 +12,13 @@ pub enum ProjectAction {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub enum WebAction {
+    /// Show where the install's CA certificate is and how to trust it; with
+    /// `print`, write the PEM to stdout instead.
+    Ca { print: bool },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Command {
     /// No subcommand: the interactive overview.
     Dashboard,
@@ -101,6 +108,10 @@ pub enum Command {
         port: Option<u16>,
         /// A loopback address; anything else is refused when parsing.
         bind: Option<IpAddr>,
+    },
+    /// Helpers for the web view's TLS and login: `web ca`.
+    Web {
+        action: WebAction,
     },
     Link {
         owner: String,
@@ -332,6 +343,14 @@ const ALL: &[CommandInfo] = &[
         },
     },
     CommandInfo {
+        name: "web",
+        tui_action: None,
+        implemented_by: "T117",
+        example: || Command::Web {
+            action: WebAction::Ca { print: false },
+        },
+    },
+    CommandInfo {
         name: "link",
         tui_action: Some("link"),
         implemented_by: "T100",
@@ -410,6 +429,7 @@ impl Command {
             Self::ProgressBind { .. } => "progress-bind",
             Self::Summarize { .. } => "summarize",
             Self::Serve { .. } => "serve",
+            Self::Web { .. } => "web",
             Self::Link { .. } => "link",
             Self::Unlink { .. } => "unlink",
             Self::ExportCortexiphan { .. } => "export-cortexiphan",
@@ -462,8 +482,8 @@ mod tests {
                 "{name}"
             );
         }
-        // 25 contract commands, `unlink`, and the no-subcommand dashboard.
-        assert_eq!(names.len(), 27);
+        // 25 contract commands, `unlink`, `web`, and the no-subcommand dashboard.
+        assert_eq!(names.len(), 28);
     }
 
     #[test]

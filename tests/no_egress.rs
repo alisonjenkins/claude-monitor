@@ -113,6 +113,7 @@ fn argv(name: &str) -> Option<Vec<&'static str>> {
         "export-cortexiphan" => &["export", "cortexiphan", "--include-text"],
         "links-check" => &["links", "check"],
         "migrate" => &["migrate"],
+        "web" => &["web", "ca"],
         "delete" => &["delete", "sess-a", "--yes"],
         other => panic!("{other} is a new command: give it an argv in no_egress.rs"),
     };

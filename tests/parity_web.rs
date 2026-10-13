@@ -46,6 +46,10 @@ const EXCLUDED: &[(&str, &str)] = &[
     ),
     ("serve", "starts the web view itself"),
     (
+        "web",
+        "sets up the web view's CA, login and client certificate from a terminal",
+    ),
+    (
         "export-cortexiphan",
         "writes a file for another system, CLI only",
     ),

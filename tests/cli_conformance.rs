@@ -223,6 +223,28 @@ mod serve {
     }
 }
 
+/// `web ca` writes the CA into the state directory, so the conformance run
+/// uses a temporary one.
+#[cfg(feature = "web")]
+mod web {
+    use super::*;
+    use claude_monitor::cli::run_in;
+
+    #[test]
+    fn implemented() {
+        let state = tempfile::tempdir().unwrap();
+        let info = Command::all()
+            .iter()
+            .find(|info| info.name == "web")
+            .unwrap();
+        assert!(!info.is_interactive());
+        let fake = FakeEnv::new();
+        let result = run_in((info.example)(), &fake.env, Some(state.path()));
+        assert!(result.is_ok(), "{result:?}");
+        assert_contract("web", &result);
+    }
+}
+
 mod boot_check {
     use super::*;
     use claude_monitor::cli::run_in;
@@ -402,7 +424,8 @@ fn every_command_has_generated_tests_with_the_right_task() {
             "hook" | "dashboard" | "migrate" | "list" | "show" | "reconcile" | "watch"
             | "boot-check" | "restore" | "respawn" | "summarize" | "progress-bind" | "project"
             | "group" | "note" | "park" | "unpark" | "dismiss" | "undismiss" | "done"
-            | "undone" | "export-cortexiphan" | "link" | "unlink" | "links-check" | "serve" => {}
+            | "undone" | "export-cortexiphan" | "link" | "unlink" | "links-check" | "serve"
+            | "web" => {}
             name => {
                 let reason = GENERATED
                     .iter()
@@ -417,7 +440,7 @@ fn every_command_has_generated_tests_with_the_right_task() {
             }
         }
     }
-    assert_eq!(GENERATED.len() + 26, Command::all().len());
+    assert_eq!(GENERATED.len() + 27, Command::all().len());
 }
 
 #[test]
