@@ -130,6 +130,30 @@ fn json_has_the_bound_progress_exactly_as_the_progress_command_emits_it() {
 }
 
 #[test]
+fn show_names_the_recorded_tmux_session_and_window() {
+    let rig = rig();
+    rig.session("s1", "main");
+    let mut session = rig.store().get_session("s1").unwrap().unwrap();
+    session.tmux_session = Some("my project".to_owned());
+    session.tmux_window_name = Some("api build".to_owned());
+    session.tmux_window_index = Some("3".to_owned());
+    rig.store().upsert_session(&session).unwrap();
+
+    let json = rig.show_json("s1");
+    let text = rig.show_text("s1");
+
+    assert_eq!(json["tmux_session"], "my project");
+    assert_eq!(json["tmux_window_name"], "api build");
+    assert_eq!(json["tmux_window_index"], "3");
+    assert!(
+        text.lines().any(|l| l.starts_with("tmux")
+            && l.contains("my project:api build")
+            && l.contains('3')),
+        "{text}"
+    );
+}
+
+#[test]
 fn json_keeps_verbatim_and_generated_summaries_apart() {
     let rig = bound_rig();
     rig.store()

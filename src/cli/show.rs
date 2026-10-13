@@ -11,7 +11,7 @@ use super::output::strip_control;
 use super::Output;
 use crate::env::Env;
 use crate::error::Error;
-use crate::model::{Author, Note, OwnerKind};
+use crate::model::{Author, Note, OwnerKind, Session};
 use crate::store::queries::OverviewEntry;
 use crate::store::Store;
 
@@ -88,8 +88,10 @@ pub fn run(env: &Env, state_dir: Option<&Path>, id: &str) -> Result<Output, Erro
         .as_ref()
         .map(|s| (s.resumed_from.clone(), s.forked_from.clone()))
         .unwrap_or_default();
+    let tmux = session.as_ref().and_then(tmux_placement);
     let mut text = detail_text(
         &entry,
+        tmux.as_deref(),
         resumed_from.as_deref(),
         forked_from.as_deref(),
         &resumed_by,
@@ -118,8 +120,23 @@ pub fn run(env: &Env, state_dir: Option<&Path>, id: &str) -> Result<Output, Erro
     Ok(Output::Dual { text, json })
 }
 
+/// `session:window-name (window N)` as last recorded; `None` when no tmux
+/// session was ever recorded.
+fn tmux_placement(session: &Session) -> Option<String> {
+    let name = session.tmux_session.as_deref()?;
+    let mut text = format!(
+        "{name}:{}",
+        session.tmux_window_name.as_deref().unwrap_or_default()
+    );
+    if let Some(index) = &session.tmux_window_index {
+        text.push_str(&format!(" (window {index})"));
+    }
+    Some(text)
+}
+
 fn detail_text(
     entry: &OverviewEntry,
+    tmux: Option<&str>,
     resumed_from: Option<&str>,
     forked_from: Option<&str>,
     resumed_by: &[String],
@@ -152,6 +169,7 @@ fn detail_text(
     put("repo", entry.repo.as_deref());
     put("branch", entry.branch.as_deref());
     put("cwd", Some(&entry.cwd));
+    put("tmux", tmux);
     put("project", entry.project.as_deref());
     put("last active", Some(&active));
     put("task", entry.task_description.as_deref());
