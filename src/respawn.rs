@@ -1056,11 +1056,14 @@ pub fn expand_template_in(
             }
             continue;
         }
-        words.push(
-            word.replace("{session_id}", &session.agent_session_id)
-                .replace("{cwd}", &session.cwd)
-                .replace("{name}", &name),
-        );
+        words.push(substitute(
+            &word,
+            &[
+                ("{session_id}", &session.agent_session_id),
+                ("{cwd}", &session.cwd),
+                ("{name}", &name),
+            ],
+        ));
     }
     let mut words = words.into_iter();
     let program = words.next().ok_or(TemplateError::Empty)?;
@@ -1069,6 +1072,29 @@ pub fn expand_template_in(
         args: words.collect(),
         uses_worktree_args,
     })
+}
+
+/// Replace each placeholder of `text` in one pass, so a placeholder written
+/// inside a substituted value stays literal.
+fn substitute(text: &str, values: &[(&str, &str)]) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(c) = rest.chars().next() {
+        match values
+            .iter()
+            .find_map(|(placeholder, value)| Some((rest.strip_prefix(placeholder)?, value)))
+        {
+            Some((after, value)) => {
+                out.push_str(value);
+                rest = after;
+            }
+            None => {
+                out.push(c);
+                rest = rest.get(c.len_utf8()..).unwrap_or_default();
+            }
+        }
+    }
+    out
 }
 
 /// What `{name}` stands for: the branch, else the directory's last component,

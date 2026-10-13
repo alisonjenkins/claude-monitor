@@ -9,7 +9,8 @@ use claude_monitor::agents::{
 };
 use claude_monitor::model::{Session, State};
 use claude_monitor::respawn::{
-    plan_respawn, plan_respawn_with, Options, PanePlacement, Plan, Refusal, RefusalCode,
+    expand_template, plan_respawn, plan_respawn_with, Options, PanePlacement, Plan, Refusal,
+    RefusalCode,
 };
 use claude_monitor::testing::FakeEnv;
 
@@ -190,6 +191,16 @@ fn launcher_template_fills_session_id_cwd_and_name() {
         plan.launch.args,
         ["--dir", CWD, "--name", "feature", "--", "claude", "--resume", "agent-1"]
     );
+}
+
+#[test]
+fn a_placeholder_written_inside_a_value_is_not_expanded_again() {
+    let mut s = session(State::Interrupted);
+    s.cwd = "/w/{name}".to_owned();
+    s.agent_session_id = "{cwd}".to_owned();
+    let (program, args) = expand_template("wrap {session_id} {cwd} {name}", &s).unwrap();
+    assert_eq!(program, "wrap");
+    assert_eq!(args, ["{cwd}", "/w/{name}", "feature"]);
 }
 
 #[test]
