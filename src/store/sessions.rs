@@ -6,7 +6,7 @@ use crate::model::{Session, State};
 const COLUMNS: &str = "id, agent_kind, agent_session_id, resumed_from, forked_from, repo_root, \
      cwd, branch, worktree_exists, state, end_reason, task_description, left_off, pid, \
      pid_start, boot_id, tmux_pane, started_at, last_activity_at, state_since, project_id, \
-     parked, dismissed, done_at";
+     parked, dismissed, done_at, tmux_session, tmux_window_name, tmux_window_index";
 
 const END_REASON_CLEAR: &str = "clear";
 /// Bound on how far `chain_head` walks, so a corrupt cycle cannot loop forever.
@@ -97,6 +97,9 @@ fn session_from_row(row: &Row<'_>) -> rusqlite::Result<Session> {
     session.parked = row.get(21)?;
     session.dismissed = row.get(22)?;
     session.done_at = row.get(23)?;
+    session.tmux_session = row.get(24)?;
+    session.tmux_window_name = row.get(25)?;
+    session.tmux_window_index = row.get(26)?;
     Ok(session)
 }
 
@@ -117,7 +120,7 @@ impl Store {
             .prepare_cached(&format!(
                 "INSERT INTO sessions ({COLUMNS}) VALUES \
                  (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, \
-                 ?18, ?19, ?20, ?21, ?22, ?23, ?24) \
+                 ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27) \
                  ON CONFLICT(id) DO UPDATE SET \
                  agent_kind = excluded.agent_kind, agent_session_id = excluded.agent_session_id, \
                  resumed_from = excluded.resumed_from, forked_from = excluded.forked_from, \
@@ -129,7 +132,9 @@ impl Store {
                  started_at = excluded.started_at, last_activity_at = excluded.last_activity_at, \
                  state_since = excluded.state_since, project_id = excluded.project_id, \
                  parked = excluded.parked, dismissed = excluded.dismissed, \
-                 done_at = excluded.done_at"
+                 done_at = excluded.done_at, tmux_session = excluded.tmux_session, \
+                 tmux_window_name = excluded.tmux_window_name, \
+                 tmux_window_index = excluded.tmux_window_index"
             ))
             .and_then(|mut stmt| {
                 stmt.execute(params![
@@ -157,6 +162,9 @@ impl Store {
                     session.parked,
                     session.dismissed,
                     session.done_at,
+                    session.tmux_session,
+                    session.tmux_window_name,
+                    session.tmux_window_index,
                 ])
             })
             .map(|_| ())

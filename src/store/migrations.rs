@@ -5,7 +5,7 @@ use rusqlite::{Connection, TransactionBehavior};
 use super::schema;
 use super::StoreError;
 
-pub const SCHEMA_VERSION: u32 = 2;
+pub const SCHEMA_VERSION: u32 = 3;
 
 struct Migration {
     version: u32,
@@ -21,6 +21,10 @@ const MIGRATIONS: &[Migration] = &[
     Migration {
         version: 2,
         sql: schema::V2,
+    },
+    Migration {
+        version: 3,
+        sql: schema::V3,
     },
 ];
 

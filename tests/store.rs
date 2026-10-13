@@ -5,6 +5,7 @@ use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
+use claude_monitor::model::Session;
 use claude_monitor::store::{
     resolve_state_dir, StateDirEnv, Store, StoreError, StoreOptions, SCHEMA_VERSION,
 };
@@ -132,7 +133,7 @@ fn reopening_is_idempotent_and_keeps_rows() {
 }
 
 #[test]
-fn recorded_v1_database_migrates_to_v2_without_data_loss() {
+fn recorded_v1_database_migrates_to_current_without_data_loss() {
     let dir = TempDir::new().unwrap();
     let path = db_path(&dir);
     let raw = Connection::open(&path).unwrap();
@@ -162,7 +163,7 @@ fn recorded_v1_database_migrates_to_v2_without_data_loss() {
     let mut want: Vec<String> = expected.into_iter().map(|(name, _)| name).collect();
     want.sort();
     assert_eq!(after, want);
-    assert_eq!(user_version(store.connection()), 2);
+    assert_eq!(user_version(store.connection()), SCHEMA_VERSION);
     let events = store.events_since(0, 10).unwrap();
     assert_eq!(
         events
@@ -184,6 +185,37 @@ fn recorded_v1_database_migrates_to_v2_without_data_loss() {
         )
         .unwrap();
     assert_eq!((name.as_str(), state.as_str()), ("recorded", "idle"));
+}
+
+#[test]
+fn a_v1_database_gains_empty_tmux_placement_columns() {
+    let dir = TempDir::new().unwrap();
+    let path = db_path(&dir);
+    let raw = Connection::open(&path).unwrap();
+    raw.execute_batch(V1_FIXTURE).unwrap();
+    drop(raw);
+
+    let store = open(&path);
+
+    let session = store.get_session("s-1").unwrap().unwrap();
+    assert_eq!(session.tmux_session, None);
+    assert_eq!(session.tmux_window_name, None);
+    assert_eq!(session.tmux_window_index, None);
+    assert_eq!(user_version(store.connection()), SCHEMA_VERSION);
+}
+
+#[test]
+fn tmux_placement_round_trips_through_the_store() {
+    let dir = TempDir::new().unwrap();
+    let store = open(&db_path(&dir));
+    let mut session = Session::new("s-1", "claude", "conv-1", "/work", "2026-10-12T14:03:22Z");
+    session.tmux_session = Some("my project".to_owned());
+    session.tmux_window_name = Some("api: build".to_owned());
+    session.tmux_window_index = Some("3".to_owned());
+
+    store.upsert_session(&session).unwrap();
+
+    assert_eq!(store.get_session("s-1").unwrap().unwrap(), session);
 }
 
 #[test]

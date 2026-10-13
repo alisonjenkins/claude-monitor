@@ -1,3 +1,9 @@
+pub(super) const V3: &str = "
+ALTER TABLE sessions ADD COLUMN tmux_session TEXT;
+ALTER TABLE sessions ADD COLUMN tmux_window_name TEXT;
+ALTER TABLE sessions ADD COLUMN tmux_window_index TEXT;
+";
+
 pub(super) const V2: &str = "
 CREATE TRIGGER events_no_update BEFORE UPDATE ON events
 BEGIN

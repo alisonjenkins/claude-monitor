@@ -83,6 +83,11 @@ pub struct Session {
     pub pid_start: Option<u64>,
     pub boot_id: Option<String>,
     pub tmux_pane: Option<String>,
+    /// Where the pane was last seen: kept after the pane is gone so a
+    /// respawn can put the session back in the same tmux session and window.
+    pub tmux_session: Option<String>,
+    pub tmux_window_name: Option<String>,
+    pub tmux_window_index: Option<String>,
     pub started_at: String,
     pub last_activity_at: String,
     pub state_since: String,
@@ -113,6 +118,9 @@ impl Session {
             pid_start: None,
             boot_id: None,
             tmux_pane: None,
+            tmux_session: None,
+            tmux_window_name: None,
+            tmux_window_index: None,
             started_at: at.to_owned(),
             last_activity_at: at.to_owned(),
             state_since: at.to_owned(),
