@@ -26,3 +26,4 @@ pub mod tui;
 pub mod watch;
 #[cfg(feature = "web")]
 pub mod web;
+pub mod worktree;
