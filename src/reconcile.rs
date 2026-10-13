@@ -166,37 +166,35 @@ pub fn reconcile_with_registry(
     now: &str,
     live_ids: Option<&LiveRegistryIds>,
 ) -> Result<ReconcileReport, ReconcileError> {
-    let rows = store.list_sessions_lenient()?;
-    let mut report = ReconcileReport::default();
-    let mut sessions = Vec::new();
-    for row in rows {
-        match row {
-            SessionRow::Readable(session) if in_scope(&scope, &session) => sessions.push(*session),
-            // A corrupt row has no readable pane, so only `All` and its own id reach it.
-            SessionRow::Corrupt { id, error }
-                if match &scope {
-                    Scope::All => true,
-                    Scope::Session(wanted) => *wanted == id,
-                    Scope::Pane(_) => false,
-                } =>
-            {
-                report.degraded.push(DegradedSession { id, error });
-            }
-            SessionRow::Readable(_) | SessionRow::Corrupt { .. } => {}
-        }
-    }
-
+    // Probe before taking the write lock: tmux and a stat on a hung mount can
+    // block, and a snapshot written back after the probes would revert a hook
+    // or viewer change that landed meanwhile.
+    let (snapshot, _) = in_scope_sessions(store, &scope)?;
     let boot_id = env.boot_id.current().ok();
-    let panes = live_panes(env, &sessions);
+    let panes = live_panes(env, &snapshot);
+    let probes: HashMap<String, Probe> = snapshot
+        .iter()
+        .map(|s| (s.id.clone(), Probe::gather(env, s, boot_id.as_deref())))
+        .collect();
+
     let tx = Transaction::new_unchecked(store.connection(), TransactionBehavior::Immediate)
         .map_err(ReconcileError::Begin)?;
+    let (sessions, degraded) = in_scope_sessions(store, &scope)?;
+    let mut report = ReconcileReport {
+        degraded,
+        ..ReconcileReport::default()
+    };
     for session in sessions {
+        // Created since the probes ran: the next pass sees it.
+        let Some(probe) = probes.get(&session.id) else {
+            continue;
+        };
         report.checked = report.checked.saturating_add(1);
-        let mut observation = observe(env, &session, boot_id.as_deref(), panes.as_ref());
+        let mut observation = observe(&session, boot_id.as_deref(), panes.as_ref(), probe);
         observation.registry_missing =
             live_ids.is_some_and(|ids| missing_from_registry(&session, ids, now));
         let id = session.id.clone();
-        match apply(store, env, session, &observation, panes.as_ref(), now) {
+        match apply(store, session, &observation, probe, panes.as_ref(), now) {
             Ok(Outcome::Unchanged) => report.unchanged = report.unchanged.saturating_add(1),
             Ok(Outcome::Interrupted) => {
                 report.interrupted = report.interrupted.saturating_add(1);
@@ -210,6 +208,93 @@ pub fn reconcile_with_registry(
     }
     tx.commit().map_err(ReconcileError::Commit)?;
     Ok(report)
+}
+
+/// The readable sessions in `scope`, and the unreadable rows it reaches.
+fn in_scope_sessions(
+    store: &Store,
+    scope: &Scope,
+) -> Result<(Vec<Session>, Vec<DegradedSession>), ReconcileError> {
+    let mut sessions = Vec::new();
+    let mut degraded = Vec::new();
+    for row in store.list_sessions_lenient()? {
+        match row {
+            SessionRow::Readable(session) if in_scope(scope, &session) => sessions.push(*session),
+            // A corrupt row has no readable pane, so only `All` and its own id reach it.
+            SessionRow::Corrupt { id, error }
+                if match scope {
+                    Scope::All => true,
+                    Scope::Session(wanted) => *wanted == id,
+                    Scope::Pane(_) => false,
+                } =>
+            {
+                degraded.push(DegradedSession { id, error });
+            }
+            SessionRow::Readable(_) | SessionRow::Corrupt { .. } => {}
+        }
+    }
+    Ok((sessions, degraded))
+}
+
+/// What the slow providers said about one session before the write lock was
+/// taken; valid only for the pid, cwd and pane it was gathered for.
+struct Probe {
+    pid: Option<(u32, u64)>,
+    process_alive: Option<bool>,
+    cwd: String,
+    worktree_exists: bool,
+    tmux_pane: Option<String>,
+}
+
+impl Probe {
+    fn gather(env: &Env, session: &Session, boot_id: Option<&str>) -> Self {
+        let boot_changed = matches!(
+            (session.boot_id.as_deref(), boot_id),
+            (Some(recorded), Some(current)) if recorded != current
+        );
+        let pid = session.pid.zip(session.pid_start);
+        let process_alive = match pid {
+            Some((pid, start)) if !boot_changed => Some(env.processes.is_alive(pid, start)),
+            _ => None,
+        };
+        Self {
+            pid,
+            process_alive,
+            cwd: session.cwd.clone(),
+            worktree_exists: session.cwd.is_empty() || env.fs.exists(Path::new(&session.cwd)),
+            tmux_pane: session.tmux_pane.clone(),
+        }
+    }
+
+    /// The pane listing was taken for the pane the snapshot recorded; a hook
+    /// may have recorded another since, which the listing cannot vouch for.
+    fn panes_for<'p>(
+        &self,
+        session: &Session,
+        panes: Option<&'p HashMap<String, PaneLocation>>,
+    ) -> Option<&'p HashMap<String, PaneLocation>> {
+        if self.tmux_pane == session.tmux_pane {
+            panes
+        } else {
+            None
+        }
+    }
+
+    /// A hook may have recorded another pid since; then nothing is known.
+    fn process_alive_for(&self, session: &Session) -> Option<bool> {
+        (self.pid == session.pid.zip(session.pid_start))
+            .then_some(self.process_alive)
+            .flatten()
+    }
+
+    /// A changed cwd keeps the stored value until the next pass.
+    fn worktree_exists_for(&self, session: &Session) -> bool {
+        if self.cwd == session.cwd {
+            self.worktree_exists
+        } else {
+            session.worktree_exists
+        }
+    }
 }
 
 fn in_scope(scope: &Scope, session: &Session) -> bool {
@@ -235,20 +320,13 @@ fn live_panes(env: &Env, sessions: &[Session]) -> Option<HashMap<String, PaneLoc
 /// Gathers what [`decide`] needs; a boot change settles the question, so no
 /// process is probed then.
 fn observe<'a>(
-    env: &Env,
     session: &Session,
     boot_id: Option<&'a str>,
     panes: Option<&HashMap<String, PaneLocation>>,
+    probe: &Probe,
 ) -> Observation<'a> {
-    let boot_changed = matches!(
-        (session.boot_id.as_deref(), boot_id),
-        (Some(recorded), Some(current)) if recorded != current
-    );
-    let process_alive = match (session.pid, session.pid_start) {
-        (Some(pid), Some(start)) if !boot_changed => Some(env.processes.is_alive(pid, start)),
-        _ => None,
-    };
-    let pane_exists = match (&session.tmux_pane, panes) {
+    let process_alive = probe.process_alive_for(session);
+    let pane_exists = match (&session.tmux_pane, probe.panes_for(session, panes)) {
         (Some(pane), Some(panes)) => Some(panes.contains_key(pane)),
         _ => None,
     };
@@ -284,9 +362,9 @@ enum Outcome {
 
 fn apply(
     store: &Store,
-    env: &Env,
     mut session: Session,
     observation: &Observation<'_>,
+    probe: &Probe,
     panes: Option<&HashMap<String, PaneLocation>>,
     now: &str,
 ) -> Result<Outcome, RowError> {
@@ -298,11 +376,12 @@ fn apply(
     if let Some(reason) = reason {
         session.reconcile(reason.liveness(), now);
     }
-    let worktree_exists = session.cwd.is_empty() || env.fs.exists(Path::new(&session.cwd));
+    let worktree_exists = probe.worktree_exists_for(&session);
     let worktree_changed = worktree_exists != session.worktree_exists;
     session.worktree_exists = worktree_exists;
     // A pane id only names this session's pane while the session is live: after
     // a reboot tmux reuses the ids. A vanished pane leaves the old placement.
+    let panes = probe.panes_for(&session, panes);
     let placement_changed = reason.is_none()
         && session.state.is_active()
         && session
@@ -353,6 +432,7 @@ fn apply(
 mod tests {
     #![allow(clippy::unwrap_used, clippy::expect_used)]
     use super::*;
+    use std::sync::Arc;
 
     fn session(state: State) -> Session {
         let mut s = Session::new("s", "claude", "a", "/w", "2026-10-12T00:00:00Z");
@@ -505,6 +585,149 @@ mod tests {
         s.pid_start = None;
         s.tmux_pane = Some("%1".to_owned());
         assert_eq!(decide(&s, &gone), Some(Reason::PaneGone));
+    }
+
+    /// Runs `during` the first time the pass probes a process, i.e. before it
+    /// holds the write lock.
+    struct HookedProcesses {
+        inner: Arc<crate::testing::FakeProcesses>,
+        during: Box<dyn Fn() + Send + Sync>,
+    }
+
+    impl crate::env::Processes for HookedProcesses {
+        fn is_alive(&self, pid: u32, start_time: u64) -> bool {
+            (self.during)();
+            self.inner.is_alive(pid, start_time)
+        }
+
+        fn start_time(&self, pid: u32) -> Result<Option<u64>, crate::env::EnvError> {
+            self.inner.start_time(pid)
+        }
+    }
+
+    #[test]
+    fn a_change_landing_during_the_probes_is_not_reverted() {
+        use crate::store::StoreOptions;
+
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open_in_dir(dir.path(), &StoreOptions::default()).unwrap();
+        let other_dir = dir.path().to_owned();
+        let mut idle = session(State::Idle);
+        idle.cwd = "/gone".to_owned();
+        store.upsert_session(&idle).unwrap();
+
+        let fake = crate::testing::FakeEnv::new();
+        fake.processes.spawn(10, 5);
+        let mut env = fake.env.clone();
+        env.processes = Arc::new(HookedProcesses {
+            inner: fake.processes.clone(),
+            during: Box::new(move || {
+                let other = Store::open_in_dir(&other_dir, &StoreOptions::default()).unwrap();
+                let mut working = other.get_session("s").unwrap().unwrap();
+                if working.state != State::Working {
+                    working.state = State::Working;
+                    other.upsert_session(&working).unwrap();
+                }
+            }),
+        });
+
+        let report =
+            reconcile_with_registry(&store, &env, Scope::All, "2026-10-12T01:00:00Z", None)
+                .unwrap();
+
+        let after = store.get_session("s").unwrap().unwrap();
+        assert_eq!(after.state, State::Working, "{report:?}");
+        assert!(!after.worktree_exists);
+    }
+
+    /// Runs `during` every time the pass stats a path, which happens after the
+    /// pane listing and before the write lock.
+    struct HookedFs {
+        inner: Arc<dyn crate::env::Fs>,
+        during: Box<dyn Fn() + Send + Sync>,
+    }
+
+    impl crate::env::Fs for HookedFs {
+        fn read_to_string(&self, path: &Path) -> Result<String, crate::env::EnvError> {
+            self.inner.read_to_string(path)
+        }
+
+        fn exists(&self, path: &Path) -> bool {
+            (self.during)();
+            self.inner.exists(path)
+        }
+
+        fn list_dir(&self, path: &Path) -> Result<Vec<std::path::PathBuf>, crate::env::EnvError> {
+            self.inner.list_dir(path)
+        }
+
+        fn read_link(&self, path: &Path) -> Result<std::path::PathBuf, crate::env::EnvError> {
+            self.inner.read_link(path)
+        }
+
+        fn metadata(&self, path: &Path) -> Result<crate::env::FileMeta, crate::env::EnvError> {
+            self.inner.metadata(path)
+        }
+
+        fn read_range(
+            &self,
+            path: &Path,
+            offset: u64,
+            max_len: usize,
+        ) -> Result<Vec<u8>, crate::env::EnvError> {
+            self.inner.read_range(path, offset, max_len)
+        }
+    }
+
+    #[test]
+    fn a_pane_recorded_after_the_listing_is_not_judged_gone() {
+        use crate::store::StoreOptions;
+
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open_in_dir(dir.path(), &StoreOptions::default()).unwrap();
+        let other_dir = dir.path().to_owned();
+        let mut bare = session(State::Idle);
+        bare.pid = None;
+        bare.pid_start = None;
+        store.upsert_session(&bare).unwrap();
+        let mut paned = session(State::Idle);
+        paned.id = "t".to_owned();
+        paned.agent_session_id = "t".to_owned();
+        paned.pid = None;
+        paned.pid_start = None;
+        paned.tmux_pane = Some("%1".to_owned());
+        store.upsert_session(&paned).unwrap();
+
+        let fake = crate::testing::FakeEnv::new();
+        fake.tmux.add_pane(
+            "%1",
+            PaneLocation {
+                session_name: "main".to_owned(),
+                window_name: "w".to_owned(),
+                window_index: "0".to_owned(),
+                pane_index: "0".to_owned(),
+                window_panes: "1".to_owned(),
+                window_layout: String::new(),
+            },
+        );
+        let mut env = fake.env.clone();
+        env.fs = Arc::new(HookedFs {
+            inner: fake.env.fs.clone(),
+            during: Box::new(move || {
+                let other = Store::open_in_dir(&other_dir, &StoreOptions::default()).unwrap();
+                let mut s = other.get_session("s").unwrap().unwrap();
+                if s.tmux_pane.is_none() {
+                    s.tmux_pane = Some("%9".to_owned());
+                    other.upsert_session(&s).unwrap();
+                }
+            }),
+        });
+
+        reconcile_with_registry(&store, &env, Scope::All, "2026-10-12T01:00:00Z", None).unwrap();
+
+        let after = store.get_session("s").unwrap().unwrap();
+        assert_eq!(after.state, State::Idle);
+        assert_eq!(after.tmux_pane.as_deref(), Some("%9"));
     }
 
     #[test]
