@@ -423,7 +423,7 @@ fn open(store: &Store, env: &Env, plan: &Plan, now: &str, target: Open<'_>) -> O
             first_pane,
             window_id,
         } => SpawnedWindow {
-            pane_id: env.tmux.split_pane(first_pane, &plan.launch.cwd, &argv)?,
+            pane_id: split_or_retile(env, first_pane, &plan.launch.cwd, &argv)?,
             window_id: window_id.to_owned(),
         },
     };
@@ -465,6 +465,26 @@ fn open(store: &Store, env: &Env, plan: &Plan, now: &str, target: Open<'_>) -> O
         window_id: window.window_id,
         request_id: request.id,
     })
+}
+
+/// Split `first_pane`, and when tmux has no room left in it, tile the window
+/// and split once more. Every split halves the first pane, so a default
+/// 80x24 detached window runs out of room after a few panes while the window
+/// as a whole still has plenty.
+fn split_or_retile(
+    env: &Env,
+    first_pane: &str,
+    cwd: &Path,
+    argv: &[String],
+) -> Result<String, EnvError> {
+    match env.tmux.split_pane(first_pane, cwd, argv) {
+        Ok(pane) => Ok(pane),
+        Err(_) => {
+            // A refused layout only means the retry below fails with its own error.
+            let _ = env.tmux.select_layout(first_pane, TILED);
+            env.tmux.split_pane(first_pane, cwd, argv)
+        }
+    }
 }
 
 /// Why a spawn that was planned did not happen or finish.

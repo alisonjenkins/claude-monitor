@@ -416,10 +416,19 @@ fn a_failed_split_refuses_that_pane_and_still_shapes_what_opened() {
             Item::Started(_) => panic!("the split should have failed"),
         }
     }
-    assert!(!rig
-        .calls()
-        .iter()
-        .any(|call| matches!(call, TmuxCall::SelectLayout { .. })));
+    let first = started(&items[0]).started.pane_id.clone();
+    assert_eq!(
+        rig.calls(),
+        [
+            spawn("work", "api", "a"),
+            split(&first, "b"),
+            layout(&first, "tiled"),
+            split(&first, "b"),
+            split(&first, "c"),
+            layout(&first, "tiled"),
+            split(&first, "c"),
+        ]
+    );
 }
 
 #[test]
