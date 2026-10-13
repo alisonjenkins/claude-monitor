@@ -20,7 +20,7 @@ use serde_json::{json, Map, Value};
 use super::pages::{self, seg};
 use super::{auth, AppState};
 use crate::cli::confirm::{self, Question};
-use crate::cli::migrate::open_viewer_store;
+use crate::cli::migrate::{open_viewer_store, store_error_message};
 use crate::cli::respawn::{plan_all, started_json, usage_error};
 use crate::cli::restore::{self, candidates};
 use crate::cli::show::{placement_hint, resolve};
@@ -72,6 +72,7 @@ pub const COMMAND_ROUTES: &[CommandRoute] = &[
     route("undismiss", "POST", "/sessions/{id}/undismiss"),
     route("park", "POST", "/projects/{id}/park"),
     route("unpark", "POST", "/projects/{id}/unpark"),
+    route("dismiss", "POST", "/restore/dismiss"),
     route("dismiss", "POST", "/projects/{id}/dismiss"),
     route("undismiss", "POST", "/projects/{id}/undismiss"),
     route("summarize", "POST", "/projects/{id}/summarize"),
@@ -433,6 +434,10 @@ pub fn router() -> Router<AppState> {
         .route("/sessions/{id}/respawn", post(respawn_one))
         .route("/respawn", post(respawn_many))
         .route("/restore", get(restore))
+        .route(
+            "/restore/dismiss",
+            get(restore_dismiss_confirmation).post(restore_dismiss),
+        )
         .route("/projects", get(projects).post(project_create))
         .route("/projects/{id}", get(project_detail).post(project_update))
         .route("/projects/{id}/note", post(project_note))
@@ -931,9 +936,21 @@ async fn confirmation(
     hidden: &[(&str, &str)],
     cancel_url: &str,
 ) -> Response {
+    let question = question_of(state, command).await;
+    present_confirmation(state, headers, question, post_url, hidden, cancel_url)
+}
+
+fn present_confirmation(
+    state: &AppState,
+    headers: &HeaderMap,
+    question: Result<Question, ApiError>,
+    post_url: &str,
+    hidden: &[(&str, &str)],
+    cancel_url: &str,
+) -> Response {
     let json = wants_json(headers);
-    let result = async {
-        let question = question_of(state, command).await?;
+    let result = (|| {
+        let question = question?;
         if json {
             return Ok(json_response(
                 StatusCode::OK,
@@ -964,9 +981,190 @@ async fn confirmation(
             pages::confirm_page(&ctx, &panel)
         };
         Ok(html_response(StatusCode::OK, page))
-    }
-    .await;
+    })();
     settle(state, json, result)
+}
+
+/// The sessions named by repeated `ids` keys in a query string.
+fn ids_in_query(uri: &Uri) -> Vec<String> {
+    let query = uri.query().unwrap_or_default();
+    Payload(form_object(query.as_bytes())).list("ids")
+}
+
+/// Full ids of the named sessions, or the first one that does not resolve; so
+/// nothing is changed when any of them is unknown.
+async fn resolve_sessions(
+    state: &AppState,
+    named: Vec<String>,
+) -> Result<Vec<SessionBrief>, ApiError> {
+    if named.is_empty() {
+        return Err(ApiError::usage("name the sessions in \"ids\""));
+    }
+    let (env, dir) = (state.env.clone(), state.state_dir.clone());
+    blocking(move || -> Result<Vec<SessionBrief>, Error> {
+        let store = open_viewer_store(&env, Some(&dir))?;
+        let mut chosen: Vec<SessionBrief> = Vec::new();
+        for key in &named {
+            let id = resolve(&store, key)?;
+            if chosen.iter().any(|brief| brief.id == id) {
+                continue;
+            }
+            let task = store
+                .get_session(&id)
+                .map_err(|e| store_error_message("read session", Some(store.path()), &e))?
+                .and_then(|s| s.task_description)
+                .unwrap_or_default();
+            chosen.push(SessionBrief { id, task });
+        }
+        Ok(chosen)
+    })
+    .await?
+    .map_err(ApiError::from)
+}
+
+/// A session as the bulk confirmation names it.
+struct SessionBrief {
+    id: String,
+    task: String,
+}
+
+/// How much of a task the bulk confirmation quotes.
+const BRIEF_TASK_CHARS: usize = 80;
+
+fn brief_line(brief: &SessionBrief) -> String {
+    let task: String = brief
+        .task
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .chars()
+        .take(BRIEF_TASK_CHARS)
+        .collect();
+    if task.is_empty() {
+        brief.id.clone()
+    } else {
+        format!("{} ({task})", brief.id)
+    }
+}
+
+async fn restore_dismiss_confirmation(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    OriginalUri(uri): OriginalUri,
+) -> Response {
+    let (question, ids) = match resolve_sessions(&state, ids_in_query(&uri)).await {
+        Ok(chosen) => {
+            let listed: Vec<String> = chosen.iter().map(brief_line).collect();
+            let action = match chosen.as_slice() {
+                [one] => format!("Dismiss session {}", one.id),
+                _ => format!("Dismiss {} sessions", chosen.len()),
+            };
+            let question = Question {
+                action,
+                consequence: format!(
+                    "{}: hidden from the default views; nothing is deleted",
+                    listed.join("; ")
+                ),
+            };
+            let ids: Vec<String> = chosen.into_iter().map(|brief| brief.id).collect();
+            (Ok(question), ids)
+        }
+        Err(error) => (Err(error), Vec::new()),
+    };
+    let hidden: Vec<(&str, &str)> = ids.iter().map(|id| ("ids", id.as_str())).collect();
+    present_confirmation(
+        &state,
+        &headers,
+        question,
+        "/restore/dismiss",
+        &hidden,
+        "/restore",
+    )
+}
+
+/// 409 `partly_dismissed`: some sessions were dismissed and some were not.
+/// The body lists both (`dismissed`, `failed` as `{session, error}`) and its
+/// `error` text, which the page shows, names both; the refresh trigger is set
+/// because the lists did change.
+fn partly_dismissed(dismissed: &[String], failed: &[(String, ApiError)]) -> Response {
+    let refused: Vec<String> = failed
+        .iter()
+        .map(|(id, error)| format!("{id} ({})", error.message))
+        .collect();
+    let message = format!(
+        "dismissed {}; could not dismiss {}",
+        dismissed.join(", "),
+        refused.join("; ")
+    );
+    let mut response = json_response(
+        StatusCode::CONFLICT,
+        &json!({
+            "ok": false,
+            "code": "partly_dismissed",
+            "error": message,
+            "dismissed": dismissed,
+            "failed": failed
+                .iter()
+                .map(|(id, error)| json!({ "session": id, "error": error.message }))
+                .collect::<Vec<_>>(),
+        }),
+    );
+    response.headers_mut().insert(
+        HeaderName::from_static("hx-trigger"),
+        HeaderValue::from_static(CHANGED),
+    );
+    response
+}
+
+/// Dismisses every chosen session it can. All dismissed: 200 with `sessions`.
+/// None dismissed: the first failure, as its own error. Some of each: 409
+/// `partly_dismissed` (see [`partly_dismissed`]), so a client can tell which
+/// ids still need attention; the dismissals that happened stay.
+async fn restore_dismiss(
+    State(state): State<AppState>,
+    body: Payload,
+) -> Result<Response, ApiError> {
+    let chosen = resolve_sessions(&state, body.list("ids")).await?;
+    if !body.flag("confirm") {
+        let listed: Vec<String> = chosen.iter().map(|brief| brief.id.clone()).collect();
+        return Err(ApiError::new(
+            StatusCode::CONFLICT,
+            "confirmation_required",
+            format!(
+                "Dismiss {}: hidden from the default views; nothing is deleted; send confirm=1 to proceed",
+                listed.join(", ")
+            ),
+        ));
+    }
+    let mut dismissed = Vec::new();
+    let mut failed: Vec<(String, ApiError)> = Vec::new();
+    for brief in chosen {
+        let outcome = run(
+            &state,
+            Command::Dismiss {
+                target: brief.id.clone(),
+                yes: true,
+            },
+        )
+        .await;
+        match outcome {
+            Ok(_) => dismissed.push(brief.id),
+            Err(error) => failed.push((brief.id, error)),
+        }
+    }
+    if dismissed.is_empty() {
+        if let Some((_, error)) = failed.into_iter().next() {
+            return Err(error);
+        }
+    } else if !failed.is_empty() {
+        return Ok(partly_dismissed(&dismissed, &failed));
+    }
+    Ok(changed(&json!({
+        "ok": true,
+        "marker": "dismissed",
+        "sessions": dismissed,
+        "message": format!("dismissed {} sessions", dismissed.len()),
+    })))
 }
 
 #[derive(Debug, Deserialize)]

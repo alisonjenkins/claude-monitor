@@ -1030,3 +1030,257 @@ mod dismiss_from_a_list_row {
         assert_eq!(html.matches("id=\"confirm-slot\"").count(), 1, "{html}");
     }
 }
+
+mod dismiss_selected_on_restore {
+    use super::*;
+
+    struct Restorable {
+        fx: Fixture,
+        rig: Rig,
+    }
+
+    impl Restorable {
+        fn session(&self, id: &str) -> claude_monitor::model::Session {
+            self.fx.store().get_session(id).unwrap().unwrap()
+        }
+    }
+
+    /// Three interrupted sessions /restore would start; `task` is the
+    /// verbatim task of the first. `None` without tmux, as the other restore
+    /// tests.
+    fn restorable(task: &str) -> Option<Restorable> {
+        let fx = Fixture::new()?;
+        for (id, dir) in [("int1", "a"), ("int2", "b"), ("int3", "c")] {
+            let mut session = fx.add_session(id, State::Interrupted, dir);
+            if id == "int1" {
+                session.task_description = Some(task.to_owned());
+                fx.save(&session);
+            }
+        }
+        let rig = Rig::start_on(&fx.state_dir, fx.env.clone());
+        Some(Restorable { fx, rig })
+    }
+
+    fn fragment(rig: &Rig, path: &str) -> Response {
+        Request::get(path)
+            .header("Cookie", rig.cookie())
+            .header("HX-Request", "true")
+            .send(rig.addr())
+    }
+
+    fn would_start(rig: &Rig) -> Vec<String> {
+        let body = Request::get("/restore")
+            .header("Cookie", rig.cookie())
+            .header("Accept", "application/json")
+            .send(rig.addr())
+            .json();
+        let mut ids: Vec<String> = body["would_start"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|item| item["session"].as_str().unwrap().to_owned())
+            .collect();
+        ids.sort();
+        ids
+    }
+
+    fn dismiss_post(rig: &Rig, form: &str) -> Response {
+        Request::new("POST", "/restore/dismiss")
+            .signed_in(rig)
+            .form_body(form)
+            .send(rig.addr())
+    }
+
+    #[test]
+    fn the_button_asks_for_the_panel_with_the_same_checkboxes_and_never_posts() {
+        let Some(web) = restorable("t") else { return };
+
+        let html = page(&web.rig, "/restore").body;
+
+        let button = between(&html, "hx-get=\"/restore/dismiss\"", ">");
+        assert!(button.contains("hx-include=\"closest form\""), "{button}");
+        assert!(button.contains("hx-target=\"#confirm-slot\""), "{button}");
+        assert!(!html.contains("hx-post=\"/restore/dismiss\""), "{html}");
+        assert!(html.contains("Restore selected"), "{html}");
+        assert!(html.contains("hx-post=\"/respawn\""), "{html}");
+    }
+
+    #[test]
+    fn the_confirmation_lists_exactly_the_chosen_sessions_and_changes_nothing() {
+        let Some(web) = restorable("t") else { return };
+
+        let response = fragment(&web.rig, "/restore/dismiss?ids=int1&ids=int3");
+
+        assert_eq!(response.status, 200, "{}", response.body);
+        let html = response.body;
+        assert!(!html.contains("<html"), "a fragment: {html}");
+        assert!(html.contains("Dismiss 2 sessions"), "{html}");
+        assert!(html.contains("int1") && html.contains("int3"), "{html}");
+        assert!(!html.contains("int2"), "{html}");
+        assert!(html.contains("hx-post=\"/restore/dismiss\""), "{html}");
+        for id in ["int1", "int3"] {
+            assert!(
+                html.contains(&format!(
+                    "<input type=\"hidden\" name=\"ids\" value=\"{id}\">"
+                )),
+                "{id}: {html}"
+            );
+        }
+        assert!(html.contains("name=\"confirm\" value=\"1\""), "{html}");
+        assert!(html.contains("href=\"/restore\""), "cancel: {html}");
+        assert_eq!(would_start(&web.rig), ["int1", "int2", "int3"]);
+    }
+
+    #[test]
+    fn hostile_task_text_stays_escaped_in_the_panel() {
+        let Some(web) = restorable("<script>alert(1)</script>") else {
+            return;
+        };
+
+        let html = fragment(&web.rig, "/restore/dismiss?ids=int1").body;
+
+        assert!(html.contains("&lt;script&gt;"), "{html}");
+        assert!(!html.contains("<script>"), "{html}");
+    }
+
+    #[test]
+    fn without_htmx_the_confirmation_is_a_whole_page() {
+        let Some(web) = restorable("t") else { return };
+
+        let html = page(&web.rig, "/restore/dismiss?ids=int1").body;
+
+        assert!(html.starts_with("<!DOCTYPE html>"), "{html}");
+        assert!(html.contains("Dismiss session int1"), "{html}");
+    }
+
+    #[test]
+    fn json_describes_the_dismissal_and_changes_nothing() {
+        let Some(web) = restorable("t") else { return };
+
+        let response = Request::get("/restore/dismiss?ids=int1&ids=int2")
+            .header("Cookie", web.rig.cookie())
+            .header("Accept", "application/json")
+            .send(web.rig.addr());
+
+        assert_eq!(response.status, 200, "{}", response.body);
+        let body = response.json();
+        assert_eq!(body["confirmation_required"], true);
+        assert_eq!(body["confirm_with"]["url"], "/restore/dismiss");
+        assert_eq!(would_start(&web.rig).len(), 3);
+    }
+
+    #[test]
+    fn posting_without_confirm_is_a_409_and_changes_nothing() {
+        let Some(web) = restorable("t") else { return };
+
+        let response = dismiss_post(&web.rig, "ids=int1&ids=int2");
+
+        assert_eq!(response.status, 409, "{}", response.body);
+        assert_eq!(response.json()["code"], "confirmation_required");
+        assert_eq!(would_start(&web.rig).len(), 3);
+    }
+
+    #[test]
+    fn posting_without_the_csrf_header_is_rejected() {
+        let Some(web) = restorable("t") else { return };
+
+        let response = Request::new("POST", "/restore/dismiss")
+            .header("Cookie", web.rig.cookie())
+            .form_body("ids=int1&confirm=1")
+            .send(web.rig.addr());
+
+        assert_eq!(response.status, 403);
+        assert_eq!(would_start(&web.rig).len(), 3);
+    }
+
+    #[test]
+    fn posting_without_a_session_is_rejected() {
+        let Some(web) = restorable("t") else { return };
+
+        let response = Request::new("POST", "/restore/dismiss")
+            .form_body("ids=int1&confirm=1")
+            .send(web.rig.addr());
+
+        assert!(
+            response.status == 401 || response.status == 403 || response.status == 302,
+            "{}",
+            response.status
+        );
+        assert_eq!(would_start(&web.rig).len(), 3);
+    }
+
+    #[test]
+    fn a_confirmed_post_dismisses_only_the_chosen_sessions() {
+        let Some(web) = restorable("t") else { return };
+
+        let response = dismiss_post(&web.rig, "ids=int1&ids=int3&confirm=1");
+
+        assert_eq!(response.status, 200, "{}", response.body);
+        assert_eq!(would_start(&web.rig), ["int2"]);
+        assert!(web.session("int1").dismissed && web.session("int3").dismissed);
+        assert!(!web.session("int2").dismissed);
+        let html = page(&web.rig, "/?include_dismissed=true").body;
+        let dismissed = section(&html, "dismissed");
+        assert!(dismissed.contains("int1") && dismissed.contains("int3"));
+        assert!(!dismissed.contains("int2"));
+    }
+
+    #[test]
+    fn a_partial_failure_names_what_was_dismissed_and_what_was_not() {
+        let Some(web) = restorable("t") else { return };
+        web.fx
+            .store()
+            .connection()
+            .execute_batch(
+                "CREATE TRIGGER refuse_int2 BEFORE UPDATE ON sessions WHEN NEW.id = 'int2' \
+                 BEGIN SELECT RAISE(ABORT, 'refused for the test'); END;",
+            )
+            .unwrap();
+
+        let response = dismiss_post(&web.rig, "ids=int1&ids=int2&ids=int3&confirm=1");
+
+        assert_eq!(response.status, 409, "{}", response.body);
+        let body = response.json();
+        assert_eq!(body["code"], "partly_dismissed");
+        assert_eq!(body["dismissed"], json!(["int1", "int3"]));
+        assert_eq!(body["failed"].as_array().unwrap().len(), 1, "{body}");
+        assert_eq!(body["failed"][0]["session"], "int2");
+        let error = body["error"].as_str().unwrap();
+        assert!(
+            error.contains("int1") && error.contains("int2") && error.contains("int3"),
+            "the page shows this text: {error}"
+        );
+        assert_eq!(
+            response.header("hx-trigger"),
+            Some("cc-changed"),
+            "the lists must refresh: {response:?}"
+        );
+        assert!(web.session("int1").dismissed && web.session("int3").dismissed);
+        assert!(!web.session("int2").dismissed);
+    }
+
+    #[test]
+    fn an_unknown_id_is_a_404_and_dismisses_nothing() {
+        let Some(web) = restorable("t") else { return };
+
+        let read = fragment(&web.rig, "/restore/dismiss?ids=int1&ids=nope");
+        let write = dismiss_post(&web.rig, "ids=int1&ids=nope&confirm=1");
+
+        assert_eq!(read.status, 404, "{}", read.body);
+        assert_eq!(write.status, 404, "{}", write.body);
+        assert!(read.body.contains("nope"), "{}", read.body);
+        assert!(write.body.contains("nope"), "{}", write.body);
+        assert!(!web.session("int1").dismissed);
+    }
+
+    #[test]
+    fn naming_no_session_is_a_usage_error() {
+        let Some(web) = restorable("t") else { return };
+
+        let read = fragment(&web.rig, "/restore/dismiss");
+        let write = dismiss_post(&web.rig, "confirm=1");
+
+        assert_eq!(read.status, 400, "{}", read.body);
+        assert_eq!(write.status, 400, "{}", write.body);
+    }
+}

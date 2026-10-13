@@ -774,6 +774,16 @@ fn confirm_button(url: &str, label: &str) -> Markup {
     }
 }
 
+/// [`confirm_button`] that sends the checked boxes of its form along.
+fn confirm_selected_button(url: &str, label: &str) -> Markup {
+    html! {
+        button.btn.quiet type="button" hx-get=(url) hx-include="closest form"
+            hx-target="#confirm-slot" hx-swap="innerHTML" hx-select="unset" {
+            (label)
+        }
+    }
+}
+
 /// What the confirmation panel says and where its buttons go.
 pub struct Confirm<'a> {
     /// "Dismiss session s1"; the panel asks it as a question.
@@ -1051,7 +1061,10 @@ pub fn restore(
                         a href=(format!("/sessions/{}", seg(id))) { "Cancel" }
                     }
                 } @else {
-                    div.stack { button.btn.primary type="submit" { "Restore selected" } }
+                    div.inline {
+                        button.btn.primary type="submit" { "Restore selected" }
+                        (confirm_selected_button("/restore/dismiss", "Dismiss selected"))
+                    }
                 }
             }
         }
