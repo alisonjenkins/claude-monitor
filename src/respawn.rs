@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use crate::agents::{AgentKind, Launch, LaunchError, LaunchMode, LauncherConfig, Precondition};
-use crate::env::{Env, EnvError, Vars};
+use crate::env::{Env, EnvError, SpawnedWindow, Vars};
 use crate::model::{Author, Session};
 use crate::store::events::NewEvent;
 use crate::store::Store;
@@ -342,17 +342,41 @@ pub type Outcome = Result<Started, ExecuteError>;
 /// Setup runs before tmux is touched: a failed `git worktree add` leaves no
 /// window and no tmux server behind, and the new window's directory exists.
 pub fn execute(store: &Store, env: &Env, plan: &Plan, now: &str) -> Outcome {
+    open(store, env, plan, now, Open::Window)
+}
+
+/// Where a plan's launch opens.
+#[derive(Clone, Copy)]
+enum Open<'a> {
+    /// A new window of the plan's tmux session.
+    Window,
+    /// A new pane in the window of an already opened pane.
+    Split {
+        first_pane: &'a str,
+        window_id: &'a str,
+    },
+}
+
+fn open(store: &Store, env: &Env, plan: &Plan, now: &str, target: Open<'_>) -> Outcome {
     let tmux_session = plan.tmux_session.as_str();
     for command in &plan.setup {
         run_setup(command)?;
     }
-    env.tmux.ensure_session(tmux_session, &plan.launch.cwd)?;
-    let window = env.tmux.spawn_window(
-        tmux_session,
-        &plan.label,
-        &plan.launch.cwd,
-        &launch_argv(&plan.launch),
-    )?;
+    let argv = launch_argv(&plan.launch);
+    let window = match target {
+        Open::Window => {
+            env.tmux.ensure_session(tmux_session, &plan.launch.cwd)?;
+            env.tmux
+                .spawn_window(tmux_session, &plan.label, &plan.launch.cwd, &argv)?
+        }
+        Open::Split {
+            first_pane,
+            window_id,
+        } => SpawnedWindow {
+            pane_id: env.tmux.split_pane(first_pane, &plan.launch.cwd, &argv)?,
+            window_id: window_id.to_owned(),
+        },
+    };
 
     let store_error = |operation: &'static str, e: &dyn std::fmt::Display| ExecuteError::Store {
         operation,
@@ -554,13 +578,25 @@ fn plan_each(
 }
 
 /// Start one planned session, or report its refusal. A failure to start is a
-/// [`SPAWN_FAILED`] refusal rather than an error so a batch carries on.
+/// [`SPAWN_FAILED`] refusal rather than an error so a batch carries on. The
+/// session opens a window of its own; [`BatchStarter`] opens panes.
 pub fn start_one(
     store: &Store,
     env: &Env,
     session: &Session,
     plan: Result<Plan, Refusal>,
     now: &str,
+) -> Item {
+    start_at(store, env, session, plan, now, Open::Window)
+}
+
+fn start_at(
+    store: &Store,
+    env: &Env,
+    session: &Session,
+    plan: Result<Plan, Refusal>,
+    now: &str,
+    target: Open<'_>,
 ) -> Item {
     match plan {
         Err(refusal) => Item::Refused(RefusedItem {
@@ -569,7 +605,7 @@ pub fn start_one(
             message: refusal.message,
             alternatives: refusal.alternatives,
         }),
-        Ok(plan) => match execute(store, env, &plan, now) {
+        Ok(plan) => match open(store, env, &plan, now, target) {
             Ok(started) => Item::Started(Box::new(StartedItem { started, plan })),
             Err(error) => Item::Refused(RefusedItem {
                 session_id: session.id.clone(),
@@ -581,14 +617,157 @@ pub fn start_one(
     }
 }
 
+/// The layout a window's panes were given by `select-layout` and tmux refused.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LayoutFailure {
+    /// The last pane of the window that opened.
+    pub session_id: String,
+    pub detail: String,
+}
+
+impl LayoutFailure {
+    pub fn notice(&self) -> String {
+        format!("could not arrange the window's panes: {}", self.detail)
+    }
+}
+
+/// The window a [`BatchStarter`] is adding panes to.
+struct OpenWindow {
+    key: WindowKey,
+    /// The pane and window opened first; `None` when that failed, so the rest
+    /// open windows of their own rather than split a window that is not there.
+    first: Option<SpawnedWindow>,
+    /// Panes in the window so far.
+    panes: u32,
+    /// What the first plan recorded about the original window.
+    recorded_panes: Option<u32>,
+    recorded_layout: Option<String>,
+    last_session: String,
+}
+
+/// Starts the plans of a batch in order: the first pane of a window opens the
+/// window, the grouped plans after it split that window, and once a window's
+/// last pane is open it gets a layout. Feed it every plan in the order
+/// [`plan_batch`] returned, then call [`BatchStarter::finish`].
+pub struct BatchStarter<'a> {
+    store: &'a Store,
+    env: &'a Env,
+    now: String,
+    window: Option<OpenWindow>,
+    layout_failures: Vec<LayoutFailure>,
+}
+
+impl<'a> BatchStarter<'a> {
+    pub fn new(store: &'a Store, env: &'a Env) -> Self {
+        Self {
+            store,
+            env,
+            now: env.clock.now(),
+            window: None,
+            layout_failures: Vec::new(),
+        }
+    }
+
+    pub fn start(&mut self, session: &Session, plan: Result<Plan, Refusal>) -> Item {
+        let key = plan
+            .as_ref()
+            .ok()
+            .filter(|plan| plan.pane.as_ref().is_some_and(|pane| pane.grouped))
+            .and_then(window_key);
+        let continues = key.is_some() && self.window.as_ref().map(|w| &w.key) == key.as_ref();
+        if plan.is_ok() && !continues {
+            self.close_window();
+        }
+        let Some(key) = key.filter(|_| plan.is_ok()) else {
+            return start_at(self.store, self.env, session, plan, &self.now, Open::Window);
+        };
+        let recorded = plan.as_ref().ok().and_then(|plan| plan.pane.clone());
+        let first = self.window.as_ref().and_then(|window| window.first.clone());
+        let target = match &first {
+            Some(first) if continues => Open::Split {
+                first_pane: &first.pane_id,
+                window_id: &first.window_id,
+            },
+            _ => Open::Window,
+        };
+        let item = start_at(self.store, self.env, session, plan, &self.now, target);
+        let started = match &item {
+            Item::Started(item) => Some(item.started.clone()),
+            Item::Refused(_) => None,
+        };
+        if continues {
+            if let (Some(window), Some(_)) = (self.window.as_mut(), &started) {
+                if window.first.is_some() {
+                    window.panes = window.panes.saturating_add(1);
+                    session.id.clone_into(&mut window.last_session);
+                }
+            }
+        } else {
+            self.window = Some(OpenWindow {
+                key,
+                first: started.map(|started| SpawnedWindow {
+                    pane_id: started.pane_id,
+                    window_id: started.window_id,
+                }),
+                panes: 1,
+                recorded_panes: recorded.as_ref().and_then(|pane| pane.window_panes),
+                recorded_layout: recorded.and_then(|pane| pane.window_layout),
+                last_session: session.id.clone(),
+            });
+        }
+        item
+    }
+
+    /// Lays out the last window and returns every layout tmux refused.
+    pub fn finish(mut self) -> Vec<LayoutFailure> {
+        self.close_window();
+        self.layout_failures
+    }
+
+    fn close_window(&mut self) {
+        let Some(window) = self.window.take() else {
+            return;
+        };
+        let Some(first) = window.first.filter(|_| window.panes > 1) else {
+            return;
+        };
+        let layout = if window.recorded_panes == Some(window.panes) {
+            window.recorded_layout.as_deref().unwrap_or(TILED)
+        } else {
+            TILED
+        };
+        if let Err(error) = self.env.tmux.select_layout(&first.pane_id, layout) {
+            self.layout_failures.push(LayoutFailure {
+                session_id: window.last_session,
+                detail: error.to_string(),
+            });
+        }
+    }
+}
+
+/// The layout for a window whose recorded layout does not fit the panes that
+/// came back.
+const TILED: &str = "tiled";
+
 /// Execute every plan that exists, in order. A failure to start one does not
-/// stop the others.
+/// stop the others; a layout tmux refuses is a notice on the window's last
+/// started pane.
 pub fn start_batch(store: &Store, env: &Env, planned: Planned) -> Vec<Item> {
-    let now = env.clock.now();
-    planned
+    let mut starter = BatchStarter::new(store, env);
+    let mut items: Vec<Item> = planned
         .into_iter()
-        .map(|(session, plan)| start_one(store, env, &session, plan, &now))
-        .collect()
+        .map(|(session, plan)| starter.start(&session, plan))
+        .collect();
+    for failure in starter.finish() {
+        for item in &mut items {
+            if let Item::Started(item) = item {
+                if item.started.session_id == failure.session_id {
+                    item.plan.notices.push(failure.notice());
+                }
+            }
+        }
+    }
+    items
 }
 
 const ENTITY_SESSION: &str = "session";

@@ -5,7 +5,7 @@
 use crossterm::event::KeyCode;
 
 use crate::env::Env;
-use crate::respawn::{plan_batch, start_one, Item, PlanFlags, SPAWN_FAILED};
+use crate::respawn::{plan_batch, BatchStarter, Item, PlanFlags, SPAWN_FAILED};
 use crate::store::queries::{Overview, OverviewEntry, SectionName};
 use crate::store::Store;
 
@@ -67,9 +67,9 @@ pub fn run_restore(store: &Store, env: &Env, ids: &[String], emit: &mut dyn FnMu
             return;
         }
     };
-    let now = env.clock.now();
+    let mut starter = BatchStarter::new(store, env);
     for (session, plan) in planned {
-        emit(match start_one(store, env, &session, plan, &now) {
+        emit(match starter.start(&session, plan) {
             Item::Started(item) => RestoreResult::Started {
                 session_id: item.started.session_id,
                 pane: item.started.pane_id,
@@ -81,6 +81,8 @@ pub fn run_restore(store: &Store, env: &Env, ids: &[String], emit: &mut dyn FnMu
             },
         });
     }
+    // The panes are open; a layout tmux refuses has no row to show on.
+    drop(starter.finish());
 }
 
 /// Where a row came from; decides whether it starts selected.
