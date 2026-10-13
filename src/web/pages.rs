@@ -134,6 +134,7 @@ fn layout(ctx: &Ctx<'_>, title: &str, waiting: usize, region: &str, body: Markup
                     }
                 }
                 div #flash role="status" aria-live="polite" {}
+                div #confirm-slot {}
                 main { (body) }
             }
         }
@@ -173,9 +174,15 @@ fn row_actions(entry: &Value) -> Markup {
     let state = str_of(entry, "state").unwrap_or_default();
     let section = str_of(entry, "section").unwrap_or_default();
     let base = format!("/sessions/{}", seg(id));
+    let dismissable = section != "dismissed" && is_waiting(entry);
     html! {
         @if state == "interrupted" {
             (respawn_link(id, true))
+        }
+        @if dismissable {
+            (confirm_button(&format!("{base}/dismiss"), "Dismiss"))
+        }
+        @if state == "interrupted" {
         } @else if section == "finished" {
             (post_button(&format!("{base}/done"), "Mark done", false))
         } @else if section == "done" {
@@ -928,7 +935,6 @@ pub fn session(ctx: &Ctx<'_>, detail: &Value) -> String {
         }
     };
     let body = html! {
-        div #confirm-slot {}
         (live("content", &base, waiting, inner))
     };
     layout(

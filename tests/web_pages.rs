@@ -964,3 +964,69 @@ mod confirmation_panel {
         assert!(script.contains(".focus()"), "{script}");
     }
 }
+
+mod dismiss_from_a_list_row {
+    use super::*;
+
+    #[test]
+    fn a_waiting_row_asks_for_the_confirmation_panel_and_never_posts_the_dismissal() {
+        let web = Plain::new();
+        web.put("s-int", State::Interrupted);
+        web.put("s-perm", State::NeedsPermission);
+
+        let html = page(&web.rig, "/").body;
+
+        let band = between(&html, "id=\"waiting\"", "</section>");
+        for id in ["s-int", "s-perm"] {
+            assert!(
+                band.contains(&format!("hx-get=\"/sessions/{id}/dismiss\"")),
+                "{id}: {band}"
+            );
+            assert!(
+                !html.contains(&format!("hx-post=\"/sessions/{id}/dismiss\"")),
+                "{id} must not dismiss on the first click"
+            );
+        }
+        assert_eq!(html.matches("id=\"confirm-slot\"").count(), 1, "{html}");
+    }
+
+    #[test]
+    fn the_respawn_link_stays_next_to_it() {
+        let web = Plain::new();
+        web.put("s-int", State::Interrupted);
+
+        let html = page(&web.rig, "/").body;
+
+        assert!(html.contains("href=\"/restore?session=s-int\""), "{html}");
+    }
+
+    #[test]
+    fn rows_that_are_not_waiting_get_no_dismiss_control() {
+        let web = Plain::new();
+        web.put("s-fin", State::Finished);
+        web.put("s-work", State::Working);
+        web.put("s-dis", State::Interrupted);
+        let mut dismissed = web.session("s-dis");
+        dismissed.dismissed = true;
+        web.save(&dismissed);
+
+        let html = page(&web.rig, "/?include_dismissed=true").body;
+
+        for id in ["s-fin", "s-work", "s-dis"] {
+            assert!(
+                !html.contains(&format!("hx-get=\"/sessions/{id}/dismiss\"")),
+                "{id}: {html}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_detail_page_keeps_exactly_one_slot() {
+        let web = Plain::new();
+        web.put("s-int", State::Interrupted);
+
+        let html = page(&web.rig, "/sessions/s-int").body;
+
+        assert_eq!(html.matches("id=\"confirm-slot\"").count(), 1, "{html}");
+    }
+}
