@@ -87,6 +87,13 @@ was last seen in (recorded by the hook and by every refresh; shown by `show`).
 A session with no recorded placement opens in the `agents` session. Setting
 `CLAUDE_MONITOR_TMUX_SESSION` or `tmuxSession` in `config.json` forces every
 session into that one tmux session instead; window names are still kept.
+Sessions that shared one tmux window as split panes come back as panes of one
+window, in pane order, shown as `session:window.pane` in the plan. When every
+pane of the original window is being restored the recorded layout is applied;
+otherwise (some panes were not Claude sessions, or one was refused) the panes
+are tiled. A layout tmux refuses is reported as a note and never fails the
+restore. With a session override, only panes recorded in the same tmux session
+share a window.
 
 `claude-monitor --help` and `claude-monitor <command> --help` list every flag.
 Nothing here sends session content off the machine: `summarize` talks only to
