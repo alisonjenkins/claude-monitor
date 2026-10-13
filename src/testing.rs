@@ -217,6 +217,8 @@ impl Tmux for FakeTmux {
                 window_name: "claude".to_owned(),
                 window_index: "0".to_owned(),
                 pane_index: "0".to_owned(),
+                window_panes: "1".to_owned(),
+                window_layout: String::new(),
             },
         )
     }
@@ -234,6 +236,8 @@ impl Tmux for FakeTmux {
                 window_name: "claude".to_owned(),
                 window_index: "1".to_owned(),
                 pane_index: "0".to_owned(),
+                window_panes: "1".to_owned(),
+                window_layout: String::new(),
             },
         )
     }
@@ -270,6 +274,8 @@ impl Tmux for FakeTmux {
                 window_name: "claude-monitor-placeholder".to_owned(),
                 window_index: "0".to_owned(),
                 pane_index: "0".to_owned(),
+                window_panes: "1".to_owned(),
+                window_layout: String::new(),
             },
         );
         Ok(true)
@@ -306,6 +312,8 @@ impl Tmux for FakeTmux {
                 window_name: label.to_owned(),
                 window_index: window_index.to_string(),
                 pane_index: "0".to_owned(),
+                window_panes: "1".to_owned(),
+                window_layout: String::new(),
             },
         );
         Ok(SpawnedWindow {
@@ -680,6 +688,8 @@ mod tests {
                 window_name: "w".into(),
                 window_index: "0".into(),
                 pane_index: "0".into(),
+                window_panes: "1".into(),
+                window_layout: String::new(),
             },
         );
         f.tmux.set_available(true);

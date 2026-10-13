@@ -48,6 +48,8 @@ impl Harness {
                 window_name: window.to_owned(),
                 window_index: index.to_owned(),
                 pane_index: "0".to_owned(),
+                window_panes: "1".to_owned(),
+                window_layout: String::new(),
             },
         );
     }

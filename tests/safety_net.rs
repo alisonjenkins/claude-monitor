@@ -157,6 +157,8 @@ fn a_pane_that_vanished_without_a_tmux_hook_is_interrupted_by_the_next_tick() {
             window_name: "claude".to_owned(),
             window_index: "1".to_owned(),
             pane_index: "0".to_owned(),
+            window_panes: "1".to_owned(),
+            window_layout: String::new(),
         },
     );
     let store = Store::open_in_dir(dir.path(), &StoreOptions::default()).unwrap();

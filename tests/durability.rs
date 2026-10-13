@@ -459,6 +459,8 @@ fn a_live_pane_keeps_a_session_with_no_pid() {
             window_name: "w".into(),
             window_index: "0".into(),
             pane_index: "0".into(),
+            window_panes: "1".into(),
+            window_layout: String::new(),
         },
     );
 

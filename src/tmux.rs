@@ -10,6 +10,10 @@ pub struct PaneLocation {
     pub window_name: String,
     pub window_index: String,
     pub pane_index: String,
+    /// `#{window_panes}`: how many panes the window has.
+    pub window_panes: String,
+    /// `#{window_layout}`: the window's layout string, as `select-layout` takes it.
+    pub window_layout: String,
 }
 
 impl PaneLocation {
@@ -23,19 +27,20 @@ impl PaneLocation {
 
 /// The `-F` format `list_panes_at` asks tmux for. Fields are separated by a
 /// space, not a tab: outside a UTF-8 locale tmux prints a tab as `_`. The pane
-/// id and both indexes never contain a space. The window and session names
+/// id, both indexes, the pane count and the layout never contain a space (the
+/// layout has commas, braces and brackets only). The window and session names
 /// both may, so they share the rest of the line split at the last `:`: tmux
 /// rewrites `:` in a session name to `_`, a window name may keep it.
-pub const LIST_PANES_FORMAT: &str =
-    "#{pane_id} #{window_index} #{pane_index} #{window_name}:#{session_name}";
+pub const LIST_PANES_FORMAT: &str = "#{pane_id} #{window_index} #{pane_index} #{window_panes} #{window_layout} #{window_name}:#{session_name}";
 
 /// Parse the output of `tmux list-panes -a -F` [`LIST_PANES_FORMAT`] into a
 /// pane id -> location map. Malformed lines are skipped.
 pub fn parse_list_panes(output: &str) -> HashMap<String, PaneLocation> {
     let mut map = HashMap::new();
     for line in output.lines() {
-        let parts: Vec<&str> = line.splitn(4, ' ').collect();
-        let [pane_id, window_index, pane_index, names] = parts[..] else {
+        let parts: Vec<&str> = line.splitn(6, ' ').collect();
+        let [pane_id, window_index, pane_index, window_panes, window_layout, names] = parts[..]
+        else {
             continue;
         };
         let Some((window_name, session_name)) = names.rsplit_once(':') else {
@@ -48,6 +53,8 @@ pub fn parse_list_panes(output: &str) -> HashMap<String, PaneLocation> {
                 window_name: window_name.to_string(),
                 window_index: window_index.to_string(),
                 pane_index: pane_index.to_string(),
+                window_panes: window_panes.to_string(),
+                window_layout: window_layout.to_string(),
             },
         );
     }
@@ -113,9 +120,12 @@ mod tests {
     #![allow(clippy::unwrap_used, clippy::expect_used, clippy::indexing_slicing)]
     use super::*;
 
+    const LAYOUT_3: &str =
+        "b25d,200x50,0,0{100x50,0,0,0,99x50,101,0[99x25,101,0,1,99x24,101,26,2]}";
+
     #[test]
     fn parses_space_separated_lines_with_the_session_name_last() {
-        let out = "%0 0 0 zsh:main\n%1 2 1 zsh:my project\n";
+        let out = "%0 0 0 1 c3d1,80x24,0,0,0 zsh:main\n%1 2 1 3 c3d1,80x24,0,0,0 zsh:my project\n";
         let map = parse_list_panes(out);
         assert_eq!(map.len(), 2);
         assert_eq!(
@@ -125,14 +135,18 @@ mod tests {
                 window_name: "zsh".to_string(),
                 window_index: "2".to_string(),
                 pane_index: "1".to_string(),
+                window_panes: "3".to_string(),
+                window_layout: "c3d1,80x24,0,0,0".to_string(),
             })
         );
     }
 
     #[test]
     fn window_and_session_names_may_both_contain_spaces_and_colons() {
-        let out = "%4 3 0 my win: build:my project\n%5 0 1 plain:main\n";
-        let map = parse_list_panes(out);
+        let out = format!(
+            "%4 3 0 3 {LAYOUT_3} my win: build:my project\n%5 0 1 1 c3d1,80x24,0,0,0 plain:main\n"
+        );
+        let map = parse_list_panes(&out);
         assert_eq!(
             map.get("%4"),
             Some(&PaneLocation {
@@ -140,6 +154,8 @@ mod tests {
                 window_name: "my win: build".to_string(),
                 window_index: "3".to_string(),
                 pane_index: "0".to_string(),
+                window_panes: "3".to_string(),
+                window_layout: LAYOUT_3.to_string(),
             })
         );
         assert_eq!(
@@ -151,7 +167,9 @@ mod tests {
 
     #[test]
     fn space_format_skips_malformed_lines() {
-        let map = parse_list_panes("garbage\n\n%2 1 0 w:other\n%3 1\n%6 1 0 nocolon\n");
+        let map = parse_list_panes(
+            "garbage\n\n%2 1 0 1 c3d1,80x24,0,0,0 w:other\n%3 1\n%6 1 0 1 c3d1,80x24,0,0,0 nocolon\n%7 1 0 w:old\n",
+        );
         assert_eq!(map.len(), 1);
         assert!(map.contains_key("%2"));
     }
@@ -168,6 +186,8 @@ mod tests {
             window_name: "zsh".to_string(),
             window_index: "2".to_string(),
             pane_index: "3".to_string(),
+            window_panes: "4".to_string(),
+            window_layout: "c3d1,80x24,0,0,0".to_string(),
         };
         assert_eq!(loc.format(), "main:2.3");
     }
