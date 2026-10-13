@@ -282,6 +282,12 @@ const PANE_LOCATION_POLL: Duration = Duration::from_millis(5);
 /// Name of the window a new session starts with; `spawn_window` closes it.
 const PLACEHOLDER_WINDOW: &str = "claude-monitor-placeholder";
 
+/// `name` as tmux stores it: tmux rewrites `.` and `:` in a session name to
+/// `_`, so looking a session up by the unrewritten name never finds it.
+fn tmux_session_name(name: &str) -> String {
+    name.replace(['.', ':'], "_")
+}
+
 /// The real tmux. With a socket it talks to that private server (`tmux -S`),
 /// otherwise to the default one.
 #[derive(Debug, Clone, Default)]
@@ -497,6 +503,7 @@ impl Tmux for SystemTmux {
 
     fn ensure_session(&self, session: &str, cwd: &Path) -> Result<bool, EnvError> {
         const OPERATION: &str = "ensure tmux session";
+        let session = &tmux_session_name(session);
         if self.has_session(OPERATION, session)? {
             return Ok(false);
         }
@@ -534,6 +541,7 @@ impl Tmux for SystemTmux {
         argv: &[String],
     ) -> Result<SpawnedWindow, EnvError> {
         const OPERATION: &str = "spawn tmux window";
+        let session = &tmux_session_name(session);
         let target = format!("={session}:");
         // After the last window: a bare session target reuses the lowest free
         // index, which puts a window below the ones opened before it once the
@@ -791,6 +799,41 @@ mod tests {
             .arg(&socket)
             .arg("kill-server")
             .output();
+    }
+
+    #[test]
+    fn a_session_name_with_a_dot_or_colon_is_found_again_under_the_name_tmux_gave_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let socket = dir.path().join("sock");
+        let tmux = SystemTmux::from_socket_var(Some(socket.to_string_lossy().into_owned()));
+        if !tmux.is_installed() {
+            return;
+        }
+        let created = tmux.ensure_session("my.work:1", dir.path());
+        let again = tmux.ensure_session("my.work:1", dir.path());
+        let window = tmux.spawn_window(
+            "my.work:1",
+            "w",
+            dir.path(),
+            &["sleep".to_owned(), "30".to_owned()],
+        );
+        let sessions = Command::new("tmux")
+            .arg("-S")
+            .arg(&socket)
+            .args(["list-sessions", "-F", "#{session_name}"])
+            .output();
+        let _ = Command::new("tmux")
+            .arg("-S")
+            .arg(&socket)
+            .arg("kill-server")
+            .output();
+        assert!(created.unwrap());
+        assert!(!again.unwrap());
+        window.unwrap();
+        assert_eq!(
+            String::from_utf8_lossy(&sessions.unwrap().stdout).trim(),
+            "my_work_1"
+        );
     }
 
     #[test]
