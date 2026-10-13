@@ -39,6 +39,58 @@ fn stdout(output: &Output) -> String {
     String::from_utf8(output.stdout.clone()).unwrap()
 }
 
+/// Runs `web setup-browser` with `PATH` set to `path_dir` only.
+fn setup_browser(state: &Path, home: &Path, path_dir: &Path, args: &[&str]) -> Output {
+    Process::new(BIN)
+        .args(["--no-refresh", "--state-dir"])
+        .arg(state)
+        .args(["web", "setup-browser"])
+        .args(args)
+        .env_clear()
+        .env("HOME", home)
+        .env("PATH", path_dir)
+        .stdin(Stdio::null())
+        .output()
+        .unwrap()
+}
+
+fn fake_nss_tools(dir: &Path) {
+    for tool in ["certutil", "pk12util"] {
+        let path = dir.join(tool);
+        std::fs::write(&path, "#!/bin/sh\nexit 0\n").unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+}
+
+#[test]
+fn setup_browser_without_the_nss_tools_exits_2_and_names_the_nix_shell() {
+    let state = TempDir::new().unwrap();
+    let home = TempDir::new().unwrap();
+    let empty_path = TempDir::new().unwrap();
+
+    let out = setup_browser(state.path(), home.path(), empty_path.path(), &[]);
+
+    assert_eq!(out.status.code(), Some(2));
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("nix-shell -p nss.tools"), "{stderr}");
+    assert!(stderr.contains("certutil"), "{stderr}");
+    assert!(!state.path().join("tls").exists(), "nothing is created");
+}
+
+#[test]
+fn setup_browser_with_no_profile_anywhere_exits_2() {
+    let state = TempDir::new().unwrap();
+    let home = TempDir::new().unwrap();
+    let tools = TempDir::new().unwrap();
+    fake_nss_tools(tools.path());
+
+    let out = setup_browser(state.path(), home.path(), tools.path(), &[]);
+
+    assert_eq!(out.status.code(), Some(2));
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("--profile"), "{stderr}");
+}
+
 #[test]
 fn web_ca_prints_the_certificate_path_and_how_to_trust_it() {
     let state = TempDir::new().unwrap();

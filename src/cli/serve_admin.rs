@@ -26,7 +26,10 @@ mod enabled {
 
     use serde_json::json;
 
-    use crate::cli::command::WebAction;
+    use crate::browser_setup::discover::{Browser, Roots};
+    use crate::browser_setup::runner::{self, SystemRunner};
+    use crate::browser_setup::setup::{self, Env, Options, SetupError};
+    use crate::cli::command::{BrowserChoice, WebAction};
     use crate::cli::migrate::store_error;
     use crate::cli::Output;
     use crate::error::Error;
@@ -63,7 +66,87 @@ mod enabled {
             WebAction::ClientCert { out, password_file } => {
                 client_cert(&dir, out, password_file.as_deref())
             }
+            WebAction::SetupBrowser {
+                browser,
+                profiles,
+                auto_select,
+                force,
+                dry_run,
+            } => setup_browser(
+                &dir,
+                browsers_of(browser),
+                profiles,
+                auto_select,
+                force,
+                dry_run,
+            ),
         }
+    }
+
+    fn browsers_of(choice: BrowserChoice) -> Vec<Browser> {
+        match choice {
+            BrowserChoice::Firefox => vec![Browser::Firefox],
+            BrowserChoice::Zen => vec![Browser::Zen],
+            BrowserChoice::Chromium => vec![Browser::Chromium],
+            BrowserChoice::All => vec![Browser::Firefox, Browser::Zen, Browser::Chromium],
+        }
+    }
+
+    fn setup_browser(
+        dir: &Path,
+        browsers: Vec<Browser>,
+        profiles: Vec<PathBuf>,
+        auto_select: bool,
+        force: bool,
+        dry_run: bool,
+    ) -> Result<Output, Error> {
+        let missing = runner::missing_tools(&std::env::var_os("PATH").unwrap_or_default());
+        if !missing.is_empty() {
+            return Err(Error::Refused {
+                code: "nss_tools_missing",
+                message: format!(
+                    "{} not found on PATH; install the NSS tools, for example with `{}`",
+                    missing.join(" and "),
+                    runner::NSS_INSTALL_HINT
+                ),
+            });
+        }
+        let home = std::env::var_os("HOME")
+            .map(PathBuf::from)
+            .filter(|h| h.is_absolute())
+            .ok_or_else(|| Error::Config("HOME is not set to an absolute path".to_owned()))?;
+        let xdg = std::env::var_os("XDG_CONFIG_HOME").map(PathBuf::from);
+        let roots = Roots::new(&home, xdg.as_deref());
+        let env = Env {
+            runner: &SystemRunner,
+            roots: &roots,
+            state_dir: dir,
+            now: SystemTime::now(),
+        };
+        let opts = Options {
+            browsers,
+            profiles,
+            auto_select,
+            force,
+            dry_run,
+        };
+        let report = setup::run(&env, &opts).map_err(|e| match e {
+            SetupError::NoTargets => Error::Refused {
+                code: "no_targets",
+                message: e.to_string(),
+            },
+            SetupError::Tls(_) => failed("prepare the TLS material", e),
+        })?;
+        if !report.all_fine() {
+            return Err(Error::Partial {
+                operation: "setup-browser".to_owned(),
+                detail: format!("some targets were not set up\n{}", report.text()),
+            });
+        }
+        Ok(Output::Dual {
+            text: report.text(),
+            json: report.json(),
+        })
     }
 
     fn client_cert(

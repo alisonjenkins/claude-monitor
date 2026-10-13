@@ -23,6 +23,23 @@ pub enum WebAction {
         out: Option<PathBuf>,
         password_file: Option<PathBuf>,
     },
+    /// Trust the CA and import the client certificate into browser NSS
+    /// databases.
+    SetupBrowser {
+        browser: BrowserChoice,
+        profiles: Vec<PathBuf>,
+        auto_select: bool,
+        force: bool,
+        dry_run: bool,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BrowserChoice {
+    Firefox,
+    Zen,
+    Chromium,
+    All,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

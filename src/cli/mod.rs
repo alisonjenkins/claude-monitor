@@ -32,7 +32,7 @@ pub(crate) mod show;
 mod summarize;
 mod watch;
 
-pub use command::{Command, CommandInfo, ProjectAction, WebAction};
+pub use command::{BrowserChoice, Command, CommandInfo, ProjectAction, WebAction};
 #[cfg(any(feature = "tui", feature = "web"))]
 pub(crate) use list::age;
 pub use output::Output;
@@ -327,6 +327,45 @@ enum WebCommands {
         #[arg(long, value_name = "FILE")]
         password_file: Option<PathBuf>,
     },
+    /// Trust the CA and import the client certificate into browser profiles
+    SetupBrowser {
+        /// Which browser's certificate databases to set up
+        #[arg(long, value_enum, default_value = "all")]
+        browser: BrowserArg,
+        /// An extra NSS database directory (repeatable)
+        #[arg(long, value_name = "PATH")]
+        profile: Vec<PathBuf>,
+        /// Also make Firefox and Zen pick the client certificate without asking.
+        /// This is a global browser preference: any site that asks for a client
+        /// certificate gets this one, not just claude-monitor
+        #[arg(long)]
+        auto_select: bool,
+        /// Write to profiles that look in use
+        #[arg(long)]
+        force: bool,
+        /// Show what would change and write nothing
+        #[arg(long)]
+        dry_run: bool,
+    },
+}
+
+#[derive(Clone, Copy, clap::ValueEnum)]
+enum BrowserArg {
+    Firefox,
+    Zen,
+    Chromium,
+    All,
+}
+
+impl From<BrowserArg> for BrowserChoice {
+    fn from(arg: BrowserArg) -> Self {
+        match arg {
+            BrowserArg::Firefox => Self::Firefox,
+            BrowserArg::Zen => Self::Zen,
+            BrowserArg::Chromium => Self::Chromium,
+            BrowserArg::All => Self::All,
+        }
+    }
 }
 
 #[derive(Subcommand)]
@@ -552,6 +591,19 @@ impl Cli {
                     WebCommands::ClientCert { out, password_file } => WebAction::ClientCert {
                         out: out.clone(),
                         password_file: password_file.clone(),
+                    },
+                    WebCommands::SetupBrowser {
+                        browser,
+                        profile,
+                        auto_select,
+                        force,
+                        dry_run,
+                    } => WebAction::SetupBrowser {
+                        browser: (*browser).into(),
+                        profiles: profile.clone(),
+                        auto_select: *auto_select,
+                        force: *force,
+                        dry_run: *dry_run,
                     },
                 },
             },
