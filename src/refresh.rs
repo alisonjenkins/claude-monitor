@@ -168,9 +168,10 @@ fn registry_author() -> Author {
     }
 }
 
-/// Finished sessions are over and interrupted ones only a hook revives.
+/// Finished sessions are over. Interrupted ones are revived: a live registry
+/// entry means the process is running again (a `claude --resume`).
 fn syncable(state: State) -> bool {
-    state == State::Unknown || state.is_active()
+    state != State::Finished
 }
 
 fn sync_entry(
@@ -291,13 +292,20 @@ fn apply_entry(
             applied.process_changed = true;
         }
     }
-    if let Some(status) = &entry.status {
-        let next = claude_registry::to_state(status);
+    let revived = session.state == State::Interrupted;
+    let next = match &entry.status {
+        Some(status) => Some(claude_registry::to_state(status)),
+        None => revived.then_some(State::Idle),
+    };
+    if let Some(next) = next {
         if session.state != next {
             applied.from_state = Some(session.state);
             session.state = next;
             now.clone_into(&mut session.state_since);
         }
+    }
+    if revived {
+        session.end_reason = None;
     }
     applied
 }

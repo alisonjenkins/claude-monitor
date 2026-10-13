@@ -387,3 +387,77 @@ fn a_vanished_pane_or_missing_tmux_never_clears_the_placement() {
         (Some("work"), Some("api"), Some("2"))
     );
 }
+
+fn stored(fx: &Fx, state: State) -> Session {
+    let mut s = Session::new("id-1", "claude", "sess-1", CWD, "2026-10-12T08:00:00Z");
+    s.state = state;
+    fx.store.upsert_session(&s).unwrap();
+    s
+}
+
+#[test]
+fn a_live_registry_entry_revives_an_interrupted_session() {
+    let fx = Fx::new();
+    let mut old = stored(&fx, State::Interrupted);
+    old.pid = Some(9);
+    old.pid_start = Some(1);
+    old.end_reason = Some("error".to_owned());
+    fx.store.upsert_session(&old).unwrap();
+    fx.registry(10, "sess-1", "idle", true);
+
+    let report = fx.run();
+
+    let session = fx.session("sess-1").unwrap();
+    assert_eq!(session.state, State::Idle);
+    assert_eq!(session.pid, Some(10));
+    assert_eq!(session.pid_start, Some(PROC_START));
+    assert_eq!(session.end_reason, None);
+    assert_eq!(report.registry_updated, 1);
+    let revived = fx
+        .events()
+        .into_iter()
+        .find(|e| e.kind == "session.state_changed")
+        .expect("state_changed event");
+    assert_eq!(revived.payload["from"], "interrupted");
+    assert_eq!(revived.payload["state"], "idle");
+    assert_eq!(revived.payload["reason"], "registry");
+    assert_eq!(revived.author, registry_author());
+}
+
+#[test]
+fn a_live_registry_entry_moves_an_unknown_session_to_its_status() {
+    let fx = Fx::new();
+    stored(&fx, State::Unknown);
+    fx.registry(10, "sess-1", "busy", true);
+
+    fx.run();
+
+    assert_eq!(fx.session("sess-1").unwrap().state, State::Working);
+}
+
+#[test]
+fn a_dead_registry_entry_does_not_revive_an_interrupted_session() {
+    let fx = Fx::new();
+    let old = stored(&fx, State::Interrupted);
+    fx.registry(10, "sess-1", "busy", false);
+
+    let report = fx.run();
+
+    assert_eq!(fx.session("sess-1").unwrap(), old);
+    assert_eq!(report.registry_updated, 0);
+}
+
+#[test]
+fn a_revived_session_stays_alive_on_the_next_pass() {
+    let fx = Fx::new();
+    stored(&fx, State::Interrupted);
+    fx.registry(10, "sess-1", "idle", true);
+    fx.run();
+    let after_first = fx.store.last_seq().unwrap();
+
+    let report = fx.run();
+
+    assert_eq!(fx.session("sess-1").unwrap().state, State::Idle);
+    assert_eq!(fx.store.last_seq().unwrap(), after_first);
+    assert!(!report.changed(), "{report:?}");
+}

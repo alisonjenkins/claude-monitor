@@ -102,7 +102,8 @@ pub struct ReconcileReport {
     /// Readable sessions in scope.
     pub checked: usize,
     pub interrupted: usize,
-    /// Always 0: only a hook revives a session.
+    /// Always 0: reconcile never revives; a hook or a live registry entry
+    /// does (counted in `RefreshReport::registry_updated`).
     pub revived: usize,
     /// Checked sessions with no change at all.
     pub unchanged: usize,
