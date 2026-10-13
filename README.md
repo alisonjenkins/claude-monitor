@@ -68,7 +68,8 @@ notification fires when a session starts needing you.
 | `respawn <session>...` | Start named sessions again in tmux, resuming their conversations |
 | `boot-check` | Count sessions a reboot or crash interrupted, notify once, start nothing |
 | `summarize <target>` | Ask a model on this machine for a short summary; never automatic |
-| `serve` | Serve the web view on loopback; prints the URL that opens it |
+| `serve` | Serve the web view over TLS on loopback; prints a single-use login URL |
+| `web ca\|login\|client-cert` | Show the CA to trust, get a fresh login URL from the running server, write a client certificate for `serve --mtls` |
 | `progress [session]` | Show a session's plan progress and the file it comes from |
 | `progress bind <owner> [file]` | Choose the plan a session's progress comes from |
 | `project add\|rename\|set-status` | Create, rename or set the status of a project |
@@ -95,17 +96,55 @@ changes.
 
 ## Web view
 
-`claude-monitor serve [--port N] [--bind ADDR]` serves the web view on
+`claude-monitor serve [--port N] [--bind ADDR] [--mtls]` serves the web view on
 loopback only (`127.0.0.1` or `::1`; any other `--bind` is refused). `--port 0`
-picks a free port. The first line of stdout is the URL, which carries a token:
+picks a free port. It speaks only HTTPS (TLS 1.3); there is no plain-HTTP
+listener. `serve` stops cleanly on SIGTERM.
+
+**Trust the certificate once.** On first run `serve` makes a certificate
+authority for this install in `<state-dir>/tls/` (directory 0700, files 0600)
+and a leaf certificate for `127.0.0.1`, `::1` and `localhost`. The authority is
+name-constrained to those names, so trusting it cannot vouch for any other
+site. `claude-monitor web ca` prints its path and the import hint;
+`web ca --print` writes the certificate as PEM. Import it as an authority in
+Firefox (Settings > Privacy & Security > Certificates > View Certificates >
+Authorities > Import) or Chromium (Settings > Privacy and security > Security >
+Manage certificates > Authorities > Import). The leaf is renewed on its own
+when under 14 days remain; the authority lasts five years.
+
+**Log in with a single-use URL.** The first line of stdout is a login URL:
 
 ```text
-http://127.0.0.1:41234/?token=...
+https://127.0.0.1:41234/login?code=...
 ```
 
-Opening it sets a cookie and redirects; every other request needs that cookie.
-The token is kept in `web.token` in the state directory (mode 0600). `serve`
-stops cleanly on SIGTERM.
+The code is 256 random bits, valid for five minutes and one use, and exists
+only in the server's memory. Opening it trades it for a session cookie
+(`__Host-` prefixed, `Secure`, `HttpOnly`, `SameSite=Strict`) holding a random
+id, and redirects to `/`. Sessions live in memory: they end after 8 hours idle
+or 24 hours in total, and when `serve` restarts. `claude-monitor web login`
+asks the running server, over an owner-only unix socket
+(`<state-dir>/web.sock`), for a fresh URL. Five failed logins or
+unauthenticated requests in a minute make the server answer 429 with
+`Retry-After` until the window passes; a signed-in browser is not affected.
+
+**Optional client certificate.** `serve --mtls` additionally requires a client
+certificate from the same authority in the TLS handshake; a connection without
+one is refused before any HTTP is read. `claude-monitor web client-cert
+[--out FILE] [--password-file FILE]` writes a PKCS#12 bundle (default
+`<state-dir>/tls/client.p12`, mode 0600) to import in the browser under "Your
+Certificates"; without `--password-file` it generates a password and prints it
+once. Login still applies on top of it.
+
+**What this protects against, and what it does not.** It stops a process or a
+web page that can merely reach the port: it cannot log in without a code, cannot
+forge a session, and what crosses loopback is encrypted. Cross-site requests are blocked by the `Host` allow-list,
+`SameSite=Strict`, a per-session CSRF header and a restrictive
+content-security-policy. It does not stop anything running as your user: such a
+process can read the CA key and state directory, run `claude-monitor web login`
+itself, or read the printed URL from the terminal or the journal while the
+code is still valid. Root can do anything. The state directory is the trust
+boundary; see `docs/web-design.md`.
 
 ## Adding an agent kind
 

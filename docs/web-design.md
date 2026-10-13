@@ -11,7 +11,7 @@ TUI (FR-030); this file records how it looks, how it is built and why.
 | Interactivity | `htmx` 2.0.4, one minified file vendored at `src/web/assets/htmx.min.js`, served from `/assets/htmx.min.js` | No JS build step (D10), no CDN (security rule 6). 0BSD; licence text and version in `src/web/assets/htmx.LICENSE`. |
 | Live updates | One 20-line `app.js` opens `EventSource("/events")` and fires a `cc-changed` event on `body`; page regions carry `hx-get` plus `hx-trigger="cc-changed from:body delay:150ms"` and `hx-select`, so htmx re-fetches the same URL and swaps only the region | The server already pushes exactly-what-changed over `/events` (D12); the page just re-reads. No htmx SSE extension (a second vendored file) and no polling. |
 | Actions | `hx-post` with `hx-swap="none"`; every POST answers JSON, and the response header `HX-Trigger: cc-changed` makes the regions refresh | One response shape for scripts and browser; failures (4xx) land in a `role="status"` flash line. |
-| CSRF | `app.js` adds `X-CC-Token` (read from `<meta name="cc-csrf">`) to every htmx request. The cookie is `HttpOnly`, so the page embeds the same token for its own use | The guard requires the header on every POST (rule 4). Actions therefore need JavaScript; reads do not. |
+| CSRF | `app.js` adds `X-CC-Token` (read from `<meta name="cc-csrf">`) to every htmx request. The value is random per session and unrelated to the session cookie, which is `HttpOnly`; the page embeds the CSRF value for its own use | The guard requires the header on every POST (rule 4). Actions therefore need JavaScript; reads do not. |
 | Fonts, icons, images | None fetched. System stacks only, glyphs are CSS shapes and Unicode | No external hosts, nothing to leak the page being open. |
 | Bodies | POST bodies are JSON or `application/x-www-form-urlencoded` (htmx forms) | Axum `json` and `form` features; no hand-rolled parser. |
 
@@ -164,8 +164,60 @@ route does not exist, or when an excluded command has a TUI action.
 Excluded, with reasons: `dashboard` (the terminal UI), `hook` (called by the
 agents, never a person), `reconcile` (tmux hook entry point), `watch`
 (long-running notifier), `boot-check` (login unit), `migrate` (one-off import),
-`serve` (is the web view), `export-cortexiphan` (writes a file for another
+`serve` (is the web view), `web` (CA, login and client certificate for it
+from a terminal), `export-cortexiphan` (writes a file for another
 system), `delete` (destructive, CLI with `--yes` only).
+
+## Transport, login and the threat model
+
+Decision record: encrypt and authenticate the browser connection, even on
+loopback (2026-10-13).
+
+**Why.** The view is powerful (it can respawn sessions and dismiss them) and
+the first design guarded it with one long-lived 256-bit token that sat in a
+URL, in a 0600 file and as the cookie value. Anything that could connect to the
+port and learn that token had everything, and the token was readable in shell
+history and the journal for as long as it lived.
+
+**What was chosen.**
+
+| Part | Choice | Reason |
+|---|---|---|
+| Transport | rustls 0.23 on the `ring` provider, TLS 1.3 only (the `tls12` feature is not compiled into the binary), HTTP/1.1 over ALPN, no plain-HTTP listener and no fallback | `ring` passes `cargo deny` and builds with a C compiler alone, so the nix build needs nothing new; `Cargo.lock` is read directly by the flake, so no hash entries change. aws-lc-rs would add a cmake build. |
+| Certificates | `rcgen`: a per-install CA (5 years, name-constrained to `localhost`, `127.0.0.0/8`, `::1`) signs a 90-day leaf for `127.0.0.1`, `::1`, `localhost`; the leaf is re-issued at under 14 days left | Trusting the CA in a browser then cannot be used to impersonate any other site. Short leaves limit what a stolen leaf key is worth. |
+| Files | `<state-dir>/tls/` mode 0700; `ca.pem`, `ca.key`, `server.pem`, `server.key` mode 0600 from creation (0600 staging file, then rename); keys are never printed or logged | The state directory is the trust boundary. |
+| Login | A random 256-bit code in a printed URL: single use, 5 minutes, in memory only, compared in constant time | A URL that leaks later is already useless. The long-lived secret is gone. |
+| Session | Random 256-bit id in a `__Host-`, `Secure`, `HttpOnly`, `SameSite=Strict`, `Path=/` cookie; server-side table, 8 h idle and 24 h absolute expiry, 64 entries; its own random CSRF value per session | The cookie is not the code and not anything on disk, so reading a file or a log never yields a live credential. A restart signs everyone out, which is the intended cost of keeping sessions off disk. |
+| Throttle | 5 failed logins or unauthenticated requests per minute, globally, then 429 with `Retry-After`; a valid session is never throttled | On loopback every client looks alike, so the limit is global. It also refuses a valid code while locked out, so it is not an oracle. A local process can therefore lock new logins out for a minute; it can already stop the server. |
+| Control socket | `<state-dir>/web.sock`, mode 0600, peer uid checked, one request (`login`) | New login URL without a restart and without a network listener. Bound in the 0700 `tls/` directory and renamed into place so it is never connectable by others. If the path is too long for a unix socket, `serve` runs without it and says so. |
+| Mutual TLS | `serve --mtls` requires a client certificate in the handshake; `web client-cert` writes a PKCS#12 (`p12-keystore`, pure Rust, MIT OR Apache-2.0, AES-256 with HMAC-SHA256) | Refuses a connection before any HTTP is parsed. Off by default; login still applies. |
+| One CA or two for mTLS | One CA. The server leaf carries the serverAuth usage and client certificates clientAuth, and rustls enforces the usage in each direction (tested: the server's own leaf is refused as a client certificate) | A second CA is a second key in the same directory and a second thing to import, with no extra isolation. |
+| Headers | `Content-Security-Policy: default-src 'self'; style-src 'self' 'unsafe-inline'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'`, `Referrer-Policy: no-referrer`, `X-Content-Type-Options: nosniff`, `Cache-Control: no-store` | Inline styles stay allowed because progress bars set a width; no inline script ever runs. The browser e2e checks the page raises no policy violations. |
+
+Secrets use `zeroize` where they are held as strings or byte vectors that this
+code owns (codes, session ids, CSRF values, key PEM and DER, the generated
+password). Copies made by libraries (rustls, rcgen, the PKCS#12 writer, the
+output text that prints the password) are not wiped.
+
+**What this protects against.** A process or web page that can only reach the
+port: it cannot log in without a code, cannot forge or guess a session,
+cannot make the browser act for it (`SameSite=Strict`, CSRF header, `Host`
+allow-list against DNS rebinding), and loopback traffic is encrypted. A client
+without the install's certificate cannot even complete a handshake when
+`--mtls` is on.
+
+**What it does not protect against.**
+
+- Anything running as your user. It can read `ca.key` and the state directory,
+  ask the control socket for a login URL, read the printed URL from the
+  terminal or the journal while the code is valid, or read the browser profile.
+- Root, a debugger on the server process, or a hostile browser extension.
+- The 5-minute window: whoever opens the printed URL first wins the code.
+- A stale session in an open event stream: an `/events` stream that is already
+  connected is not cut when its session expires; it ends when the browser
+  closes it or the server stops.
+- Trust you grant by importing the CA: it is name-constrained, but a browser
+  that does not enforce name constraints would let the CA vouch for more.
 
 ## Safety notes
 
