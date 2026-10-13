@@ -27,9 +27,12 @@ use crate::env::Env;
 use crate::feed::{ChangeFeed, EventSource, SystemMonotonic};
 
 pub mod auth;
+pub mod clock;
 pub mod events;
+pub mod login;
 pub mod pages;
 pub mod routes;
+pub mod secret;
 pub mod tls;
 pub mod tree;
 
