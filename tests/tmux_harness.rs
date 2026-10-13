@@ -118,6 +118,34 @@ fn sleep_argv() -> Vec<String> {
 }
 
 #[test]
+fn spawned_windows_get_ascending_indexes_in_spawn_order() {
+    let Some(server) = TmuxServer::start() else {
+        return;
+    };
+    let tmux = SystemTmux::with_socket(server.socket());
+    let cwd = TempDir::new().unwrap();
+    let cwd_path = cwd.path().canonicalize().unwrap();
+    tmux.ensure_session("agents", &cwd_path).unwrap();
+
+    let first = tmux
+        .spawn_window("agents", "first", &cwd_path, &sleep_argv())
+        .unwrap();
+    let second = tmux
+        .spawn_window("agents", "second", &cwd_path, &sleep_argv())
+        .unwrap();
+
+    let index = |pane: &str| {
+        tmux.pane_location(pane)
+            .unwrap()
+            .unwrap()
+            .window_index
+            .parse::<u32>()
+            .unwrap()
+    };
+    assert!(index(&first.pane_id) < index(&second.pane_id));
+}
+
+#[test]
 fn pane_location_reports_the_session_and_window_of_one_pane() {
     let Some(server) = TmuxServer::start() else {
         return;

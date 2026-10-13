@@ -523,15 +523,20 @@ impl Tmux for SystemTmux {
     ) -> Result<SpawnedWindow, EnvError> {
         const OPERATION: &str = "spawn tmux window";
         let target = format!("={session}:");
+        // After the last window: a bare session target reuses the lowest free
+        // index, which puts a window below the ones opened before it once the
+        // placeholder is gone.
+        let after_last = format!("={session}:{{end}}");
         let cwd = cwd.to_string_lossy();
         let mut args = vec![
             "new-window",
+            "-a",
             "-d",
             "-P",
             "-F",
             "#{pane_id} #{window_id}",
             "-t",
-            &target,
+            &after_last,
             "-n",
             label,
             "-c",
