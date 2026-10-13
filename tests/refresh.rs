@@ -257,6 +257,92 @@ fn missing_agent_directories_degrade_to_an_empty_pass() {
     assert!(fx.store.list_sessions().unwrap().is_empty());
 }
 
+impl Fx {
+    fn registry_named(&self, pid: u32, id: &str, name: Option<&str>, source: &str) {
+        let mut value = json!({
+            "pid": pid, "sessionId": id, "cwd": CWD, "startedAt": 1_791_800_000_000_u64,
+            "procStart": PROC_START.to_string(), "version": "2.1.293", "kind": "interactive",
+            "entrypoint": "cli", "tmux": "main:@3.%5", "status": "busy",
+        });
+        if let Some(name) = name {
+            value["name"] = json!(name);
+            value["nameSource"] = json!(source);
+        }
+        self.fake
+            .fs
+            .add_file(format!("/cfg/sessions/{pid}.json"), &value.to_string());
+        self.fake.processes.spawn(pid, PROC_START);
+    }
+}
+
+fn name_of(fx: &Fx, id: &str) -> Option<String> {
+    let session = fx.session(id);
+    assert!(session.is_some(), "no session {id}");
+    session.and_then(|s| s.session_name)
+}
+
+#[test]
+fn a_new_session_from_the_registry_takes_the_user_name() {
+    let fx = Fx::new();
+    fx.registry_named(10, "sess-1", Some("aquero"), "user");
+
+    fx.run();
+
+    assert_eq!(name_of(&fx, "sess-1").as_deref(), Some("aquero"));
+}
+
+#[test]
+fn a_discovered_session_gains_the_user_name() {
+    let fx = Fx::new();
+    fx.transcript("sess-1");
+    fx.registry_named(10, "sess-1", Some("aquero"), "user");
+
+    fx.run();
+
+    assert_eq!(name_of(&fx, "sess-1").as_deref(), Some("aquero"));
+}
+
+#[test]
+fn an_automatic_name_is_not_recorded() {
+    let fx = Fx::new();
+    fx.registry_named(10, "sess-1", Some("proj"), "auto");
+
+    fx.run();
+
+    assert_eq!(name_of(&fx, "sess-1"), None);
+}
+
+#[test]
+fn a_changed_name_is_updated_and_a_repeat_pass_writes_nothing() {
+    let fx = Fx::new();
+    fx.registry_named(10, "sess-1", Some("first"), "user");
+    fx.run();
+    fx.registry_named(10, "sess-1", Some("second"), "user");
+
+    let renamed = fx.run();
+    let seq = fx.store.last_seq().unwrap();
+    let repeat = fx.run();
+
+    assert_eq!(name_of(&fx, "sess-1").as_deref(), Some("second"));
+    assert_eq!(renamed.registry_updated, 1);
+    assert!(!repeat.changed(), "{repeat:?}");
+    assert_eq!(fx.store.last_seq().unwrap(), seq);
+}
+
+#[test]
+fn a_stored_name_is_never_cleared_by_an_entry_without_one() {
+    let fx = Fx::new();
+    fx.registry_named(10, "sess-1", Some("aquero"), "user");
+    fx.run();
+    fx.registry_named(10, "sess-1", None, "");
+    fx.run();
+    fx.registry_named(10, "sess-1", Some("proj"), "auto");
+
+    fx.run();
+
+    assert_eq!(name_of(&fx, "sess-1").as_deref(), Some("aquero"));
+}
+
 fn location(session: &str, window: &str, index: &str) -> PaneLocation {
     PaneLocation {
         session_name: session.to_owned(),

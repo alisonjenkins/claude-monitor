@@ -314,6 +314,11 @@ fn apply_entry(
             session.cwd = cwd;
         }
     }
+    if let Some(name) = &entry.user_name {
+        if session.session_name.as_ref() != Some(name) {
+            session.session_name = Some(name.clone());
+        }
+    }
     let revived = session.state == State::Interrupted;
     let next = match &entry.status {
         Some(status) => Some(claude_registry::to_state(status)),
