@@ -96,3 +96,27 @@ fn the_newest_open_request_for_a_pane_wins() {
 
     assert_eq!(store.find_open_respawn_request("%3").unwrap(), Some(newer));
 }
+
+#[test]
+fn an_open_request_is_found_by_its_session_until_it_is_closed() {
+    let (_dir, store) = store();
+    let old = session(&store, "s1");
+    let new = session(&store, "s2");
+    let request = store.create_respawn_request(&old.id, "%3", T0).unwrap();
+
+    assert_eq!(
+        store.find_open_respawn_request_for_session("s1").unwrap(),
+        Some(request.clone())
+    );
+    assert_eq!(
+        store.find_open_respawn_request_for_session("s2").unwrap(),
+        None
+    );
+
+    store.close_respawn_request(&request.id, &new.id).unwrap();
+
+    assert_eq!(
+        store.find_open_respawn_request_for_session("s1").unwrap(),
+        None
+    );
+}

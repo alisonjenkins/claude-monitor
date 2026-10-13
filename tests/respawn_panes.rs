@@ -10,7 +10,7 @@
 
 use claude_monitor::model::{Session, State};
 use claude_monitor::respawn::{
-    plan_batch, start_batch, Item, PlanFlags, Planned, StartedItem, SPAWN_FAILED,
+    plan_batch, start_batch, Item, PlanFlags, Planned, RefusalCode, StartedItem, SPAWN_FAILED,
 };
 use claude_monitor::store::{Store, StoreOptions};
 use claude_monitor::testing::{FakeEnv, TmuxCall};
@@ -330,6 +330,31 @@ fn sessions_in_different_windows_each_open_their_own_window() {
         rig.calls(),
         [spawn("work", "api", "a"), spawn("work", "web", "b")]
     );
+}
+
+#[test]
+fn a_session_whose_respawned_pane_is_still_open_is_not_started_again() {
+    let rig = Rig::new();
+    rig.add("a", |_| {});
+    started(&rig.start(&["a"])[0]);
+
+    let planned = rig.plan(&["a"]);
+
+    let refusal = planned[0].1.as_ref().unwrap_err();
+    assert_eq!(refusal.code, RefusalCode::AlreadyRunning);
+    assert!(refusal.message.contains("%"), "{}", refusal.message);
+}
+
+#[test]
+fn a_respawn_whose_pane_has_gone_does_not_block_a_new_one() {
+    let rig = Rig::new();
+    rig.add("a", |_| {});
+    let items = rig.start(&["a"]);
+    rig.fake
+        .tmux
+        .remove_pane(&started(&items[0]).started.pane_id);
+
+    assert!(rig.plan(&["a"])[0].1.is_ok());
 }
 
 #[test]

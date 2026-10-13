@@ -112,6 +112,25 @@ impl Store {
             .map_err(db("find open respawn request"))
     }
 
+    /// The newest request for session `session_id` that no `SessionStart` has
+    /// answered yet.
+    pub fn find_open_respawn_request_for_session(
+        &self,
+        session_id: &str,
+    ) -> Result<Option<RespawnRequest>, RespawnError> {
+        self.connection()
+            .query_row(
+                &format!(
+                    "SELECT {COLUMNS} FROM respawn_request WHERE session_id = ?1 AND {OPEN} \
+                     ORDER BY requested_at DESC, rowid DESC LIMIT 1"
+                ),
+                params![session_id, OUTCOME_STARTED],
+                from_row,
+            )
+            .optional()
+            .map_err(db("find open respawn request for session"))
+    }
+
     /// Answers request `id` with the session that started in its pane.
     pub fn close_respawn_request(
         &self,

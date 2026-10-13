@@ -613,10 +613,41 @@ fn plan_each(
                 in_dir: flags.in_dir.clone(),
                 launcher: launcher_for(env, &session.agent_kind),
             };
-            let plan = plan_respawn(&session, env, &options);
+            let plan = plan_respawn(&session, env, &options).and_then(|plan| {
+                match respawn_pane_in_flight(store, env, &session.id) {
+                    Some(pane) => Err(refuse(
+                        RefusalCode::AlreadyRunning,
+                        format!(
+                            "session {} was already respawned into tmux pane {pane} and has not reported in yet",
+                            session.id
+                        ),
+                    )),
+                    None => Ok(plan),
+                }
+            });
             Ok((session, plan))
         })
         .collect()
+}
+
+/// The pane of an earlier respawn of `session_id` that is still open in tmux
+/// and whose `SessionStart` has not arrived. The session row shows no pid
+/// until that hook, so a second respawn in the meantime would start a second
+/// copy. A request whose pane is gone is stale and does not count. When the
+/// store or tmux cannot say, the respawn is held back rather than risk two
+/// copies.
+fn respawn_pane_in_flight(store: &Store, env: &Env, session_id: &str) -> Option<String> {
+    let request = match store.find_open_respawn_request_for_session(session_id) {
+        Ok(Some(request)) => request,
+        Ok(None) => return None,
+        Err(e) => return Some(format!("(unknown: {e})")),
+    };
+    let pane = request.tmux_target?;
+    match env.tmux.list_panes() {
+        Ok(Some(panes)) if !panes.contains_key(&pane) => None,
+        Ok(None) => None,
+        Ok(Some(_)) | Err(_) => Some(pane),
+    }
 }
 
 /// Start one planned session, or report its refusal. A failure to start is a
