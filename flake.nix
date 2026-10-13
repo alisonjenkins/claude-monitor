@@ -435,8 +435,11 @@
                       (serveDarwinAgent mtls).RunAtLoad != true
                     ) "${label}: Darwin agent is not RunAtLoad"
                     ++ pkgs.lib.optional (
-                      (serveDarwinAgent mtls).KeepAlive != true
-                    ) "${label}: Darwin agent is not KeepAlive"
+                      (serveDarwinAgent mtls).KeepAlive.SuccessfulExit or null != false
+                    ) "${label}: Darwin agent does not restart only after a failed exit, so a taken port loops forever"
+                    ++ pkgs.lib.optional (
+                      (serveDarwinAgent mtls).ThrottleInterval or 0 < 10
+                    ) "${label}: Darwin agent ThrottleInterval is under 10 s"
                     ++ pkgs.lib.optional (
                       (serveDarwinAgent mtls).Umask or null != 63
                     ) "${label}: Darwin agent has no Umask 0077, so the log holding the login URL is world-readable"

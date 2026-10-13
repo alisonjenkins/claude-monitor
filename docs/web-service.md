@@ -38,7 +38,7 @@ plus `--mtls` when `serve.mtls` is on. A flake check evaluates both.
 |---|---|---|
 | Unit | systemd user unit `claude-monitor-serve` | launchd agent `claude-monitor-serve` |
 | Starts | at login (`default.target`) | at load (`RunAtLoad`) |
-| Restarts | `Restart=on-failure`, 5 s | `KeepAlive`, `ThrottleInterval` 5 s |
+| Restarts | `Restart=on-failure`, 5 s | `KeepAlive` after a failed exit only, `ThrottleInterval` 10 s |
 | Log | `journalctl --user -u claude-monitor-serve` | `~/Library/Logs/claude-monitor-serve.log` |
 
 The service's `PATH` names `tmux` and `git` store paths first, so a respawn

@@ -418,8 +418,8 @@ in
           config = {
             ProgramArguments = serveArgs;
             RunAtLoad = true;
-            KeepAlive = true;
-            ThrottleInterval = 5;
+            KeepAlive.SuccessfulExit = false;
+            ThrottleInterval = 10;
             Umask = 63; # 0077: the log holds the single-use login URL
             EnvironmentVariables.PATH = lib.concatStringsSep ":" [
               (lib.makeBinPath [
