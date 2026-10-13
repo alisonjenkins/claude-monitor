@@ -5,7 +5,7 @@
 //! providers and writes the result. Reconcile is idempotent: it appends one
 //! event per real change and nothing when a second pass finds the same facts.
 
-use std::collections::HashSet;
+use std::collections::HashMap;
 use std::path::Path;
 
 use rusqlite::{Transaction, TransactionBehavior};
@@ -16,6 +16,7 @@ use crate::model::{Author, Liveness, Session, State};
 use crate::store::events::{EventsError, NewEvent};
 use crate::store::sessions::{SessionRow, SessionsError};
 use crate::store::Store;
+use crate::tmux::PaneLocation;
 
 const RECONCILE_COMPONENT: &str = "reconcile";
 const ENTITY_SESSION: &str = "session";
@@ -162,7 +163,7 @@ pub fn reconcile(
         report.checked = report.checked.saturating_add(1);
         let observation = observe(env, &session, boot_id.as_deref(), panes.as_ref());
         let id = session.id.clone();
-        match apply(store, env, session, &observation, now) {
+        match apply(store, env, session, &observation, panes.as_ref(), now) {
             Ok(Outcome::Unchanged) => report.unchanged = report.unchanged.saturating_add(1),
             Ok(Outcome::Interrupted) => {
                 report.interrupted = report.interrupted.saturating_add(1);
@@ -186,20 +187,16 @@ fn in_scope(scope: &Scope, session: &Session) -> bool {
     }
 }
 
-/// Pane ids tmux knows, loaded only when some session needs the pane signal;
-/// `None` when no session needs it or tmux is unavailable.
-fn live_panes(env: &Env, sessions: &[Session]) -> Option<HashSet<String>> {
+/// The panes tmux knows, loaded only when an active session has a pane to
+/// look up; `None` when none does or tmux is unavailable.
+fn live_panes(env: &Env, sessions: &[Session]) -> Option<HashMap<String, PaneLocation>> {
     let needed = sessions
         .iter()
-        .any(|s| s.state.is_active() && s.pid.is_none() && s.tmux_pane.is_some());
+        .any(|s| s.state.is_active() && s.tmux_pane.is_some());
     if !needed {
         return None;
     }
-    env.tmux
-        .list_panes()
-        .ok()
-        .flatten()
-        .map(|panes| panes.into_keys().collect())
+    env.tmux.list_panes().ok().flatten()
 }
 
 /// Gathers what [`decide`] needs; a boot change settles the question, so no
@@ -208,7 +205,7 @@ fn observe<'a>(
     env: &Env,
     session: &Session,
     boot_id: Option<&'a str>,
-    panes: Option<&HashSet<String>>,
+    panes: Option<&HashMap<String, PaneLocation>>,
 ) -> Observation<'a> {
     let boot_changed = matches!(
         (session.boot_id.as_deref(), boot_id),
@@ -219,7 +216,7 @@ fn observe<'a>(
         _ => None,
     };
     let pane_exists = match (&session.tmux_pane, panes) {
-        (Some(pane), Some(panes)) => Some(panes.contains(pane)),
+        (Some(pane), Some(panes)) => Some(panes.contains_key(pane)),
         _ => None,
     };
     Observation {
@@ -241,6 +238,7 @@ fn apply(
     env: &Env,
     mut session: Session,
     observation: &Observation<'_>,
+    panes: Option<&HashMap<String, PaneLocation>>,
     now: &str,
 ) -> Result<Outcome, RowError> {
     let author = Author::System {
@@ -254,7 +252,16 @@ fn apply(
     let worktree_exists = session.cwd.is_empty() || env.fs.exists(Path::new(&session.cwd));
     let worktree_changed = worktree_exists != session.worktree_exists;
     session.worktree_exists = worktree_exists;
-    if reason.is_none() && !worktree_changed {
+    // A pane id only names this session's pane while the session is live: after
+    // a reboot tmux reuses the ids. A vanished pane leaves the old placement.
+    let placement_changed = reason.is_none()
+        && session.state.is_active()
+        && session
+            .tmux_pane
+            .as_ref()
+            .and_then(|pane| panes?.get(pane))
+            .is_some_and(|location| session.record_tmux_location(location));
+    if reason.is_none() && !worktree_changed && !placement_changed {
         return Ok(Outcome::Unchanged);
     }
 

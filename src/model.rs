@@ -131,6 +131,23 @@ impl Session {
         }
     }
 
+    /// Records where tmux says the pane is; `true` when that changed anything.
+    pub fn record_tmux_location(&mut self, location: &crate::tmux::PaneLocation) -> bool {
+        let session = Some(location.session_name.as_str());
+        let window_name = Some(location.window_name.as_str());
+        let window_index = Some(location.window_index.as_str());
+        if self.tmux_session.as_deref() == session
+            && self.tmux_window_name.as_deref() == window_name
+            && self.tmux_window_index.as_deref() == window_index
+        {
+            return false;
+        }
+        self.tmux_session = Some(location.session_name.clone());
+        self.tmux_window_name = Some(location.window_name.clone());
+        self.tmux_window_index = Some(location.window_index.clone());
+        true
+    }
+
     pub fn apply_event(&mut self, event: &Event, at: &str) -> EventOutcome {
         let is_start = matches!(event, Event::SessionStart { .. });
         if self.state == State::Finished && !is_start {

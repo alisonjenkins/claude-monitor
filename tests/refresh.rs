@@ -13,6 +13,7 @@ use claude_monitor::refresh::refresh;
 use claude_monitor::store::events::EventRow;
 use claude_monitor::store::{Store, StoreOptions};
 use claude_monitor::testing::FakeEnv;
+use claude_monitor::tmux::PaneLocation;
 use serde_json::json;
 use tempfile::TempDir;
 
@@ -250,4 +251,75 @@ fn missing_agent_directories_degrade_to_an_empty_pass() {
 
     assert!(!report.changed());
     assert!(fx.store.list_sessions().unwrap().is_empty());
+}
+
+fn location(session: &str, window: &str, index: &str) -> PaneLocation {
+    PaneLocation {
+        session_name: session.to_owned(),
+        window_name: window.to_owned(),
+        window_index: index.to_owned(),
+        pane_index: "0".to_owned(),
+    }
+}
+
+fn placement(session: &Session) -> (Option<&str>, Option<&str>, Option<&str>) {
+    (
+        session.tmux_session.as_deref(),
+        session.tmux_window_name.as_deref(),
+        session.tmux_window_index.as_deref(),
+    )
+}
+
+#[test]
+fn a_live_pane_records_its_tmux_session_and_window() {
+    let fx = Fx::new();
+    fx.registry(10, "sess-1", "busy", true);
+    fx.fake
+        .tmux
+        .add_pane("%5", location("my project", "api build", "2"));
+
+    fx.run();
+
+    let session = fx.session("sess-1").unwrap();
+    assert_eq!(
+        placement(&session),
+        (Some("my project"), Some("api build"), Some("2"))
+    );
+}
+
+#[test]
+fn a_moved_window_updates_the_placement_and_a_repeat_writes_nothing() {
+    let fx = Fx::new();
+    fx.registry(10, "sess-1", "busy", true);
+    fx.fake.tmux.add_pane("%5", location("work", "api", "2"));
+    fx.run();
+    fx.fake.tmux.add_pane("%5", location("work", "api", "4"));
+
+    let moved = fx.run();
+    let repeat = fx.run();
+
+    assert_eq!(
+        placement(&fx.session("sess-1").unwrap()),
+        (Some("work"), Some("api"), Some("4"))
+    );
+    assert!(moved.changed(), "{moved:?}");
+    assert!(!repeat.changed(), "{repeat:?}");
+}
+
+#[test]
+fn a_vanished_pane_or_missing_tmux_never_clears_the_placement() {
+    let fx = Fx::new();
+    fx.registry(10, "sess-1", "busy", true);
+    fx.fake.tmux.add_pane("%5", location("work", "api", "2"));
+    fx.run();
+
+    fx.fake.tmux.remove_pane("%5");
+    fx.run();
+    fx.fake.tmux.set_available(false);
+    fx.run();
+
+    assert_eq!(
+        placement(&fx.session("sess-1").unwrap()),
+        (Some("work"), Some("api"), Some("2"))
+    );
 }
