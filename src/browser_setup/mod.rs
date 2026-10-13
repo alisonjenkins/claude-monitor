@@ -3,6 +3,7 @@
 
 pub mod discover;
 pub mod nss;
+pub mod profile;
 pub mod runner;
 pub mod secret_file;
 pub mod userjs;
