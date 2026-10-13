@@ -27,6 +27,16 @@ let
     "SessionEnd"
   ];
 
+  # One argument list for the systemd unit and the launchd agent, so the two
+  # platforms cannot drift.
+  serveArgs = [
+    "${cfg.package}/bin/claude-monitor"
+    "serve"
+    "--port"
+    (toString cfg.serve.port)
+  ]
+  ++ lib.optional cfg.serve.mtls "--mtls";
+
   hookCommand = "${cfg.package}/bin/claude-monitor hook";
 
   mkHookGroup =
@@ -229,15 +239,16 @@ in
     };
 
     serve = {
-      enable = lib.mkEnableOption "a systemd user service that runs `claude-monitor serve`" // {
+      enable = lib.mkEnableOption "a background user service that runs `claude-monitor serve`" // {
         description = ''
-          Run `claude-monitor serve` as a systemd user service (Linux only):
-          the web view of the same sessions, on a loopback address only
-          (127.0.0.1), over TLS 1.3 with a per-install CA that you trust once
-          (`claude-monitor web ca`). A single-use login URL, valid for five
-          minutes, is printed to the journal each time the service starts;
-          read it with `journalctl --user -u claude-monitor-serve -n 5`, or
-          ask the running service for a new one with `claude-monitor web login`.
+          Run `claude-monitor serve` as a background user service (a systemd
+          user unit on Linux, a launchd agent on macOS): the web view of the
+          same sessions, on a loopback address only (127.0.0.1), over TLS 1.3
+          with a per-install CA that you trust once (`claude-monitor web ca`).
+          A single-use login URL, valid for five minutes, is printed to the
+          log each time the service starts (the journal on Linux,
+          `~/Library/Logs/claude-monitor-serve.log` on macOS); ask the running
+          service for a new one with `claude-monitor web login`.
         '';
       };
 
@@ -245,6 +256,16 @@ in
         type = lib.types.port;
         default = 8765;
         description = "The loopback port `claude-monitor serve` listens on.";
+      };
+
+      mtls = lib.mkOption {
+        type = lib.types.bool;
+        default = false;
+        description = ''
+          Pass `--mtls` to `claude-monitor serve`, so the web view also
+          requires a client certificate from the install's CA. Write one with
+          `claude-monitor web client-cert` and import it into the browser.
+        '';
       };
     };
 
@@ -373,7 +394,7 @@ in
         {
           Unit.Description = "claude-monitor: web view of AI agent sessions (loopback only)";
           Service = {
-            ExecStart = "${cfg.package}/bin/claude-monitor serve --port ${toString cfg.serve.port}";
+            ExecStart = lib.escapeShellArgs serveArgs;
             Restart = "on-failure";
             RestartSec = 5;
             Environment = [
