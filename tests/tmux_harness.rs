@@ -146,6 +146,51 @@ fn spawned_windows_get_ascending_indexes_in_spawn_order() {
 }
 
 #[test]
+fn split_pane_adds_a_pane_to_the_window_and_select_layout_reshapes_it() {
+    let Some(server) = TmuxServer::start() else {
+        return;
+    };
+    let tmux = SystemTmux::with_socket(server.socket());
+    let first_cwd = TempDir::new().unwrap();
+    let second_cwd = TempDir::new().unwrap();
+    let first_path = first_cwd.path().canonicalize().unwrap();
+    let second_path = second_cwd.path().canonicalize().unwrap();
+    tmux.ensure_session("my project", &first_path).unwrap();
+    let win = tmux
+        .spawn_window("my project", "api: build", &first_path, &sleep_argv())
+        .unwrap();
+
+    let second = tmux
+        .split_pane(&win.pane_id, &second_path, &sleep_argv())
+        .unwrap();
+    tmux.select_layout(&win.pane_id, "even-horizontal").unwrap();
+
+    assert!(second.starts_with('%'), "{second}");
+    assert_ne!(second, win.pane_id);
+    let first_at = tmux.pane_location(&win.pane_id).unwrap().unwrap();
+    let second_at = tmux.pane_location(&second).unwrap().unwrap();
+    assert_eq!(first_at.window_index, second_at.window_index);
+    assert_eq!(first_at.window_panes, "2");
+    let index = |at: &PaneLocation| at.pane_index.parse::<u32>().unwrap();
+    assert_eq!(index(&second_at), index(&first_at) + 1);
+    assert!(first_at.window_layout.contains('{'), "{first_at:?}");
+    let cwd_of =
+        |pane: &str| server.run(&["display-message", "-p", "-t", pane, "#{pane_current_path}"]);
+    // tmux reads the cwd from the child process, which may not have moved yet.
+    let wanted = second_path.to_string_lossy();
+    let mut seen = cwd_of(&second);
+    for _ in 0..50 {
+        if seen == wanted {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        seen = cwd_of(&second);
+    }
+    assert_eq!(seen, wanted);
+    assert!(tmux.select_layout(&win.pane_id, "not a layout").is_err());
+}
+
+#[test]
 fn pane_location_reports_the_session_and_window_of_one_pane() {
     let Some(server) = TmuxServer::start() else {
         return;

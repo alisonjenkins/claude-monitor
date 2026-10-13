@@ -109,6 +109,15 @@ pub enum TmuxCall {
         cwd: PathBuf,
         argv: Vec<String>,
     },
+    SplitPane {
+        target: String,
+        cwd: PathBuf,
+        argv: Vec<String>,
+    },
+    SelectLayout {
+        target: String,
+        layout: String,
+    },
 }
 
 #[derive(Debug, Default)]
@@ -120,6 +129,9 @@ struct TmuxState {
     next_window: u32,
     fail_creates: Option<String>,
     fail_pane_location: Option<String>,
+    fail_next_spawn_window: Option<String>,
+    fail_splits: Option<String>,
+    fail_layouts: Option<String>,
 }
 
 #[derive(Debug)]
@@ -155,6 +167,21 @@ impl FakeTmux {
     /// Make `pane_location` fail with `detail`.
     pub fn fail_pane_location(&self, detail: &str) {
         lock(&self.0).fail_pane_location = Some(detail.to_owned());
+    }
+
+    /// Make the next `spawn_window` (only that one) fail with `detail`.
+    pub fn fail_next_spawn_window(&self, detail: &str) {
+        lock(&self.0).fail_next_spawn_window = Some(detail.to_owned());
+    }
+
+    /// Make `split_pane` fail with `detail`.
+    pub fn fail_splits(&self, detail: &str) {
+        lock(&self.0).fail_splits = Some(detail.to_owned());
+    }
+
+    /// Make `select_layout` fail with `detail`.
+    pub fn fail_layouts(&self, detail: &str) {
+        lock(&self.0).fail_layouts = Some(detail.to_owned());
     }
 
     pub fn calls(&self) -> Vec<TmuxCall> {
@@ -295,7 +322,11 @@ impl Tmux for FakeTmux {
             cwd: cwd.to_owned(),
             argv: argv.to_vec(),
         });
-        if let Some(detail) = state.fail_creates.clone() {
+        if let Some(detail) = state
+            .fail_next_spawn_window
+            .take()
+            .or_else(|| state.fail_creates.clone())
+        {
             return Err(EnvError::Failed {
                 operation: "spawn tmux window",
                 detail,
@@ -320,6 +351,64 @@ impl Tmux for FakeTmux {
             pane_id,
             window_id: format!("@{window_index}"),
         })
+    }
+
+    fn split_pane(
+        &self,
+        window_target_pane: &str,
+        cwd: &Path,
+        argv: &[String],
+    ) -> Result<String, EnvError> {
+        let mut state = lock(&self.0);
+        state.calls.push(TmuxCall::SplitPane {
+            target: window_target_pane.to_owned(),
+            cwd: cwd.to_owned(),
+            argv: argv.to_vec(),
+        });
+        let failed = |detail| EnvError::Failed {
+            operation: "split tmux pane",
+            detail,
+        };
+        if let Some(detail) = state.fail_splits.clone() {
+            return Err(failed(detail));
+        }
+        let Some(target) = state.panes.get(window_target_pane).cloned() else {
+            return Err(failed(format!("can't find pane {window_target_pane}")));
+        };
+        let in_window = |p: &PaneLocation| {
+            p.session_name == target.session_name && p.window_index == target.window_index
+        };
+        let count = state.panes.values().filter(|p| in_window(p)).count();
+        let panes = count.saturating_add(1).to_string();
+        for pane in state.panes.values_mut().filter(|p| in_window(p)) {
+            pane.window_panes.clone_from(&panes);
+        }
+        let pane_id = format!("%{}", state.next_pane);
+        state.next_pane = state.next_pane.saturating_add(1);
+        state.panes.insert(
+            pane_id.clone(),
+            PaneLocation {
+                pane_index: count.to_string(),
+                window_panes: panes,
+                ..target
+            },
+        );
+        Ok(pane_id)
+    }
+
+    fn select_layout(&self, window_target_pane: &str, layout: &str) -> Result<(), EnvError> {
+        let mut state = lock(&self.0);
+        state.calls.push(TmuxCall::SelectLayout {
+            target: window_target_pane.to_owned(),
+            layout: layout.to_owned(),
+        });
+        match state.fail_layouts.clone() {
+            Some(detail) => Err(EnvError::Failed {
+                operation: "select tmux layout",
+                detail,
+            }),
+            None => Ok(()),
+        }
     }
 }
 
@@ -655,6 +744,73 @@ mod tests {
                 argv,
             })
         );
+    }
+
+    #[test]
+    fn fake_split_pane_joins_the_targets_window_and_records_the_calls() {
+        let f = FakeEnv::new();
+        let argv = vec!["claude".to_owned()];
+        let win = f
+            .env
+            .tmux
+            .spawn_window("work", "api", Path::new("/w/a"), &argv)
+            .unwrap();
+
+        let pane = f
+            .env
+            .tmux
+            .split_pane(&win.pane_id, Path::new("/w/b"), &argv)
+            .unwrap();
+        f.env.tmux.select_layout(&win.pane_id, "tiled").unwrap();
+        let calls = f.tmux.calls();
+
+        let panes = f.env.tmux.list_panes().unwrap().unwrap();
+        let first = panes.get(&win.pane_id).expect("first pane");
+        let second = panes.get(&pane).expect("second pane");
+        assert_eq!(first.window_index, second.window_index);
+        assert_eq!(second.pane_index, "1");
+        assert_eq!(
+            (first.window_panes.as_str(), second.window_panes.as_str()),
+            ("2", "2")
+        );
+        assert_eq!(
+            calls.get(1..),
+            Some(
+                &[
+                    TmuxCall::SplitPane {
+                        target: win.pane_id.clone(),
+                        cwd: "/w/b".into(),
+                        argv,
+                    },
+                    TmuxCall::SelectLayout {
+                        target: win.pane_id,
+                        layout: "tiled".into(),
+                    },
+                ][..]
+            )
+        );
+    }
+
+    #[test]
+    fn fake_split_and_layout_failures_are_controllable() {
+        let f = FakeEnv::new();
+        let win = f
+            .env
+            .tmux
+            .spawn_window("work", "api", Path::new("/w"), &["x".to_owned()])
+            .unwrap();
+        f.tmux.fail_splits("no space for new pane");
+        f.tmux.fail_layouts("bad layout");
+
+        let split = f
+            .env
+            .tmux
+            .split_pane(&win.pane_id, Path::new("/w"), &["x".to_owned()])
+            .unwrap_err();
+        let layout = f.env.tmux.select_layout(&win.pane_id, "tiled").unwrap_err();
+
+        assert_eq!(split.to_string(), "split tmux pane: no space for new pane");
+        assert_eq!(layout.to_string(), "select tmux layout: bad layout");
     }
 
     #[test]

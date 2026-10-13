@@ -74,6 +74,18 @@ pub trait Tmux: Send + Sync {
         cwd: &Path,
         argv: &[String],
     ) -> Result<SpawnedWindow, EnvError>;
+    /// Split the window holding `window_target_pane` (a pane id) with a
+    /// detached pane running `argv` directly (no shell) in `cwd`; returns the
+    /// new pane's id.
+    fn split_pane(
+        &self,
+        window_target_pane: &str,
+        cwd: &Path,
+        argv: &[String],
+    ) -> Result<String, EnvError>;
+    /// Apply `layout` (a layout string or a name such as `tiled`) to the
+    /// window holding `window_target_pane`.
+    fn select_layout(&self, window_target_pane: &str, layout: &str) -> Result<(), EnvError>;
 }
 
 /// Ids of a window `Tmux::spawn_window` opened.
@@ -557,6 +569,37 @@ impl Tmux for SystemTmux {
                 detail: format!("unexpected new-window output {out:?}"),
             }),
         }
+    }
+
+    fn split_pane(
+        &self,
+        window_target_pane: &str,
+        cwd: &Path,
+        argv: &[String],
+    ) -> Result<String, EnvError> {
+        let cwd = cwd.to_string_lossy();
+        let mut args = vec![
+            "split-window",
+            "-d",
+            "-P",
+            "-F",
+            "#{pane_id}",
+            "-t",
+            window_target_pane,
+            "-c",
+            &cwd,
+            "--",
+        ];
+        args.extend(argv.iter().map(String::as_str));
+        self.output("split tmux pane", &args)
+    }
+
+    fn select_layout(&self, window_target_pane: &str, layout: &str) -> Result<(), EnvError> {
+        self.output(
+            "select tmux layout",
+            &["select-layout", "-t", window_target_pane, layout],
+        )
+        .map(|_| ())
     }
 }
 
