@@ -81,6 +81,12 @@ notification fires when a session starts needing you.
 | `links check` | Show linked records whose two sides disagree; writes neither |
 | `export cortexiphan` | Write projects, steps, notes and sessions as JSON Lines for cortexiphan |
 
+`restore` and `respawn` put each session back in the tmux session and window it
+was last seen in (recorded by the hook and by every refresh; shown by `show`).
+A session with no recorded placement opens in the `agents` session. Setting
+`CLAUDE_MONITOR_TMUX_SESSION` or `tmuxSession` in `config.json` forces every
+session into that one tmux session instead; window names are still kept.
+
 `claude-monitor --help` and `claude-monitor <command> --help` list every flag.
 Nothing here sends session content off the machine: `summarize` talks only to
 a loopback endpoint and `links check` only runs the `cortexiphan` client when
