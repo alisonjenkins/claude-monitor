@@ -409,6 +409,33 @@ in
           Install.WantedBy = [ "default.target" ];
         };
 
+    # launchd has no %h or %u, so the profile directories come from the Home
+    # Manager user. The login URL goes to the log on every start.
+    launchd.agents.claude-monitor-serve =
+      lib.mkIf (cfg.serve.enable && pkgs.stdenv.hostPlatform.isDarwin)
+        {
+          enable = true;
+          config = {
+            ProgramArguments = serveArgs;
+            RunAtLoad = true;
+            KeepAlive = true;
+            ThrottleInterval = 5;
+            EnvironmentVariables.PATH = lib.concatStringsSep ":" [
+              (lib.makeBinPath [
+                pkgs.tmux
+                pkgs.git
+              ])
+              "${config.home.homeDirectory}/.nix-profile/bin"
+              "/etc/profiles/per-user/${config.home.username}/bin"
+              "/run/current-system/sw/bin"
+              "/usr/bin"
+              "/bin"
+            ];
+            StandardOutPath = "${config.home.homeDirectory}/Library/Logs/claude-monitor-serve.log";
+            StandardErrorPath = "${config.home.homeDirectory}/Library/Logs/claude-monitor-serve.log";
+          };
+        };
+
     systemd.user.services.claude-monitor-boot-check =
       lib.mkIf (cfg.bootCheck.enable && pkgs.stdenv.hostPlatform.isLinux)
         {
