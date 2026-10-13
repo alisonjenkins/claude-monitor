@@ -366,6 +366,84 @@
                     serveOn.Install.WantedBy != [ "default.target" ]
                   ) "serve service is not wanted by default.target"
                 );
+              # serve on both platforms: the same arguments (port, --mtls) reach
+              # the systemd unit on Linux and the launchd agent on macOS, and
+              # each platform carries only its own unit. Both hosts are
+              # evaluated from any system; nothing is built.
+              servePort = 9123;
+              serveCfgFor =
+                hostSystem: mtls:
+                (mkHmConfigWith {
+                  copilot = false;
+                  tmuxHooks = false;
+                  serve = true;
+                  inherit hostSystem;
+                  extra.programs.claude-monitor.serve = {
+                    port = servePort;
+                    inherit mtls;
+                  };
+                }).config;
+              serveStrip = builtins.unsafeDiscardStringContext;
+              serveLinuxExec =
+                mtls:
+                serveStrip (
+                  builtins.head (
+                    pkgs.lib.toList
+                      (serveCfgFor "x86_64-linux" mtls).systemd.user.services.${serveServiceName}.Service.ExecStart
+                  )
+                );
+              serveDarwinAgent =
+                mtls: (serveCfgFor "aarch64-darwin" mtls).launchd.agents.${serveServiceName}.config;
+              serveDarwinArgs = mtls: map serveStrip (serveDarwinAgent mtls).ProgramArguments;
+              serveExpectedTail =
+                mtls:
+                [
+                  "serve"
+                  "--port"
+                  (toString servePort)
+                ]
+                ++ pkgs.lib.optional mtls "--mtls";
+              serveBothProblems =
+                pkgs.lib.concatMap
+                  (
+                    mtls:
+                    let
+                      label = "serve (mtls = ${pkgs.lib.boolToString mtls})";
+                      exec = serveLinuxExec mtls;
+                      args = serveDarwinArgs mtls;
+                    in
+                    pkgs.lib.optional (
+                      !(
+                        pkgs.lib.hasPrefix "/nix/store/" exec
+                        && pkgs.lib.hasInfix "/bin/claude-monitor ${pkgs.lib.concatStringsSep " " (serveExpectedTail mtls)}" exec
+                      )
+                    ) "${label}: Linux ExecStart is not the store-path binary with ${toString (serveExpectedTail mtls)}"
+                    ++ pkgs.lib.optional (
+                      pkgs.lib.hasInfix "--mtls" exec != mtls
+                    ) "${label}: Linux ExecStart has --mtls out of step with the option"
+                    ++
+                      pkgs.lib.optional
+                        (
+                          !(
+                            pkgs.lib.hasPrefix "/nix/store/" (builtins.head args)
+                            && pkgs.lib.hasSuffix "/bin/claude-monitor" (builtins.head args)
+                            && builtins.tail args == serveExpectedTail mtls
+                          )
+                        )
+                        "${label}: Darwin ProgramArguments are not the store-path binary with ${toString (serveExpectedTail mtls)}"
+                    ++ pkgs.lib.optional (
+                      (serveDarwinAgent mtls).RunAtLoad != true
+                    ) "${label}: Darwin agent is not RunAtLoad"
+                    ++ pkgs.lib.optional (
+                      (serveDarwinAgent mtls).KeepAlive != true
+                    ) "${label}: Darwin agent is not KeepAlive"
+                    ++ pkgs.lib.optional (builtins.hasAttr serveServiceName (serveCfgFor "aarch64-darwin" mtls).systemd.user.services) "${label}: systemd unit generated on Darwin"
+                    ++ pkgs.lib.optional (builtins.hasAttr serveServiceName (serveCfgFor "x86_64-linux" mtls).launchd.agents) "${label}: launchd agent generated on Linux"
+                  )
+                  [
+                    true
+                    false
+                  ];
               # boot-check unit: absent by default; when enabled on Linux it is a
               # oneshot user unit running the store-path binary's `boot-check`
               # at login.
@@ -579,6 +657,8 @@
               throw "claude-monitor hm-module: ${builtins.concatStringsSep "; " watchProblems}"
             else if serveProblems != [ ] then
               throw "claude-monitor hm-module: ${builtins.concatStringsSep "; " serveProblems}"
+            else if serveBothProblems != [ ] then
+              throw "claude-monitor hm-module: ${builtins.concatStringsSep "; " serveBothProblems}"
             else if bootCheckProblems != [ ] then
               throw "claude-monitor hm-module: ${builtins.concatStringsSep "; " bootCheckProblems}"
             else if launchdProblems != [ ] then
