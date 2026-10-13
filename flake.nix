@@ -186,6 +186,8 @@
                   serve ? false,
                   bootCheck ? false,
                   bootCheckBanner ? false,
+                  browserSetup ? false,
+                  browserSetupAutoSelect ? false,
                   hostSystem ? system,
                   extra ? { },
                 }:
@@ -208,6 +210,8 @@
                       programs.claude-monitor.serve.enable = serve;
                       programs.claude-monitor.bootCheck.enable = bootCheck;
                       programs.claude-monitor.bootCheck.banner.enable = bootCheckBanner;
+                      programs.claude-monitor.web.browserSetup.enable = browserSetup;
+                      programs.claude-monitor.web.browserSetup.autoSelect = browserSetupAutoSelect;
                       programs.tmux.enable = true;
                     }
                     extra
@@ -450,6 +454,79 @@
                     && !pkgs.lib.hasInfix "$" (builtins.head bannerOn)
                   )
                 ) "client-attached hook missing or not a backgrounded store-path `boot-check --banner`";
+              # browser setup: absent by default; when enabled on Linux it is a
+              # home.activation entry after writeBoundary that runs the
+              # store-path `web setup-browser` with the NSS tools on PATH and
+              # can never fail the activation. --auto-select appears only when
+              # asked for, and --browser all only for the full default list.
+              setupName = "claudeMonitorBrowserSetup";
+              hasSetup = cfg: builtins.hasAttr setupName cfg.config.home.activation;
+              setupEntry = cfg: cfg.config.home.activation.${setupName};
+              setupText = cfg: builtins.unsafeDiscardStringContext (setupEntry cfg).data;
+              setupDefault = mkHmConfigWith {
+                copilot = false;
+                tmuxHooks = false;
+                browserSetup = true;
+              };
+              setupAuto = mkHmConfigWith {
+                copilot = false;
+                tmuxHooks = false;
+                browserSetup = true;
+                browserSetupAutoSelect = true;
+              };
+              setupSome = mkHmConfigWith {
+                copilot = false;
+                tmuxHooks = false;
+                browserSetup = true;
+                extra.programs.claude-monitor.web.browserSetup.browsers = [
+                  "firefox"
+                  "zen"
+                ];
+              };
+              browserSetupProblems =
+                pkgs.lib.optional (hasSetup hmConfig) "browser setup activation generated with browserSetup.enable = false"
+                ++ pkgs.lib.optionals pkgs.stdenv.hostPlatform.isLinux (
+                  pkgs.lib.optional (
+                    !hasSetup setupDefault
+                  ) "browser setup activation missing with browserSetup.enable = true"
+                  ++ pkgs.lib.optionals (hasSetup setupDefault) (
+                    let
+                      text = setupText setupDefault;
+                      has = pkgs.lib.hasInfix;
+                    in
+                    pkgs.lib.optional (
+                      (setupEntry setupDefault).after != [ "writeBoundary" ]
+                    ) "browser setup activation does not run after writeBoundary"
+                    ++ pkgs.lib.optional (
+                      !(has "/nix/store/" text && has "/bin/claude-monitor web setup-browser" text)
+                    ) "browser setup does not run the store-path `web setup-browser`"
+                    ++ pkgs.lib.optional (!(has "-tools/bin" text)) "browser setup does not put the NSS tools on PATH"
+                    ++ pkgs.lib.optional (
+                      !(has "claude_monitor_setup_browser all" text)
+                    ) "browser setup does not default to every browser"
+                    ++ pkgs.lib.optional (has "--auto-select" text) "browser setup passes --auto-select by default"
+                    ++ pkgs.lib.optional (
+                      !(has "|| status=$?" text)
+                    ) "browser setup can fail the activation: the exit status is not captured"
+                    ++ pkgs.lib.optional (!has "DRY_RUN" text) "browser setup ignores home-manager's DRY_RUN"
+                  )
+                  ++ pkgs.lib.optional (
+                    hasSetup setupAuto && !(pkgs.lib.hasInfix "--auto-select" (setupText setupAuto))
+                  ) "browser setup omits --auto-select with autoSelect = true"
+                  ++ pkgs.lib.optionals (hasSetup setupSome) (
+                    let
+                      text = setupText setupSome;
+                    in
+                    pkgs.lib.optional (
+                      !(pkgs.lib.hasInfix "claude_monitor_setup_browser firefox" text)
+                      || !(pkgs.lib.hasInfix "claude_monitor_setup_browser zen" text)
+                    ) "browser setup ignores the browsers list"
+                    ++ pkgs.lib.optional (
+                      pkgs.lib.hasInfix "claude_monitor_setup_browser all" text
+                      || pkgs.lib.hasInfix "claude_monitor_setup_browser chromium" text
+                    ) "browser setup runs a browser outside the browsers list"
+                  )
+                );
               # config.json: defaults carry no launchers and the "agents"
               # session; configured values pass through verbatim.
               configFile = "claude-monitor/config.json";
@@ -508,6 +585,8 @@
               throw "claude-monitor hm-module: ${builtins.concatStringsSep "; " launchdProblems}"
             else if bannerProblems != [ ] then
               throw "claude-monitor hm-module: ${builtins.concatStringsSep "; " bannerProblems}"
+            else if browserSetupProblems != [ ] then
+              throw "claude-monitor hm-module: ${builtins.concatStringsSep "; " browserSetupProblems}"
             else if configProblems != [ ] then
               throw "claude-monitor hm-module: ${builtins.concatStringsSep "; " configProblems}"
             else

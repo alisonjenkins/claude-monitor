@@ -96,6 +96,37 @@ let
   bootCheckBannerSnippet = ''
     set-hook -g client-attached 'run-shell -b "${cfg.package}/bin/claude-monitor boot-check --banner"'
   '';
+
+  allBrowsers = [
+    "firefox"
+    "zen"
+    "chromium"
+  ];
+  # The command takes one --browser value; `all` is the full default list.
+  browserSetupTargets =
+    let
+      chosen = lib.unique cfg.web.browserSetup.browsers;
+    in
+    if lib.sort lib.lessThan chosen == lib.sort lib.lessThan allBrowsers then [ "all" ] else chosen;
+
+  # Activation runs under `set -e`, so the exit status is captured rather than
+  # propagated: an in-use profile, a primary password or a missing tool must
+  # leave a line, never a failed switch. DRY_RUN is Home Manager's own flag.
+  browserSetupScript = ''
+    claude_monitor_setup_browser() {
+      local browser="$1" status=0
+      PATH="${lib.makeBinPath [ pkgs.nss.tools ]}:$PATH" \
+        ${cfg.package}/bin/claude-monitor web setup-browser --browser "$browser" \
+        ${lib.optionalString cfg.web.browserSetup.autoSelect "--auto-select"} \
+        ''${DRY_RUN:+--dry-run} >/dev/null 2>&1 || status=$?
+      if [ "$status" -eq 0 ]; then
+        echo "claude-monitor: browser setup ($browser): ok"
+      else
+        echo "claude-monitor: browser setup ($browser): exit $status; run 'claude-monitor web setup-browser --browser $browser' to see why"
+      fi
+    }
+    ${lib.concatMapStringsSep "\n" (b: "claude_monitor_setup_browser ${b}") browserSetupTargets}
+  '';
 in
 {
   options.programs.claude-monitor = {
@@ -217,6 +248,57 @@ in
       };
     };
 
+    web.browserSetup = {
+      enable =
+        lib.mkEnableOption "trusting the web view's CA and importing its client certificate into browsers at activation"
+        // {
+          description = ''
+            Run `claude-monitor web setup-browser` on every Home Manager
+            activation (Linux only): it trusts the install's local CA and
+            imports its client certificate into the NSS database of each
+            Firefox and Zen profile and of Chromium, Chrome and Brave
+            (`~/.pki/nssdb`). It is idempotent, backs up `cert9.db` and
+            `key4.db` before the first write to a profile, skips a profile that
+            is open or has a primary password, and never fails the activation:
+            it prints one line per browser instead. The client key lives in the
+            profile, so this does not stop malware running as your user.
+          '';
+        };
+
+      autoSelect = lib.mkOption {
+        type = lib.types.bool;
+        default = false;
+        description = ''
+          Also make Firefox and Zen pick the client certificate without
+          asking, by writing a marked block to each profile's `user.js`
+          (`security.default_personal_cert = "Select Automatically"`).
+
+          This is a global browser preference, not one scoped to
+          claude-monitor: any site that asks for a client certificate gets
+          this one without a prompt. Off by default for that reason. For
+          Chromium it changes nothing; the managed policy it needs is printed
+          by `claude-monitor web setup-browser --auto-select --browser
+          chromium` and must be installed by hand.
+        '';
+      };
+
+      browsers = lib.mkOption {
+        type = lib.types.listOf (
+          lib.types.enum [
+            "firefox"
+            "zen"
+            "chromium"
+          ]
+        );
+        default = [
+          "firefox"
+          "zen"
+          "chromium"
+        ];
+        description = "Which browsers' certificate databases to set up.";
+      };
+    };
+
     launchers = lib.mkOption {
       type = lib.types.attrsOf lib.types.str;
       default = { };
@@ -260,6 +342,10 @@ in
     xdg.configFile."claude-monitor/config.json".text = builtins.toJSON {
       tmuxSession = cfg.tmuxSession;
       launchers = cfg.launchers;
+    };
+
+    home.activation = lib.mkIf (cfg.web.browserSetup.enable && pkgs.stdenv.hostPlatform.isLinux) {
+      claudeMonitorBrowserSetup = lib.hm.dag.entryAfter [ "writeBoundary" ] browserSetupScript;
     };
 
     programs.tmux.extraConfig = lib.mkMerge [
