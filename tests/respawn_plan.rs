@@ -9,7 +9,7 @@ use claude_monitor::agents::{
 };
 use claude_monitor::model::{Session, State};
 use claude_monitor::respawn::{
-    plan_respawn, plan_respawn_with, Options, Plan, Refusal, RefusalCode,
+    plan_respawn, plan_respawn_with, Options, PanePlacement, Plan, Refusal, RefusalCode,
 };
 use claude_monitor::testing::FakeEnv;
 
@@ -320,6 +320,82 @@ fn a_recorded_placement_names_the_target_session_and_window() {
     assert_eq!(plan.tmux_session, "my project");
     assert_eq!(plan.label, "api build");
     assert_eq!(plan.window_index, Some(3));
+}
+
+fn in_pane(session: &mut Session, index: &str, panes: &str, layout: &str) {
+    session.tmux_pane_index = Some(index.to_owned());
+    session.tmux_window_panes = Some(panes.to_owned());
+    session.tmux_window_layout = Some(layout.to_owned());
+}
+
+#[test]
+fn a_recorded_pane_is_carried_in_the_plan() {
+    let fake = ready();
+    let mut s = placed("my project", "api build", "3");
+    in_pane(
+        &mut s,
+        "2",
+        "3",
+        "b25d,200x50,0,0{100x50,0,0,0,99x50,101,0,1}",
+    );
+
+    let plan = plan(&fake, &s, &Options::default()).unwrap();
+
+    assert_eq!(
+        plan.pane,
+        Some(PanePlacement {
+            recorded_session: "my project".to_owned(),
+            window_name: "api build".to_owned(),
+            window_index: 3,
+            pane_index: 2,
+            window_panes: Some(3),
+            window_layout: Some("b25d,200x50,0,0{100x50,0,0,0,99x50,101,0,1}".to_owned()),
+            grouped: false,
+        })
+    );
+}
+
+#[test]
+fn an_override_keeps_the_recorded_session_in_the_pane_placement() {
+    let fake = ready();
+    fake.vars.set("CLAUDE_MONITOR_TMUX_SESSION", "everything");
+    let mut s = placed("work", "api", "3");
+    in_pane(&mut s, "0", "2", "l");
+
+    let plan = plan(&fake, &s, &Options::default()).unwrap();
+
+    assert_eq!(plan.tmux_session, "everything");
+    assert_eq!(
+        plan.pane.map(|p| p.recorded_session),
+        Some("work".to_owned())
+    );
+}
+
+#[test]
+fn no_pane_placement_without_a_full_recorded_window_and_pane() {
+    let fake = ready();
+    let no_pane = placed("work", "api", "3");
+    let mut no_window = session(State::Interrupted);
+    in_pane(&mut no_window, "1", "2", "l");
+    let mut bad_index = placed("work", "api", "x");
+    in_pane(&mut bad_index, "1", "2", "l");
+
+    for s in [no_pane, no_window, bad_index] {
+        let plan = plan(&fake, &s, &Options::default()).unwrap();
+        assert_eq!(plan.pane, None);
+    }
+}
+
+#[test]
+fn an_unreadable_pane_count_or_empty_layout_is_left_out() {
+    let fake = ready();
+    let mut s = placed("work", "api", "3");
+    in_pane(&mut s, "1", "many", "");
+
+    let plan = plan(&fake, &s, &Options::default()).unwrap();
+
+    let pane = plan.pane.unwrap();
+    assert_eq!((pane.window_panes, pane.window_layout), (None, None));
 }
 
 #[test]

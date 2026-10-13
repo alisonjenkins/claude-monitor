@@ -80,6 +80,7 @@ mod execute_with_a_fake_tmux {
             label: "proj".to_owned(),
             tmux_session: "agents".to_owned(),
             window_index: None,
+            pane: None,
         }
     }
 

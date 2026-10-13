@@ -83,12 +83,54 @@ pub struct Plan {
     pub tmux_session: String,
     /// The window index recorded for the session, used only to order windows.
     pub window_index: Option<u32>,
+    /// Where the session sat inside its window, when all of that was recorded.
+    pub pane: Option<PanePlacement>,
+}
+
+/// A session's recorded place in a tmux window, enough to put it back as a
+/// pane of that window next to the sessions that shared it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PanePlacement {
+    /// The tmux session recorded for the session, even when an override sends
+    /// the respawn elsewhere: windows only group within one recorded session.
+    pub recorded_session: String,
+    pub window_name: String,
+    pub window_index: u32,
+    pub pane_index: u32,
+    /// The window's pane count when the session was last seen.
+    pub window_panes: Option<u32>,
+    pub window_layout: Option<String>,
+    /// Set by [`plan_batch`] when other plans of the batch open panes in the
+    /// same window.
+    pub grouped: bool,
+}
+
+impl PanePlacement {
+    fn recorded(session: &Session) -> Option<Self> {
+        let non_empty = |value: &Option<String>| value.clone().filter(|v| !v.is_empty());
+        Some(Self {
+            recorded_session: non_empty(&session.tmux_session)?,
+            window_name: non_empty(&session.tmux_window_name)?,
+            window_index: session.tmux_window_index.as_deref()?.parse().ok()?,
+            pane_index: session.tmux_pane_index.as_deref()?.parse().ok()?,
+            window_panes: session
+                .tmux_window_panes
+                .as_deref()
+                .and_then(|count| count.parse().ok()),
+            window_layout: non_empty(&session.tmux_window_layout),
+            grouped: false,
+        })
+    }
 }
 
 impl Plan {
-    /// `session:window-name`, where the window will open.
+    /// `session:window-name`, where the window will open, plus `.pane` when
+    /// the session opens as one of several panes of that window.
     pub fn tmux_target(&self) -> String {
-        format!("{}:{}", self.tmux_session, self.label)
+        match self.pane.as_ref().filter(|pane| pane.grouped) {
+            Some(pane) => format!("{}:{}.{}", self.tmux_session, self.label, pane.pane_index),
+            None => format!("{}:{}", self.tmux_session, self.label),
+        }
     }
 }
 
@@ -212,6 +254,7 @@ pub fn plan_respawn_with(
             .tmux_window_index
             .as_deref()
             .and_then(|index| index.parse().ok()),
+        pane: PanePlacement::recorded(session),
     })
 }
 
