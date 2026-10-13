@@ -310,6 +310,23 @@
               # watch service: absent by default; when enabled on Linux it is a
               # user service that restarts on failure, runs the store-path
               # binary's `watch` and starts with the session.
+              # The units spawn plain `tmux` and `git`, and a user manager has no
+              # login PATH, so each carries one naming both tools and the
+              # profile directories (%h/%u on systemd, absolute paths on launchd).
+              hasToolPath =
+                p:
+                let
+                  s = builtins.unsafeDiscardStringContext p;
+                in
+                pkgs.lib.hasInfix "-tmux-" s
+                && pkgs.lib.hasInfix "-git-" s
+                && pkgs.lib.hasInfix ".nix-profile/bin" s;
+              systemdHasPath =
+                svc:
+                builtins.any (e: pkgs.lib.hasPrefix "PATH=" e && hasToolPath e) (
+                  pkgs.lib.toList (svc.Service.Environment or [ ])
+                );
+              launchdHasPath = agent: hasToolPath (agent.config.EnvironmentVariables.PATH or "");
               watchServiceName = "claude-monitor-watch";
               hasWatchService = cfg: builtins.hasAttr watchServiceName cfg.config.systemd.user.services;
               watchOn =
@@ -335,6 +352,7 @@
                   ++ pkgs.lib.optional (
                     watchOn.Install.WantedBy != [ "default.target" ]
                   ) "watch service is not wanted by default.target"
+                  ++ pkgs.lib.optional (!systemdHasPath watchOn) "watch service has no PATH naming tmux and git"
                 );
               # serve unit: absent by default; when enabled on Linux it is a
               # user service that restarts on failure and runs the store-path
@@ -365,6 +383,7 @@
                   ++ pkgs.lib.optional (
                     serveOn.Install.WantedBy != [ "default.target" ]
                   ) "serve service is not wanted by default.target"
+                  ++ pkgs.lib.optional (!systemdHasPath serveOn) "serve service has no PATH naming tmux and git"
                 );
               # serve on both platforms: the same arguments (port, --mtls) reach
               # the systemd unit on Linux and the launchd agent on macOS, and
@@ -441,6 +460,9 @@
                       (serveDarwinAgent mtls).ThrottleInterval or 0 < 10
                     ) "${label}: Darwin agent ThrottleInterval is under 10 s"
                     ++ pkgs.lib.optional (
+                      !hasToolPath (serveDarwinAgent mtls).EnvironmentVariables.PATH
+                    ) "${label}: Darwin agent has no PATH naming tmux and git"
+                    ++ pkgs.lib.optional (
                       (serveDarwinAgent mtls).Umask or null != 63
                     ) "${label}: Darwin agent has no Umask 0077, so the log holding the login URL is world-readable"
                     ++ pkgs.lib.optional (builtins.hasAttr serveServiceName (serveCfgFor "aarch64-darwin" mtls).systemd.user.services) "${label}: systemd unit generated on Darwin"
@@ -476,6 +498,7 @@
                   ++ pkgs.lib.optional (
                     bootCheckOn.Install.WantedBy != [ "default.target" ]
                   ) "boot-check unit is not wanted by default.target"
+                  ++ pkgs.lib.optional (!systemdHasPath bootCheckOn) "boot-check unit has no PATH naming tmux and git"
                 );
               # launchd agent: evaluated against a darwin host from any system
               # (nothing is built); it must run the store-path `boot-check`
@@ -500,6 +523,9 @@
                 ++ pkgs.lib.optional (
                   bootCheckDarwin.config.RunAtLoad != true
                 ) "boot-check launchd agent is not RunAtLoad"
+                ++ pkgs.lib.optional (
+                  !launchdHasPath bootCheckDarwin
+                ) "boot-check launchd agent has no PATH naming tmux and git"
                 ++ pkgs.lib.optional (
                   pkgs.stdenv.hostPlatform.isLinux
                   &&

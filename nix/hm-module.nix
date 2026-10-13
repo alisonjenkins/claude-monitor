@@ -37,6 +37,26 @@ let
   ]
   ++ lib.optional cfg.serve.mtls "--mtls";
 
+  # A user manager has no login PATH, and the library spawns plain `tmux` and
+  # `git`, so every unit and agent names both tools and the profile directories.
+  # systemd expands %h and %u; launchd has neither, so it takes the Home
+  # Manager user's values.
+  toolBinPath = lib.makeBinPath [
+    pkgs.tmux
+    pkgs.git
+  ];
+  systemdPathEnv = [
+    "PATH=${toolBinPath}:%h/.nix-profile/bin:/etc/profiles/per-user/%u/bin:/run/current-system/sw/bin"
+  ];
+  launchdPathEnv = lib.concatStringsSep ":" [
+    toolBinPath
+    "${config.home.homeDirectory}/.nix-profile/bin"
+    "/etc/profiles/per-user/${config.home.username}/bin"
+    "/run/current-system/sw/bin"
+    "/usr/bin"
+    "/bin"
+  ];
+
   hookCommand = "${cfg.package}/bin/claude-monitor hook";
 
   mkHookGroup =
@@ -382,13 +402,13 @@ in
             ExecStart = "${cfg.package}/bin/claude-monitor watch";
             Restart = "on-failure";
             RestartSec = 5;
+            Environment = systemdPathEnv;
           };
           Install.WantedBy = [ "default.target" ];
         };
 
     # A respawn from the web view starts tmux and the agent from this unit's
-    # environment, which has no login PATH, so the profile directories and the
-    # two tools the library calls are named here.
+    # environment, which has no login PATH.
     systemd.user.services.claude-monitor-serve =
       lib.mkIf (cfg.serve.enable && pkgs.stdenv.hostPlatform.isLinux)
         {
@@ -397,14 +417,7 @@ in
             ExecStart = lib.escapeShellArgs serveArgs;
             Restart = "on-failure";
             RestartSec = 5;
-            Environment = [
-              "PATH=${
-                lib.makeBinPath [
-                  pkgs.tmux
-                  pkgs.git
-                ]
-              }:%h/.nix-profile/bin:/etc/profiles/per-user/%u/bin:/run/current-system/sw/bin"
-            ];
+            Environment = systemdPathEnv;
           };
           Install.WantedBy = [ "default.target" ];
         };
@@ -421,17 +434,7 @@ in
             KeepAlive.SuccessfulExit = false;
             ThrottleInterval = 10;
             Umask = 63; # 0077: the log holds the single-use login URL
-            EnvironmentVariables.PATH = lib.concatStringsSep ":" [
-              (lib.makeBinPath [
-                pkgs.tmux
-                pkgs.git
-              ])
-              "${config.home.homeDirectory}/.nix-profile/bin"
-              "/etc/profiles/per-user/${config.home.username}/bin"
-              "/run/current-system/sw/bin"
-              "/usr/bin"
-              "/bin"
-            ];
+            EnvironmentVariables.PATH = launchdPathEnv;
             StandardOutPath = "${config.home.homeDirectory}/Library/Logs/claude-monitor-serve.log";
             StandardErrorPath = "${config.home.homeDirectory}/Library/Logs/claude-monitor-serve.log";
           };
@@ -444,6 +447,7 @@ in
           Service = {
             Type = "oneshot";
             ExecStart = "${cfg.package}/bin/claude-monitor boot-check";
+            Environment = systemdPathEnv;
           };
           Install.WantedBy = [ "default.target" ];
         };
@@ -458,6 +462,7 @@ in
               "boot-check"
             ];
             RunAtLoad = true;
+            EnvironmentVariables.PATH = launchdPathEnv;
           };
         };
 
