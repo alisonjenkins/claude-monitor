@@ -128,8 +128,23 @@ fn tmux_placement(session: &Session) -> Option<String> {
         "{name}:{}",
         session.tmux_window_name.as_deref().unwrap_or_default()
     );
-    if let Some(index) = &session.tmux_window_index {
-        text.push_str(&format!(" (window {index})"));
+    let pane =
+        session
+            .tmux_pane_index
+            .as_deref()
+            .map(|pane| match session.tmux_window_panes.as_deref() {
+                Some(count) => format!("pane {pane} of {count}"),
+                None => format!("pane {pane}"),
+            });
+    let details: Vec<String> = session
+        .tmux_window_index
+        .as_ref()
+        .map(|index| format!("window {index}"))
+        .into_iter()
+        .chain(pane)
+        .collect();
+    if !details.is_empty() {
+        text.push_str(&format!(" ({})", details.join(", ")));
     }
     Some(text)
 }

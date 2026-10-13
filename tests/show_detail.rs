@@ -154,6 +154,31 @@ fn show_names_the_recorded_tmux_session_and_window() {
 }
 
 #[test]
+fn show_names_the_recorded_pane_and_the_panes_in_its_window() {
+    let rig = rig();
+    rig.session("s1", "main");
+    let mut session = rig.store().get_session("s1").unwrap().unwrap();
+    session.tmux_session = Some("work".to_owned());
+    session.tmux_window_name = Some("api".to_owned());
+    session.tmux_window_index = Some("3".to_owned());
+    session.tmux_pane_index = Some("2".to_owned());
+    session.tmux_window_panes = Some("4".to_owned());
+    session.tmux_window_layout = Some("b25d,200x50,0,0{100x50,0,0,0,99x50,101,0,1}".to_owned());
+    rig.store().upsert_session(&session).unwrap();
+
+    let json = rig.show_json("s1");
+    let text = rig.show_text("s1");
+
+    assert_eq!(json["tmux_pane_index"], "2");
+    assert_eq!(json["tmux_window_panes"], "4");
+    assert!(
+        text.lines()
+            .any(|l| l.starts_with("tmux") && l.contains("work:api (window 3, pane 2 of 4)")),
+        "{text}"
+    );
+}
+
+#[test]
 fn json_keeps_verbatim_and_generated_summaries_apart() {
     let rig = bound_rig();
     rig.store()
