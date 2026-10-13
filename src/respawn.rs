@@ -125,11 +125,20 @@ impl PanePlacement {
 }
 
 impl Plan {
+    /// The recorded pane index, when the session opens as one of several
+    /// panes of its window.
+    pub fn grouped_pane(&self) -> Option<u32> {
+        self.pane
+            .as_ref()
+            .filter(|pane| pane.grouped)
+            .map(|pane| pane.pane_index)
+    }
+
     /// `session:window-name`, where the window will open, plus `.pane` when
     /// the session opens as one of several panes of that window.
     pub fn tmux_target(&self) -> String {
-        match self.pane.as_ref().filter(|pane| pane.grouped) {
-            Some(pane) => format!("{}:{}.{}", self.tmux_session, self.label, pane.pane_index),
+        match self.grouped_pane() {
+            Some(pane) => format!("{}:{}.{pane}", self.tmux_session, self.label),
             None => format!("{}:{}", self.tmux_session, self.label),
         }
     }

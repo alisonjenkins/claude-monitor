@@ -167,6 +167,7 @@ pub(crate) fn started_json(items: &[Item]) -> Vec<Value> {
                 "label": item.plan.label,
                 "tmux_session": item.plan.tmux_session,
                 "tmux_target": item.plan.tmux_target(),
+                "tmux_pane": item.plan.grouped_pane(),
                 "notices": item.plan.notices,
             })),
             Item::Refused(_) => None,
@@ -183,6 +184,7 @@ pub(super) fn would_start_json(session: &Session, plan: &Plan) -> Value {
         "label": plan.label,
         "tmux_session": plan.tmux_session,
         "tmux_target": plan.tmux_target(),
+        "tmux_pane": plan.grouped_pane(),
         "setup": plan.setup.iter().map(|s| {
             let mut words = vec![s.program.clone()];
             words.extend(s.args.iter().cloned());

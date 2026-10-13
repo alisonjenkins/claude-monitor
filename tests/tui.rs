@@ -1025,6 +1025,35 @@ mod restore_flow {
         );
     }
 
+    #[test]
+    fn the_confirm_preview_names_each_pane_of_a_shared_window() {
+        let w = World::new();
+        for (id, pane) in [("p1", "0"), ("p2", "1")] {
+            w.add(id, State::Interrupted, true);
+            let mut placed = w.store.get_session(id).unwrap().unwrap();
+            placed.tmux_session = Some("notes".to_owned());
+            placed.tmux_window_name = Some("docs".to_owned());
+            placed.tmux_window_index = Some("2".to_owned());
+            placed.tmux_pane_index = Some(pane.to_owned());
+            w.store.upsert_session(&placed).unwrap();
+        }
+
+        let rows = preview_restore(&w.store, &w.fake.env, &["p2".to_owned(), "p1".to_owned()]);
+
+        let targets: Vec<_> = rows
+            .iter()
+            .map(|row| match row {
+                claude_monitor::tui::restore::PreviewRow::Start {
+                    session_id,
+                    tmux_target,
+                    ..
+                } => format!("{session_id} {tmux_target}"),
+                other => panic!("expected a start: {other:?}"),
+            })
+            .collect();
+        assert_eq!(targets, ["p1 notes:docs.0", "p2 notes:docs.1"]);
+    }
+
     const R: KeyCode = KeyCode::Char('R');
     const SPACE: KeyCode = KeyCode::Char(' ');
     const DOWN: KeyCode = KeyCode::Char('j');

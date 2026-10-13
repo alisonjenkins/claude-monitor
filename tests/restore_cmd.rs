@@ -203,6 +203,53 @@ fn the_plan_shows_each_sessions_target_tmux_session_and_window() {
     assert!(!fx.server_has_sessions(), "a preview started tmux");
 }
 
+fn place_in_pane(fx: &Fixture, id: &str, window: &str, pane: &str) {
+    place(fx, id, "work", window, "1");
+    let mut s = fx.store().get_session(id).unwrap().unwrap();
+    s.tmux_pane_index = Some(pane.to_owned());
+    s.tmux_window_panes = Some("2".to_owned());
+    s.tmux_window_layout = Some("b25d,200x50,0,0{100x50,0,0,0,99x50,101,0,1}".to_owned());
+    fx.save(&s);
+}
+
+#[test]
+fn the_plan_shows_grouped_panes_as_session_window_pane() {
+    let Some(fx) = Fixture::new() else { return };
+    fx.add_session("int1", State::Interrupted, "a");
+    fx.add_session("int2", State::Interrupted, "b");
+    fx.add_session("int3", State::Interrupted, "c");
+    place_in_pane(&fx, "int1", "api: build", "0");
+    place_in_pane(&fx, "int2", "api: build", "1");
+    place(&fx, "int3", "work", "docs", "2");
+
+    let out = run_in(
+        restore(true, false, &[], false),
+        &fx.env,
+        Some(&fx.state_dir),
+    )
+    .unwrap();
+
+    let text = out.render(false);
+    assert!(text.contains("work:api: build.0"), "{text}");
+    assert!(text.contains("work:api: build.1"), "{text}");
+    assert!(!text.contains("work:docs."), "{text}");
+    let body: Value = serde_json::from_str(&out.render(true)).unwrap();
+    let entry = |id: &str| {
+        body["would_start"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|e| e["session"] == id)
+            .unwrap()
+            .clone()
+    };
+    assert_eq!(entry("int2")["tmux_target"], "work:api: build.1");
+    assert_eq!(entry("int2")["tmux_pane"], 1);
+    assert_eq!(entry("int3")["tmux_target"], "work:docs");
+    assert_eq!(entry("int3")["tmux_pane"], Value::Null);
+    assert!(!fx.server_has_sessions(), "a preview started tmux");
+}
+
 #[test]
 fn a_started_session_reports_the_window_it_opened_in() {
     let Some(fx) = Fixture::new() else { return };
