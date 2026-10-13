@@ -362,10 +362,18 @@ pub enum ExecuteError {
     Setup { command: String, detail: String },
     #[error("{0}")]
     Tmux(#[from] EnvError),
-    #[error("cannot {operation}: {detail}")]
-    Store {
+    /// The agent was started and its window is left open, but the store
+    /// refused the record of it. Running the respawn again would start a
+    /// second copy, so the message says so.
+    #[error(
+        "the session started in tmux pane {pane_id} (window {window_id} of {tmux_session}) and is running, but the store could not {operation}: {detail}; do not run it again"
+    )]
+    Unrecorded {
         operation: &'static str,
         detail: String,
+        pane_id: String,
+        window_id: String,
+        tmux_session: String,
     },
 }
 
@@ -420,13 +428,14 @@ fn open(store: &Store, env: &Env, plan: &Plan, now: &str, target: Open<'_>) -> O
         },
     };
 
-    let store_error = |operation: &'static str, e: &dyn std::fmt::Display| ExecuteError::Store {
-        operation,
-        detail: format!(
-            "{e} (window {} is open in {tmux_session})",
-            window.window_id
-        ),
-    };
+    let store_error =
+        |operation: &'static str, e: &dyn std::fmt::Display| ExecuteError::Unrecorded {
+            operation,
+            detail: e.to_string(),
+            pane_id: window.pane_id.clone(),
+            window_id: window.window_id.clone(),
+            tmux_session: tmux_session.to_owned(),
+        };
     let request = store
         .create_respawn_request(&plan.session_id, &window.pane_id, now)
         .map_err(|e| store_error("record respawn request", &e))?;

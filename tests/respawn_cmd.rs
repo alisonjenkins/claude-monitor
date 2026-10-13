@@ -171,6 +171,26 @@ mod execute_with_a_fake_tmux {
     }
 
     #[test]
+    fn a_store_failure_after_the_window_opened_says_the_agent_is_running() {
+        let s = setup();
+        rusqlite::Connection::open(s._dir.path().join(claude_monitor::store::DB_FILE_NAME))
+            .unwrap()
+            .execute_batch("DROP TABLE respawn_request")
+            .unwrap();
+
+        let error = execute(&s.store, &s.fake.env, &plan(), NOW).unwrap_err();
+
+        let ExecuteError::Unrecorded { pane_id, .. } = &error else {
+            panic!("expected Unrecorded, got {error:?}");
+        };
+        assert!(pane_id.starts_with('%'), "{error}");
+        let text = error.to_string();
+        assert!(text.contains(pane_id.as_str()), "{text}");
+        assert!(text.contains("is running"), "{text}");
+        assert!(text.contains("do not run it again"), "{text}");
+    }
+
+    #[test]
     fn a_worktree_add_for_a_worktree_that_now_exists_is_skipped() {
         let s = setup();
         s.fake.fs.add_dir("/w/made-by-the-first-session");
