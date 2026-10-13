@@ -219,7 +219,12 @@ fn a_v3_database_gains_empty_pane_columns_and_keeps_its_placement() {
         let store = open(&path);
         store.upsert_session(&old).unwrap();
         let conn = store.connection();
-        for column in ["tmux_pane_index", "tmux_window_panes", "tmux_window_layout"] {
+        for column in [
+            "tmux_pane_index",
+            "tmux_window_panes",
+            "tmux_window_layout",
+            "session_name",
+        ] {
             conn.execute_batch(&format!("ALTER TABLE sessions DROP COLUMN {column}"))
                 .unwrap();
         }
@@ -230,6 +235,41 @@ fn a_v3_database_gains_empty_pane_columns_and_keeps_its_placement() {
 
     assert_eq!(user_version(store.connection()), SCHEMA_VERSION);
     assert_eq!(store.get_session("s-1").unwrap().unwrap(), old);
+}
+
+#[test]
+fn a_v4_database_gains_an_empty_session_name_and_keeps_its_rows() {
+    let dir = TempDir::new().unwrap();
+    let path = db_path(&dir);
+    let mut old = Session::new("s-1", "claude", "conv-1", "/work", "2026-10-12T14:03:22Z");
+    old.tmux_session = Some("work".to_owned());
+    {
+        let store = open(&path);
+        store.upsert_session(&old).unwrap();
+        let conn = store.connection();
+        conn.execute_batch("ALTER TABLE sessions DROP COLUMN session_name")
+            .unwrap();
+        conn.pragma_update(None, "user_version", 4).unwrap();
+    }
+
+    let store = open(&path);
+
+    assert_eq!(user_version(store.connection()), SCHEMA_VERSION);
+    let session = store.get_session("s-1").unwrap().unwrap();
+    assert_eq!(session.session_name, None);
+    assert_eq!(session, old);
+}
+
+#[test]
+fn a_session_name_round_trips_through_the_store() {
+    let dir = TempDir::new().unwrap();
+    let store = open(&db_path(&dir));
+    let mut session = Session::new("s-1", "claude", "conv-1", "/work", "2026-10-12T14:03:22Z");
+    session.session_name = Some("it's a \"name\" with spaces".to_owned());
+
+    store.upsert_session(&session).unwrap();
+
+    assert_eq!(store.get_session("s-1").unwrap().unwrap(), session);
 }
 
 #[test]

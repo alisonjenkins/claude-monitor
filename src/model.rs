@@ -92,6 +92,8 @@ pub struct Session {
     /// The window's pane count when the pane was last seen.
     pub tmux_window_panes: Option<String>,
     pub tmux_window_layout: Option<String>,
+    /// The display name the user gave the session, passed back on restore.
+    pub session_name: Option<String>,
     pub started_at: String,
     pub last_activity_at: String,
     pub state_since: String,
@@ -128,6 +130,7 @@ impl Session {
             tmux_pane_index: None,
             tmux_window_panes: None,
             tmux_window_layout: None,
+            session_name: None,
             started_at: at.to_owned(),
             last_activity_at: at.to_owned(),
             state_since: at.to_owned(),

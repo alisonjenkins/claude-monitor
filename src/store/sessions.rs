@@ -7,7 +7,7 @@ const COLUMNS: &str = "id, agent_kind, agent_session_id, resumed_from, forked_fr
      cwd, branch, worktree_exists, state, end_reason, task_description, left_off, pid, \
      pid_start, boot_id, tmux_pane, started_at, last_activity_at, state_since, project_id, \
      parked, dismissed, done_at, tmux_session, tmux_window_name, tmux_window_index, \
-     tmux_pane_index, tmux_window_panes, tmux_window_layout";
+     tmux_pane_index, tmux_window_panes, tmux_window_layout, session_name";
 
 const END_REASON_CLEAR: &str = "clear";
 /// Bound on how far `chain_head` walks, so a corrupt cycle cannot loop forever.
@@ -104,6 +104,7 @@ fn session_from_row(row: &Row<'_>) -> rusqlite::Result<Session> {
     session.tmux_pane_index = row.get(27)?;
     session.tmux_window_panes = row.get(28)?;
     session.tmux_window_layout = row.get(29)?;
+    session.session_name = row.get(30)?;
     Ok(session)
 }
 
@@ -124,7 +125,7 @@ impl Store {
             .prepare_cached(&format!(
                 "INSERT INTO sessions ({COLUMNS}) VALUES \
                  (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, \
-                 ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30) \
+                 ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30, ?31) \
                  ON CONFLICT(id) DO UPDATE SET \
                  agent_kind = excluded.agent_kind, agent_session_id = excluded.agent_session_id, \
                  resumed_from = excluded.resumed_from, forked_from = excluded.forked_from, \
@@ -141,7 +142,8 @@ impl Store {
                  tmux_window_index = excluded.tmux_window_index, \
                  tmux_pane_index = excluded.tmux_pane_index, \
                  tmux_window_panes = excluded.tmux_window_panes, \
-                 tmux_window_layout = excluded.tmux_window_layout"
+                 tmux_window_layout = excluded.tmux_window_layout, \
+                 session_name = excluded.session_name"
             ))
             .and_then(|mut stmt| {
                 stmt.execute(params![
@@ -175,6 +177,7 @@ impl Store {
                     session.tmux_pane_index,
                     session.tmux_window_panes,
                     session.tmux_window_layout,
+                    session.session_name,
                 ])
             })
             .map(|_| ())

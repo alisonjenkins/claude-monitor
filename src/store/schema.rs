@@ -1,3 +1,7 @@
+pub(super) const V5: &str = "
+ALTER TABLE sessions ADD COLUMN session_name TEXT;
+";
+
 pub(super) const V4: &str = "
 ALTER TABLE sessions ADD COLUMN tmux_pane_index TEXT;
 ALTER TABLE sessions ADD COLUMN tmux_window_panes TEXT;
