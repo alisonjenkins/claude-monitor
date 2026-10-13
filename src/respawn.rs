@@ -6,6 +6,7 @@
 //! It never creates a directory, runs git or starts a process; the executor
 //! does that, and only for what the plan lists.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use crate::agents::{AgentKind, Launch, LaunchError, LaunchMode, LauncherConfig, Precondition};
@@ -436,10 +437,28 @@ pub enum Item {
     Refused(RefusedItem),
 }
 
+/// The panes of one window: same target tmux session, same recorded tmux
+/// session (an override can merge several), same recorded window index and name.
+type WindowKey = (String, String, u32, String);
+
+/// The window `plan` reopens as a pane of, when a pane placement was recorded.
+fn window_key(plan: &Plan) -> Option<WindowKey> {
+    let pane = plan.pane.as_ref()?;
+    Some((
+        plan.tmux_session.clone(),
+        pane.recorded_session.clone(),
+        pane.window_index,
+        pane.window_name.clone(),
+    ))
+}
+
 /// Plan each session id with `flags`. Plans only; nothing starts. The
-/// sessions that can start are ordered by target tmux session, then recorded
-/// window index, then the order of `ids`, so windows reopen in their original
-/// order; refusals keep the places they were asked in.
+/// sessions that can start are gathered into windows (see [`WindowKey`]; a
+/// session without a recorded pane is a window of its own), the windows
+/// ordered by target tmux session, then recorded window index, then the order
+/// of `ids`, and the panes of a window by pane index, so windows and panes
+/// reopen in their original order. A window of several panes marks each plan's
+/// pane as grouped. Refusals keep the places they were asked in.
 pub fn plan_batch(
     store: &Store,
     env: &Env,
@@ -447,19 +466,53 @@ pub fn plan_batch(
     flags: &PlanFlags,
 ) -> Result<Planned, PlanBatchError> {
     let planned = plan_each(store, env, ids, flags)?;
-    let mut startable: Vec<_> = planned
-        .iter()
-        .filter(|(_, plan)| plan.is_ok())
-        .cloned()
-        .collect();
-    startable.sort_by_key(|(_, plan)| {
-        plan.as_ref().ok().map(|plan| {
-            (
-                plan.tmux_session.clone(),
-                plan.window_index.unwrap_or(u32::MAX),
-            )
-        })
+    let mut windows: Vec<Vec<(Session, Result<Plan, Refusal>)>> = Vec::new();
+    let mut by_key: HashMap<WindowKey, usize> = HashMap::new();
+    for entry in planned.iter().filter(|(_, plan)| plan.is_ok()).cloned() {
+        let key = entry.1.as_ref().ok().and_then(window_key);
+        match key.as_ref().and_then(|key| by_key.get(key)).copied() {
+            Some(window) => {
+                if let Some(panes) = windows.get_mut(window) {
+                    panes.push(entry);
+                }
+            }
+            None => {
+                if let Some(key) = key {
+                    by_key.insert(key, windows.len());
+                }
+                windows.push(vec![entry]);
+            }
+        }
+    }
+    windows.sort_by_key(|panes| {
+        panes
+            .first()
+            .and_then(|(_, plan)| plan.as_ref().ok())
+            .map(|plan| {
+                (
+                    plan.tmux_session.clone(),
+                    plan.window_index.unwrap_or(u32::MAX),
+                )
+            })
     });
+    let grouped = |plan: &mut Result<Plan, Refusal>| {
+        if let Some(pane) = plan.as_mut().ok().and_then(|plan| plan.pane.as_mut()) {
+            pane.grouped = true;
+        }
+    };
+    let mut startable = Vec::new();
+    for mut panes in windows {
+        panes.sort_by_key(|(_, plan)| {
+            plan.as_ref()
+                .ok()
+                .and_then(|plan| plan.pane.as_ref())
+                .map(|pane| pane.pane_index)
+        });
+        if panes.len() > 1 {
+            panes.iter_mut().for_each(|(_, plan)| grouped(plan));
+        }
+        startable.extend(panes);
+    }
     let mut sorted = startable.into_iter();
     Ok(planned
         .into_iter()
