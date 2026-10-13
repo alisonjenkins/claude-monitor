@@ -133,6 +133,19 @@ or `CLAUDE_MONITOR_LAUNCHER_CLAUDE`) is left as written unless it has a
 `--worktree <name>` for a worktree session (nothing otherwise), and the launch
 then starts in the repository.
 
+A name you gave a Claude session (for example with `claude --name`) is
+restored too. The monitor records it from the live session
+registry on each refresh; only a name you set counts, not one Claude Code
+picked itself, and a recorded name is never cleared by a later entry that has
+none. `restore` and `respawn` then add `--name <name>` after `--worktree` and
+before `--resume`, for example `claude --name aquero --resume <session id>`,
+and `--fresh` adds it too. `show` prints it as `name`, and it is the optional
+`session_name` field in the JSON and on the session page. A launcher template
+gets the flag only through a `{name_args}` word, for example
+`claude {name_args} --resume {session_id}`: that word becomes `--name <name>`
+for a named session and nothing otherwise; a template without it runs as
+written. Copilot sessions and sessions without a name launch as before.
+
 Sessions you closed on purpose can be dismissed from the web view without
 opening each one: waiting rows have a Dismiss button, and `/restore` has
 Dismiss selected beside Restore selected. Both show a confirmation first (the
@@ -279,7 +292,7 @@ progress and export do not change. The full contract is
 5. Register its hooks in `nix/hm-module.nix`, or rely on `discover` if the
    agent has none. Launch commands are configuration, not code:
    `programs.claude-monitor.launchers.<name>` with the placeholders
-   `{session_id}`, `{cwd}` and `{name}` (and `{worktree_args}`, see above).
+   `{session_id}`, `{cwd}` and `{name}` (and `{worktree_args}` and `{name_args}`, see above).
 
 Current kinds: `claude` and `copilot`.
 
