@@ -31,7 +31,8 @@ pub struct RefreshReport {
     pub discovered: DiscoverSummary,
     /// Sessions created from a live registry entry no transcript had yet.
     pub registry_created: usize,
-    /// Known sessions whose pid, pane or state the registry changed.
+    /// Known sessions whose pid, pane, cwd or state the registry changed,
+    /// including interrupted ones it revived.
     pub registry_updated: usize,
     pub reconcile: Option<ReconcileReport>,
     /// Plan bindings made and plan files re-read.
@@ -287,9 +288,21 @@ fn apply_entry(
         }
     }
     if let Some(tmux) = &entry.tmux {
-        if session.tmux_pane.as_deref() != Some(tmux.pane_id.as_str()) {
+        let pane_changed = session.tmux_pane.as_deref() != Some(tmux.pane_id.as_str());
+        if pane_changed {
             session.tmux_pane = Some(tmux.pane_id.clone());
             applied.process_changed = true;
+        }
+        // The live tmux listing owns the name afterwards; rewriting it every
+        // pass would fight reconcile's placement record.
+        if pane_changed || session.tmux_session.is_none() {
+            session.tmux_session = Some(tmux.session.clone());
+        }
+    }
+    if let Some(cwd) = &entry.cwd {
+        let cwd = cwd.display().to_string();
+        if session.cwd != cwd {
+            session.cwd = cwd;
         }
     }
     let revived = session.state == State::Interrupted;

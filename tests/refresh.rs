@@ -60,10 +60,14 @@ impl Fx {
     }
 
     fn registry(&self, pid: u32, id: &str, status: &str, live: bool) {
+        self.registry_at(pid, id, status, live, CWD, "main:@3.%5");
+    }
+
+    fn registry_at(&self, pid: u32, id: &str, status: &str, live: bool, cwd: &str, tmux: &str) {
         let value = json!({
-            "pid": pid, "sessionId": id, "cwd": CWD, "startedAt": 1_791_800_000_000_u64,
+            "pid": pid, "sessionId": id, "cwd": cwd, "startedAt": 1_791_800_000_000_u64,
             "procStart": PROC_START.to_string(), "version": "2.1.293", "kind": "interactive",
-            "entrypoint": "cli", "tmux": "main:@3.%5", "status": status,
+            "entrypoint": "cli", "tmux": tmux, "status": status,
         });
         self.fake
             .fs
@@ -460,4 +464,71 @@ fn a_revived_session_stays_alive_on_the_next_pass() {
     assert_eq!(fx.session("sess-1").unwrap().state, State::Idle);
     assert_eq!(fx.store.last_seq().unwrap(), after_first);
     assert!(!report.changed(), "{report:?}");
+}
+
+const MOVED: &str = "/home/ali/git/proj/.claude/worktrees/moved";
+
+#[test]
+fn a_changed_registry_cwd_replaces_the_stored_one() {
+    let fx = Fx::new();
+    fx.fake.fs.add_dir(MOVED);
+    fx.transcript("sess-1");
+    fx.registry(10, "sess-1", "idle", true);
+    fx.run();
+    fx.registry_at(10, "sess-1", "idle", true, MOVED, "main:@3.%5");
+
+    let report = fx.run();
+
+    let session = fx.session("sess-1").unwrap();
+    assert_eq!(session.cwd, MOVED);
+    assert!(session.worktree_exists);
+    assert_eq!(report.registry_updated, 1);
+}
+
+#[test]
+fn a_registry_cwd_that_is_gone_clears_worktree_exists() {
+    let fx = Fx::new();
+    fx.transcript("sess-1");
+    fx.registry(10, "sess-1", "idle", true);
+    fx.run();
+    fx.registry_at(10, "sess-1", "idle", true, MOVED, "main:@3.%5");
+
+    fx.run();
+
+    let session = fx.session("sess-1").unwrap();
+    assert_eq!(session.cwd, MOVED);
+    assert!(!session.worktree_exists);
+}
+
+#[test]
+fn the_registry_records_the_tmux_session_and_pane() {
+    let fx = Fx::new();
+    fx.transcript("sess-1");
+    fx.registry_at(10, "sess-1", "idle", true, CWD, "my work:@3.%7");
+
+    fx.run();
+
+    let session = fx.session("sess-1").unwrap();
+    assert_eq!(session.tmux_pane.as_deref(), Some("%7"));
+    assert_eq!(session.tmux_session.as_deref(), Some("my work"));
+}
+
+#[test]
+fn a_moved_tmux_session_in_the_registry_is_recorded_and_a_repeat_writes_nothing() {
+    let fx = Fx::new();
+    fx.transcript("sess-1");
+    fx.registry(10, "sess-1", "idle", true);
+    fx.run();
+    fx.registry_at(10, "sess-1", "idle", true, CWD, "other:@4.%6");
+
+    let moved = fx.run();
+    let seq = fx.store.last_seq().unwrap();
+    let repeat = fx.run();
+
+    let session = fx.session("sess-1").unwrap();
+    assert_eq!(session.tmux_pane.as_deref(), Some("%6"));
+    assert_eq!(session.tmux_session.as_deref(), Some("other"));
+    assert!(moved.changed(), "{moved:?}");
+    assert_eq!(fx.store.last_seq().unwrap(), seq);
+    assert!(!repeat.changed(), "{repeat:?}");
 }
