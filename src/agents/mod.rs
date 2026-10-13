@@ -148,6 +148,15 @@ pub struct Precondition {
     pub description: String,
     /// A path that must exist for the respawn to resume the conversation.
     pub required_path: PathBuf,
+    /// Other paths that satisfy the precondition in place of `required_path`.
+    pub also_accepted: Vec<PathBuf>,
+}
+
+impl Precondition {
+    /// Every path checked, `required_path` first.
+    pub fn candidates(&self) -> impl Iterator<Item = &PathBuf> {
+        std::iter::once(&self.required_path).chain(&self.also_accepted)
+    }
 }
 
 /// Launch command templates per kind; placeholders `{session_id}`, `{cwd}`,

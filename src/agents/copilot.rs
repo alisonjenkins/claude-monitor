@@ -58,6 +58,7 @@ impl AgentKind for CopilotKind {
         vec![Precondition {
             description: "the session state directory exists".to_owned(),
             required_path: states.join(&session.agent_session_id),
+            also_accepted: Vec::new(),
         }]
     }
 

@@ -209,3 +209,63 @@ fn worktree_args_vanish_for_a_session_outside_a_worktree() {
     assert_eq!(plan.launch.args, ["--resume", "agent-1"]);
     assert_eq!(plan.launch.cwd, Path::new(ROOT));
 }
+
+/// An environment with the worktree directory but no transcript anywhere.
+fn without_transcript(cwd: &str) -> FakeEnv {
+    let fake = FakeEnv::new();
+    fake.vars.set("HOME", "/home/u");
+    fake.fs.add_dir(cwd);
+    fake
+}
+
+fn transcript_in(cwd: &str) -> String {
+    format!("/home/u/.claude/projects/{}/agent-1.jsonl", encoded(cwd))
+}
+
+#[test]
+fn a_transcript_only_under_the_repo_root_still_resumes() {
+    let fake = without_transcript(WORKTREE);
+    fake.fs.add_file(transcript_in(ROOT), "{}\n");
+    let plan = plan_for(&fake, WORKTREE, &Options::default()).unwrap();
+    assert_eq!(plan.mode, LaunchMode::Resume);
+}
+
+#[test]
+fn a_subdirectory_session_finds_the_transcript_under_the_repo_root() {
+    let cwd = format!("{WORKTREE}/scripts");
+    let fake = without_transcript(&cwd);
+    fake.fs.add_file(transcript_in(ROOT), "{}\n");
+    let plan = plan_for(&fake, &cwd, &Options::default()).unwrap();
+    assert_eq!(plan.mode, LaunchMode::Resume);
+}
+
+#[test]
+fn a_transcript_only_under_the_worktree_directory_resumes() {
+    let fake = without_transcript(WORKTREE);
+    fake.fs.add_file(transcript_in(WORKTREE), "{}\n");
+    let plan = plan_for(&fake, WORKTREE, &Options::default()).unwrap();
+    assert_eq!(plan.mode, LaunchMode::Resume);
+}
+
+#[test]
+fn no_transcript_anywhere_is_refused_naming_every_path_checked() {
+    let fake = without_transcript(WORKTREE);
+    let r = plan_for(&fake, WORKTREE, &Options::default()).unwrap_err();
+    assert_eq!(r.code, RefusalCode::MissingTranscript);
+    assert!(
+        r.message.contains(&transcript_in(WORKTREE)),
+        "{}",
+        r.message
+    );
+    assert!(r.message.contains(&transcript_in(ROOT)), "{}", r.message);
+    assert!(r.alternatives.iter().any(|a| a.command.contains("--fresh")));
+}
+
+#[test]
+fn a_plain_directory_does_not_look_in_its_parent() {
+    let fake = without_transcript(ROOT);
+    fake.fs.add_file(transcript_in("/w"), "{}\n");
+    let r = plan_for(&fake, ROOT, &Options::default()).unwrap_err();
+    assert_eq!(r.code, RefusalCode::MissingTranscript);
+    assert!(!r.message.contains(&transcript_in("/w")), "{}", r.message);
+}

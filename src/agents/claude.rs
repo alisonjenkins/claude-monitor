@@ -45,17 +45,22 @@ impl AgentKind for ClaudeKind {
     }
 
     /// The transcript sits in the project directory of the cwd the session
-    /// started in, named by the encoding Claude Code uses for it.
+    /// started in, named by the encoding Claude Code uses for it. A session
+    /// started with `claude --worktree` may have it under the repository
+    /// root's project directory instead.
     fn resume_preconditions(&self, session: &Session, env: &Env) -> Vec<Precondition> {
         let Ok(projects) = claude_discover::projects_dir(env) else {
             return Vec::new();
         };
-        let transcript = projects
-            .join(encode_cwd(&session.cwd))
-            .join(format!("{}.jsonl", session.agent_session_id));
+        let file = format!("{}.jsonl", session.agent_session_id);
+        let also_accepted = Worktree::from_cwd(&session.cwd)
+            .map(|w| projects.join(encode_cwd(&w.repo_root)).join(&file))
+            .into_iter()
+            .collect();
         vec![Precondition {
             description: "the conversation transcript exists".to_owned(),
-            required_path: transcript,
+            required_path: projects.join(encode_cwd(&session.cwd)).join(&file),
+            also_accepted,
         }]
     }
 

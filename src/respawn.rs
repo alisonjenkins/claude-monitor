@@ -256,7 +256,7 @@ pub fn plan_respawn_with(
 
     if mode == LaunchMode::Resume {
         for precondition in kind.resume_preconditions(session, env) {
-            if !env.fs.exists(&precondition.required_path) {
+            if !precondition.candidates().any(|path| env.fs.exists(path)) {
                 return Err(missing_transcript(session, &precondition));
             }
         }
@@ -884,11 +884,15 @@ fn no_launcher(session: &Session, error: &LaunchError) -> Refusal {
 }
 
 fn missing_transcript(session: &Session, precondition: &Precondition) -> Refusal {
-    let path = precondition.required_path.display();
+    let paths = precondition
+        .candidates()
+        .map(|path| path.display().to_string())
+        .collect::<Vec<_>>()
+        .join(" or ");
     let mut refusal = refuse(
         RefusalCode::MissingTranscript,
         format!(
-            "cannot resume session {}: {} but {path} is missing",
+            "cannot resume session {}: {} but {paths} is missing",
             session.id, precondition.description
         ),
     );
