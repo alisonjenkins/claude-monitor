@@ -70,6 +70,7 @@ notification fires when a session starts needing you.
 | `summarize <target>` | Ask a model on this machine for a short summary; never automatic |
 | `serve` | Serve the web view over TLS on loopback; prints a single-use login URL |
 | `web ca\|login\|client-cert` | Show the CA to trust, get a fresh login URL from the running server, write a client certificate for `serve --mtls` |
+| `web setup-browser` | Trust the CA and import the client certificate into Firefox, Zen and Chromium profiles for you; idempotent, `--dry-run` first |
 | `progress [session]` | Show a session's plan progress and the file it comes from |
 | `progress bind <owner> [file]` | Choose the plan a session's progress comes from |
 | `project add\|rename\|set-status` | Create, rename or set the status of a project |
@@ -142,6 +143,70 @@ one is refused before any HTTP is read. `claude-monitor web client-cert
 `<state-dir>/tls/client.p12`, mode 0600) to import in the browser under "Your
 Certificates"; without `--password-file` it generates a password and prints it
 once. Login still applies on top of it.
+
+**Set the browser up in one command.** Importing the CA and the client
+certificate by hand is tedious, so `claude-monitor web setup-browser` does it
+for NSS-based browsers:
+
+```text
+claude-monitor web setup-browser [--browser firefox|zen|chromium|all]
+    [--profile PATH]... [--auto-select] [--force] [--dry-run]
+```
+
+It needs `certutil` and `pk12util` on `PATH` (on Nix: `nix-shell -p
+nss.tools`; it exits 2 with that hint if they are missing) and does not need
+`serve` to be running. Start with `--dry-run`: it reads your profiles and
+prints what would change, and writes nothing, not even the CA.
+
+- **What it touches.** Firefox profiles from `profiles.ini` under
+  `~/.mozilla/firefox` and `~/.config/mozilla/firefox`, Zen profiles under
+  `~/.zen` and `~/.config/zen`, and the Chromium, Chrome and Brave database
+  `~/.pki/nssdb`; `--profile PATH` adds any other NSS directory. In each it
+  trusts the CA for web sites (nickname `claude-monitor local CA`) and imports
+  the client certificate (nickname `CN=claude-monitor web client`), only when
+  the stored copy is missing or its SHA-256 fingerprint differs; a changed
+  certificate replaces the old one and its key rather than sitting beside it.
+  The client certificate and key are kept in `<state-dir>/tls/client.pem` and
+  `client.key`, so a re-run imports nothing new until they are within 30 days
+  of expiry or the CA changes. The bundle password is random, lives in a 0600
+  file for the length of the run and is never on a command line.
+- **What it refuses.** A Firefox or Zen profile that looks in use (a live
+  `lock` or a held `.parentlock`) is refused unless you pass `--force`; a
+  profile whose database has a primary password is skipped, not prompted for.
+  `certutil` runs with stdin closed and a 30-second timeout.
+- **Backups, and how to undo.** Before the first write to a profile it copies
+  `cert9.db` and `key4.db` to `<profile>/claude-monitor-backup-<UTC stamp>/`
+  (for example `claude-monitor-backup-20261013T090507Z`). Nothing is deleted.
+  To undo, close the browser and copy those two files back, or remove the
+  entries by hand: `certutil -D -d sql:<profile> -n "claude-monitor local CA"`
+  and `certutil -F -d sql:<profile> -n "CN=claude-monitor web client"`.
+- **Output and exit codes.** One line per profile (`imported`, `already up to
+  date`, `skipped: ...`, `refused: in use`); `--json` gives the same as data.
+  Exit 0: done or nothing to do. 2: the NSS tools are missing or no profile was
+  found. 3: some profile was refused, skipped or failed (the lines are
+  printed).
+- **`--auto-select` is opt-in, and global.** It writes a block between
+  `// claude-monitor begin` and `// claude-monitor end` in each Firefox and Zen
+  profile's `user.js` (never `prefs.js`) that sets
+  `security.default_personal_cert` to `"Select Automatically"`. That Firefox
+  preference is not scoped to claude-monitor: any site that asks for a client
+  certificate gets this one without a prompt. Leave it off if you also use
+  client certificates elsewhere. Re-running replaces the block in place and
+  leaves the rest of the file alone; to undo, delete the block.
+- **Chromium cannot be set to auto-select from a profile.** With
+  `--auto-select` the command prints, and does not write, the managed policy
+  `AutoSelectCertificateForUrls` limited to `https://127.0.0.1:*` and
+  `https://localhost:*` and to certificates issued by this install's CA. Put it
+  in `/etc/chromium/policies/managed/claude-monitor.json` (Chrome:
+  `/etc/opt/chrome/policies/managed/`, Brave: `/etc/brave/policies/managed/`);
+  on NixOS set `programs.chromium.extraOpts.AutoSelectCertificateForUrls`.
+- **Home Manager.** `programs.claude-monitor.web.browserSetup.enable = true;`
+  runs it on every activation (Linux), with `autoSelect` and `browsers`
+  options. It never fails the activation: an open profile or a missing tool
+  prints one line instead.
+- **The limit.** The client key ends up in the browser profile, readable by
+  anything running as your user. This makes the setup painless; it does not
+  stop malware that runs as you.
 
 **What this protects against, and what it does not.** It stops a process or a
 web page that can merely reach the port: it cannot log in without a code, cannot

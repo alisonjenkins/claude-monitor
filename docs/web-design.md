@@ -194,6 +194,22 @@ history and the journal for as long as it lived.
 | One CA or two for mTLS | One CA. The server leaf carries the serverAuth usage and client certificates clientAuth, and rustls enforces the usage in each direction (tested: the server's own leaf is refused as a client certificate) | A second CA is a second key in the same directory and a second thing to import, with no extra isolation. |
 | Headers | `Content-Security-Policy: default-src 'self'; style-src 'self' 'unsafe-inline'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'`, `Referrer-Policy: no-referrer`, `X-Content-Type-Options: nosniff`, `Cache-Control: no-store` | Inline styles stay allowed because progress bars set a width; no inline script ever runs. The browser e2e checks the page raises no policy violations. |
 
+**Setting the browser up (`web setup-browser`).**
+
+| Part | Choice | Reason |
+|---|---|---|
+| Tools | `certutil` and `pk12util` (NSS) from `PATH`, behind a small `CommandRunner` trait; stdin closed, 30 s timeout, output capped | The browsers' own certificate stores are NSS databases and these are the supported way to edit them. No new crate does it safely. Missing tools exit 2 with `nix-shell -p nss.tools`. |
+| Targets | Firefox profiles from `profiles.ini` (`~/.mozilla/firefox`, `$XDG_CONFIG_HOME/mozilla/firefox`), Zen (`~/.zen`, `$XDG_CONFIG_HOME/zen`), Chromium-family `~/.pki/nssdb`, plus `--profile` | Read from `$HOME`; a browser that is not installed contributes nothing. Zen currently keeps its profiles under `~/.config/zen`. |
+| Identity | `tls::ensure_client_identity` keeps `client.pem` / `client.key` in `tls/` and reuses them until 30 days from expiry or until the CA changes | `issue_client_identity` mints a new certificate every call, which would make every run a new import. |
+| Idempotence | Compare SHA-256 fingerprints of what `certutil -L -n NICK -a` prints with ours; write only on a difference; replace a changed certificate by removing the nickname (and its key) first | A re-run changes and backs up nothing. pk12util would otherwise add `nick #2`. |
+| Secrets | Bundle and its random password in 0600 files in `tls/` named by `-w`, removed by `Drop` on every exit path; `/dev/null` as the empty database password | Nothing sensitive in `argv`, where other users can read it. `/dev/null` also keeps a dry run from writing anything. |
+| Safety | Refuse a profile whose `lock` names a live pid or whose `.parentlock` is held by another process; skip a primary-password database (detected by a key listing that fails with `SEC_ERROR_BAD_PASSWORD`); copy `cert9.db` and `key4.db` before the first write | A running browser holds the database and overwrites it on exit; certutil would prompt for a primary password. |
+| Auto-select | Opt-in. `--auto-select` writes a marked block to `user.js` only; Chromium gets a printed managed policy | `security.default_personal_cert = "Select Automatically"` is global to the profile: every site asking for a client certificate gets this one. Chromium reads policy only from root-owned files. |
+
+The limit stays the one above: the client key is stored in the browser profile,
+so setting the browser up makes the connection easy, not safer against a process
+running as your user.
+
 Secrets use `zeroize` where they are held as strings or byte vectors that this
 code owns (codes, session ids, CSRF values, key PEM and DER, the generated
 password). Copies made by libraries (rustls, rcgen, the PKCS#12 writer, the
