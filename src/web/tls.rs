@@ -11,7 +11,11 @@ use std::io::{self, Write};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
+
+use rustls::pki_types::{CertificateDer, PrivatePkcs8KeyDer};
+use rustls::ServerConfig;
 
 use rcgen::{
     BasicConstraints, CertificateParams, CidrSubnet, DistinguishedName, DnType,
@@ -97,6 +101,35 @@ pub fn ensure(state_dir: &Path, now: SystemTime) -> Result<TlsPaths, TlsError> {
         write_leaf(&paths, now)?;
     }
     Ok(paths)
+}
+
+/// The server side of every connection: TLS 1.3 only, no client certificate,
+/// HTTP/1.1 over ALPN.
+pub fn server_config(paths: &TlsPaths) -> Result<Arc<ServerConfig>, TlsError> {
+    let leaf = read_der(&paths.server_cert).ok_or_else(|| TlsError::Generate {
+        operation: "read the leaf certificate",
+        detail: paths.server_cert.display().to_string(),
+    })?;
+    let key = load_key(&paths.server_key).ok_or_else(|| TlsError::Generate {
+        operation: "read the leaf key",
+        detail: paths.server_key.display().to_string(),
+    })?;
+    let key = PrivatePkcs8KeyDer::from(key.serialize_der());
+    let provider = Arc::new(rustls::crypto::ring::default_provider());
+    let mut config = ServerConfig::builder_with_provider(provider)
+        .with_protocol_versions(&[&rustls::version::TLS13])
+        .map_err(|e| TlsError::Generate {
+            operation: "choose the TLS version",
+            detail: e.to_string(),
+        })?
+        .with_no_client_auth()
+        .with_single_cert(vec![CertificateDer::from(leaf)], key.into())
+        .map_err(|e| TlsError::Generate {
+            operation: "load the leaf certificate",
+            detail: e.to_string(),
+        })?;
+    config.alpn_protocols = vec![b"http/1.1".to_vec()];
+    Ok(Arc::new(config))
 }
 
 fn to_date(at: SystemTime) -> Result<OffsetDateTime, TlsError> {

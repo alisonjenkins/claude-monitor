@@ -340,11 +340,12 @@ mod web {
         BufReader::new(child.stdout.take().unwrap())
             .read_line(&mut line)
             .unwrap();
-        let url = line.trim().strip_prefix("http://").unwrap();
+        let url = line.trim().strip_prefix("https://").unwrap();
         let (authority, rest) = url.split_once('/').unwrap();
         let token = rest.strip_prefix("?token=").unwrap();
         let addr: SocketAddr = authority.parse().unwrap();
         assert!(addr.ip().is_loopback());
+        crate::web_support::trust(addr.port(), &state.join("tls").join("ca.pem"));
 
         let cookie = format!("cc_token={token}");
         let anonymous = Request::get("/healthz").send(addr);

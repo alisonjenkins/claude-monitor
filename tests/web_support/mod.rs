@@ -1,6 +1,8 @@
 //! A web server on a loopback port 0 and a bare HTTP/1.1 client over a real
-//! socket, for the web tests. No HTTP client crate: the wire format is the
-//! thing under test.
+//! TLS socket, for the web tests. No HTTP client crate: the wire format is the
+//! thing under test. The client trusts only the CA the server under test
+//! generated in its own state directory; `trust` records which CA belongs to
+//! which port so `Request::send(addr)` keeps its one-argument shape.
 #![allow(
     dead_code,
     clippy::unwrap_used,
@@ -10,11 +12,17 @@
     clippy::arithmetic_side_effects
 )]
 
+use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{SocketAddr, TcpStream};
 use std::ops::{Deref, DerefMut};
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command as Process};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
+
+use rustls::pki_types::{CertificateDer, ServerName};
+use rustls::{ClientConfig, ClientConnection, RootCertStore, StreamOwned};
 
 use claude_monitor::cli::{run_in, Command};
 use claude_monitor::env::Env;
@@ -26,6 +34,66 @@ use claude_monitor::web::{self, Server, Token, WebConfig};
 use tempfile::TempDir;
 
 pub const IO_TIMEOUT: Duration = Duration::from_secs(5);
+
+pub type TlsStream = StreamOwned<ClientConnection, TcpStream>;
+
+static TRUSTED_CA: Mutex<Option<HashMap<u16, PathBuf>>> = Mutex::new(None);
+
+/// Tells the client which CA certificate (PEM file) the server on `port`
+/// presents a leaf from.
+pub fn trust(port: u16, ca_pem: &Path) {
+    TRUSTED_CA
+        .lock()
+        .unwrap()
+        .get_or_insert_with(HashMap::new)
+        .insert(port, ca_pem.to_owned());
+}
+
+pub fn ca_der(ca_pem: &Path) -> CertificateDer<'static> {
+    let pem = std::fs::read(ca_pem).unwrap();
+    let (_, parsed) = x509_parser::pem::parse_x509_pem(&pem).unwrap();
+    CertificateDer::from(parsed.contents)
+}
+
+/// A TLS 1.3 client that trusts exactly the given CA files.
+pub fn client_config(roots: &[&Path]) -> ClientConfig {
+    let mut store = RootCertStore::empty();
+    for root in roots {
+        store.add(ca_der(root)).unwrap();
+    }
+    ClientConfig::builder_with_provider(Arc::new(rustls::crypto::ring::default_provider()))
+        .with_protocol_versions(&[&rustls::version::TLS13])
+        .unwrap()
+        .with_root_certificates(store)
+        .with_no_client_auth()
+}
+
+/// Opens a TCP connection and wraps it in a client session; the handshake
+/// runs on first read or write.
+pub fn tls_over(addr: SocketAddr, config: ClientConfig) -> TlsStream {
+    let tcp = tcp(addr);
+    let name = ServerName::IpAddress(addr.ip().into());
+    let session = ClientConnection::new(Arc::new(config), name).unwrap();
+    StreamOwned::new(session, tcp)
+}
+
+pub fn tcp(addr: SocketAddr) -> TcpStream {
+    let stream = TcpStream::connect(addr).unwrap();
+    stream.set_read_timeout(Some(IO_TIMEOUT)).unwrap();
+    stream.set_write_timeout(Some(IO_TIMEOUT)).unwrap();
+    stream
+}
+
+/// Reads to the end, treating a close without `close_notify` as the end too.
+pub fn read_all(stream: &mut impl Read) -> Vec<u8> {
+    let mut raw = Vec::new();
+    match stream.read_to_end(&mut raw) {
+        Ok(_) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => {}
+        Err(e) => panic!("read failed: {e}"),
+    }
+    raw
+}
 
 /// A spawned child that is killed and reaped when this drops, so a panicking
 /// test cannot leave a `serve` process running.
@@ -163,10 +231,12 @@ impl Rig {
         )
         .unwrap();
         let token = Token::generate().unwrap();
+        let ca = db.parent().unwrap().join("tls").join("ca.pem");
         let mut config = WebConfig::new(token.clone(), db);
         config.port = 0;
         tweak(&mut config);
         let server = web::start(config, feed).unwrap();
+        trust(server.addr().port(), &ca);
         Self {
             dir,
             server,
@@ -298,8 +368,7 @@ impl<'a> Request<'a> {
         stream
             .write_all(self.wire(&format!("127.0.0.1:{}", addr.port())).as_bytes())
             .unwrap();
-        let mut raw = Vec::new();
-        stream.read_to_end(&mut raw).unwrap();
+        let raw = read_all(&mut stream);
         parse(&String::from_utf8_lossy(&raw))
     }
 
@@ -327,11 +396,14 @@ impl<'a> Request<'a> {
     }
 }
 
-pub fn connect(addr: SocketAddr) -> TcpStream {
-    let stream = TcpStream::connect(addr).unwrap();
-    stream.set_read_timeout(Some(IO_TIMEOUT)).unwrap();
-    stream.set_write_timeout(Some(IO_TIMEOUT)).unwrap();
-    stream
+pub fn connect(addr: SocketAddr) -> TlsStream {
+    let ca = TRUSTED_CA
+        .lock()
+        .unwrap()
+        .as_ref()
+        .and_then(|m| m.get(&addr.port()).cloned())
+        .unwrap_or_else(|| panic!("no CA registered for port {}", addr.port()));
+    tls_over(addr, client_config(&[&ca]))
 }
 
 fn parse(raw: &str) -> Response {
@@ -355,7 +427,7 @@ fn parse(raw: &str) -> Response {
 
 pub struct Stream {
     pub head: Response,
-    reader: BufReader<TcpStream>,
+    reader: BufReader<TlsStream>,
 }
 
 impl Stream {

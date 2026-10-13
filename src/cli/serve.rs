@@ -120,7 +120,7 @@ mod enabled {
         let server = web::start(config, feed).map_err(|e| web_error("start the web server", e))?;
 
         let mut out = std::io::stdout().lock();
-        let printed = writeln!(out, "http://{}/?token={}", server.addr(), token.as_str())
+        let printed = writeln!(out, "https://{}/?token={}", server.addr(), token.as_str())
             .and_then(|()| out.flush());
         drop(out);
         if let Err(error) = printed {

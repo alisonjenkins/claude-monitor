@@ -131,14 +131,16 @@ fn serve() -> Serving {
     BufReader::new(child.stdout.take().unwrap())
         .read_line(&mut line)
         .unwrap();
-    let url = line.trim().strip_prefix("http://").unwrap_or_else(|| {
+    let url = line.trim().strip_prefix("https://").unwrap_or_else(|| {
         panic!("expected a URL on the first line of stdout, got {line:?}");
     });
     let (authority, rest) = url.split_once('/').unwrap();
     let token = rest.strip_prefix("?token=").unwrap().to_owned();
+    let addr: std::net::SocketAddr = authority.parse().unwrap();
+    web_support::trust(addr.port(), &state.path().join("tls").join("ca.pem"));
     Serving {
         child,
-        addr: authority.parse().unwrap(),
+        addr,
         token,
         state,
     }

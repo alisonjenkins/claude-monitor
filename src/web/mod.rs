@@ -10,14 +10,18 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread::JoinHandle;
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 use axum::middleware::from_fn_with_state;
 use axum::routing::get;
 use axum::Router;
+use hyper_util::rt::{TokioIo, TokioTimer};
+use hyper_util::service::TowerToHyperService;
 use tokio::net::TcpListener;
 use tokio::signal::unix::{signal, Signal, SignalKind};
-use tokio::sync::watch;
+use tokio::sync::{watch, OwnedSemaphorePermit, Semaphore};
+use tokio::task::JoinSet;
+use tokio_rustls::TlsAcceptor;
 
 use crate::env::Env;
 use crate::feed::{ChangeFeed, EventSource, SystemMonotonic};
@@ -45,6 +49,8 @@ pub enum WebError {
     Random { detail: String },
     #[error("cannot write the token file {path}: {source}")]
     TokenFile { path: PathBuf, source: io::Error },
+    #[error("TLS setup failed: {0}")]
+    Tls(#[from] tls::TlsError),
     #[error("cannot start the async runtime: {0}")]
     Runtime(io::Error),
     #[error("cannot listen on {addr}: {source}")]
@@ -177,6 +183,13 @@ pub fn start<S: EventSource + Send + 'static>(
     if !config.bind.is_loopback() {
         return Err(WebError::NotLoopback { addr: config.bind });
     }
+    let tls_dir = config
+        .store_path
+        .parent()
+        .map(PathBuf::from)
+        .unwrap_or_default();
+    let tls_paths = tls::ensure(&tls_dir, SystemTime::now())?;
+    let acceptor = TlsAcceptor::from(tls::server_config(&tls_paths)?);
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -220,14 +233,7 @@ pub fn start<S: EventSource + Send + 'static>(
     let server_thread = std::thread::Builder::new()
         .name("web-server".to_owned())
         .spawn(move || {
-            let served = runtime.block_on(async {
-                axum::serve(listener, app)
-                    .with_graceful_shutdown(shutdown_requested(serving, signals))
-                    .await
-            });
-            if let Err(error) = served {
-                eprintln!("claude-monitor: web server stopped: {error}");
-            }
+            runtime.block_on(serve_tls(listener, acceptor, app, serving, signals));
         })
         .map_err(WebError::Thread);
     let server_thread = match server_thread {
@@ -245,6 +251,86 @@ pub fn start<S: EventSource + Send + 'static>(
         server: Some(server_thread),
         feed: Some(feed_thread),
     })
+}
+
+/// A client that opens a socket and never finishes the handshake or the
+/// request headers is cut off after this long.
+const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
+const HEADER_TIMEOUT: Duration = Duration::from_secs(10);
+/// Connections served at once; the rest wait in the kernel's accept queue.
+const MAX_CONNECTIONS: usize = 128;
+/// How long shutdown waits for open connections to finish.
+const DRAIN_TIMEOUT: Duration = Duration::from_secs(3);
+
+/// Accepts TCP, completes the TLS 1.3 handshake, then speaks HTTP/1.1 over it.
+/// A peer that fails the handshake never reaches the HTTP parser.
+async fn serve_tls(
+    listener: TcpListener,
+    acceptor: TlsAcceptor,
+    app: Router,
+    closing: Arc<watch::Sender<bool>>,
+    signals: Option<Signals>,
+) {
+    let stop = shutdown_requested(Arc::clone(&closing), signals);
+    tokio::pin!(stop);
+    let slots = Arc::new(Semaphore::new(MAX_CONNECTIONS));
+    let mut connections = JoinSet::new();
+    loop {
+        let permit = tokio::select! {
+            () = &mut stop => break,
+            Some(_) = connections.join_next(), if !connections.is_empty() => continue,
+            permit = Arc::clone(&slots).acquire_owned() => match permit {
+                Ok(permit) => permit,
+                Err(_) => break,
+            },
+        };
+        let accepted = tokio::select! {
+            () = &mut stop => break,
+            accepted = listener.accept() => accepted,
+        };
+        match accepted {
+            Ok((tcp, _peer)) => {
+                connections.spawn(serve_connection(
+                    tcp,
+                    acceptor.clone(),
+                    app.clone(),
+                    closing.subscribe(),
+                    permit,
+                ));
+            }
+            Err(error) => {
+                eprintln!("claude-monitor: web accept failed: {error}");
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+        }
+    }
+    drop(listener);
+    let drain = async { while connections.join_next().await.is_some() {} };
+    let _ = tokio::time::timeout(DRAIN_TIMEOUT, drain).await;
+}
+
+async fn serve_connection(
+    tcp: tokio::net::TcpStream,
+    acceptor: TlsAcceptor,
+    app: Router,
+    closing: watch::Receiver<bool>,
+    _permit: OwnedSemaphorePermit,
+) {
+    let Ok(Ok(stream)) = tokio::time::timeout(HANDSHAKE_TIMEOUT, acceptor.accept(tcp)).await else {
+        return;
+    };
+    let mut http = hyper::server::conn::http1::Builder::new();
+    http.timer(TokioTimer::new())
+        .header_read_timeout(HEADER_TIMEOUT);
+    let connection = http.serve_connection(TokioIo::new(stream), TowerToHyperService::new(app));
+    tokio::pin!(connection);
+    tokio::select! {
+        _ = connection.as_mut() => {}
+        () = events::closed(closing) => {
+            connection.as_mut().graceful_shutdown();
+            let _ = connection.await;
+        }
+    }
 }
 
 struct Signals {
