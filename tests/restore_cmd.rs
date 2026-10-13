@@ -480,6 +480,36 @@ fn the_plan_shows_the_command_that_will_run() {
 }
 
 #[test]
+fn the_plan_shows_the_name_flag_of_a_named_session() {
+    let Some(fx) = Fixture::new() else { return };
+    let mut session = fx.add_session("int1", State::Interrupted, "a");
+    session.session_name = Some("my name".to_owned());
+    fx.save(&session);
+    fx.vars.set(
+        "CLAUDE_MONITOR_LAUNCHER_CLAUDE",
+        "claude {name_args} --resume {session_id}",
+    );
+    let plan = || {
+        run_in(
+            restore(true, false, &[], false),
+            &fx.env,
+            Some(&fx.state_dir),
+        )
+        .unwrap()
+    };
+
+    let out: Value = serde_json::from_str(&plan().render(true)).unwrap();
+    let command = out["would_start"][0]["command"].as_str().unwrap();
+    assert!(
+        command.ends_with("claude --name 'my name' --resume agent-int1"),
+        "{command}"
+    );
+
+    let text = plan().render(false);
+    assert!(text.contains(&format!("  run: {command}")), "{text}");
+}
+
+#[test]
 fn nothing_to_restore_is_success() {
     let Some(fx) = Fixture::new() else { return };
     fx.add_session("wrk1", State::Working, "e");

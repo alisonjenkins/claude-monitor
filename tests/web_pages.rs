@@ -782,6 +782,30 @@ mod respawn_through_the_restore_preview {
     }
 
     #[test]
+    fn the_preview_shows_the_name_flag_of_a_named_session() {
+        let Some(fx) = Fixture::new() else { return };
+        let mut session = fx.add_session("int1", State::Interrupted, "a");
+        session.session_name = Some("aquero".to_owned());
+        fx.save(&session);
+        fx.vars.set(
+            "CLAUDE_MONITOR_LAUNCHER_CLAUDE",
+            "claude {name_args} --resume {session_id}",
+        );
+        let rig = Rig::start_on(&fx.state_dir, fx.env.clone());
+
+        let html = page(&rig, "/restore?session=int1").body;
+        let body = json_page(&rig, "/restore?session=int1").json();
+
+        let command = body["would_start"][0]["command"].as_str().unwrap();
+        assert!(
+            command.ends_with("claude --name aquero --resume agent-int1"),
+            "{command}"
+        );
+        let escaped = command.replace('&', "&amp;");
+        assert!(html.contains(&format!("run: {escaped}")), "{html}");
+    }
+
+    #[test]
     fn a_finished_session_can_be_previewed_too() {
         let Some(fx) = Fixture::new() else { return };
         fx.add_session("fin1", State::Finished, "c");
