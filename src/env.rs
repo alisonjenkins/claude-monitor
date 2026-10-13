@@ -5,9 +5,9 @@
 use std::collections::HashMap;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 use std::sync::Arc;
-use std::time::SystemTime;
+use std::time::{Duration, Instant, SystemTime};
 
 use crate::tmux::PaneLocation;
 
@@ -55,6 +55,8 @@ pub trait Tmux: Send + Sync {
     fn is_installed(&self) -> bool;
     /// Every pane keyed by pane id; `None` when tmux is unavailable.
     fn list_panes(&self) -> Result<Option<HashMap<String, PaneLocation>>, EnvError>;
+    /// Where one pane is; `None` when tmux does not list it.
+    fn pane_location(&self, pane_id: &str) -> Result<Option<PaneLocation>, EnvError>;
     /// Create a detached session running `command` in `cwd`; returns the pane id.
     fn new_session(&self, name: &str, cwd: &Path, command: &str) -> Result<String, EnvError>;
     /// Create a detached window in `session` running `command` in `cwd`; returns the pane id.
@@ -260,6 +262,11 @@ impl Processes for SystemProcesses {
 /// user's own tmux.
 pub const TMUX_SOCKET_VAR: &str = "CLAUDE_MONITOR_TMUX_SOCKET";
 
+/// The hook asks tmux where its pane is; a wedged server must not stall the
+/// agent, and reconcile fills the location in later.
+const PANE_LOCATION_DEADLINE: Duration = Duration::from_millis(500);
+const PANE_LOCATION_POLL: Duration = Duration::from_millis(5);
+
 /// Name of the window a new session starts with; `spawn_window` closes it.
 const PLACEHOLDER_WINDOW: &str = "claude-monitor-placeholder";
 
@@ -370,6 +377,67 @@ impl Tmux for SystemTmux {
             operation: "list tmux panes",
             detail: format!("{e:#}"),
         })
+    }
+
+    fn pane_location(&self, pane_id: &str) -> Result<Option<PaneLocation>, EnvError> {
+        const OPERATION: &str = "locate tmux pane";
+        let args = [
+            "display-message",
+            "-p",
+            "-t",
+            pane_id,
+            crate::tmux::LIST_PANES_FORMAT,
+        ];
+        let mut command = Command::new("tmux");
+        if let Some(socket) = &self.socket {
+            command.arg("-S").arg(socket);
+        }
+        let failed = |detail: String| EnvError::Failed {
+            operation: OPERATION,
+            detail,
+        };
+        let mut child = command
+            .args(args)
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|e| failed(format!("tmux {}: {e}", args.join(" "))))?;
+        let started = Instant::now();
+        let status = loop {
+            match child.try_wait() {
+                Ok(Some(status)) => break status,
+                Ok(None) if started.elapsed() < PANE_LOCATION_DEADLINE => {
+                    std::thread::sleep(PANE_LOCATION_POLL);
+                }
+                Ok(None) => {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return Err(failed(format!(
+                        "tmux {} did not answer within {} ms",
+                        args.join(" "),
+                        PANE_LOCATION_DEADLINE.as_millis()
+                    )));
+                }
+                Err(e) => return Err(failed(format!("tmux {}: {e}", args.join(" ")))),
+            }
+        };
+        let mut stdout = String::new();
+        if let Some(mut pipe) = child.stdout.take() {
+            let _ = pipe.read_to_string(&mut stdout);
+        }
+        if !status.success() {
+            let mut stderr = String::new();
+            if let Some(mut pipe) = child.stderr.take() {
+                let _ = pipe.read_to_string(&mut stderr);
+            }
+            return Err(failed(format!(
+                "tmux {} failed: {}",
+                args.join(" "),
+                stderr.trim()
+            )));
+        }
+        Ok(crate::tmux::parse_list_panes(stdout.trim()).remove(pane_id))
     }
 
     fn new_session(&self, name: &str, cwd: &Path, command: &str) -> Result<String, EnvError> {

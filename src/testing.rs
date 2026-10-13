@@ -119,6 +119,7 @@ struct TmuxState {
     next_pane: u32,
     next_window: u32,
     fail_creates: Option<String>,
+    fail_pane_location: Option<String>,
 }
 
 #[derive(Debug)]
@@ -149,6 +150,11 @@ impl FakeTmux {
     /// Make `new_session` and `new_window` fail with `detail`.
     pub fn fail_creates(&self, detail: &str) {
         lock(&self.0).fail_creates = Some(detail.to_owned());
+    }
+
+    /// Make `pane_location` fail with `detail`.
+    pub fn fail_pane_location(&self, detail: &str) {
+        lock(&self.0).fail_pane_location = Some(detail.to_owned());
     }
 
     pub fn calls(&self) -> Vec<TmuxCall> {
@@ -182,6 +188,20 @@ impl Tmux for FakeTmux {
         let mut state = lock(&self.0);
         state.calls.push(TmuxCall::ListPanes);
         Ok(state.available.then(|| state.panes.clone()))
+    }
+
+    fn pane_location(&self, pane_id: &str) -> Result<Option<PaneLocation>, EnvError> {
+        let state = lock(&self.0);
+        if let Some(detail) = state.fail_pane_location.clone() {
+            return Err(EnvError::Failed {
+                operation: "locate tmux pane",
+                detail,
+            });
+        }
+        Ok(state
+            .available
+            .then(|| state.panes.get(pane_id).cloned())
+            .flatten())
     }
 
     fn new_session(&self, name: &str, cwd: &Path, command: &str) -> Result<String, EnvError> {

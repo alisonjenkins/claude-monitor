@@ -118,6 +118,27 @@ fn sleep_argv() -> Vec<String> {
 }
 
 #[test]
+fn pane_location_reports_the_session_and_window_of_one_pane() {
+    let Some(server) = TmuxServer::start() else {
+        return;
+    };
+    let tmux = SystemTmux::with_socket(server.socket());
+    let cwd = TempDir::new().unwrap();
+    let cwd_path = cwd.path().canonicalize().unwrap();
+    tmux.ensure_session("my project", &cwd_path).unwrap();
+    let win = tmux
+        .spawn_window("my project", "api: build", &cwd_path, &sleep_argv())
+        .unwrap();
+
+    let location = tmux.pane_location(&win.pane_id).unwrap().unwrap();
+
+    assert_eq!(location.session_name, "my project");
+    assert_eq!(location.window_name, "api: build");
+    assert!(location.window_index.parse::<u32>().is_ok());
+    assert!(!matches!(tmux.pane_location("%999"), Ok(Some(_))));
+}
+
+#[test]
 fn a_spawned_window_lands_in_the_given_cwd_with_the_given_label() {
     let Some(server) = TmuxServer::start() else {
         return;

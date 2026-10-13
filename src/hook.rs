@@ -15,6 +15,7 @@ use crate::store::respawn::RespawnError;
 use crate::store::sessions::SessionsError;
 use crate::store::{resolve_state_dir, StateDirEnv, Store, StoreError, StoreOptions};
 use crate::summary;
+use crate::tmux::PaneLocation;
 
 pub const LOG_FILE_NAME: &str = "hook.log";
 pub const DEFAULT_AGENT: &str = "claude";
@@ -211,6 +212,7 @@ fn apply(
             )
         })
         .flatten();
+    let location = pane_location(ctx);
     // The guard only issues BEGIN IMMEDIATE / COMMIT; the Store methods below
     // run on the same connection, so they are inside the transaction.
     let tx = Transaction::new_unchecked(store.connection(), TransactionBehavior::Immediate)
@@ -232,6 +234,9 @@ fn apply(
     if let Some(pane) = ctx.tmux_pane {
         if session.tmux_pane.as_deref() != Some(pane) {
             session.tmux_pane = Some(pane.to_owned());
+        }
+        if let Some(location) = &location {
+            session.record_tmux_location(location);
         }
     }
     if !matches!(hook.event, Event::SessionEnd { .. }) {
@@ -271,6 +276,14 @@ fn apply(
         );
     append_events(ctx, store, before.as_ref(), &session, resumed, now)?;
     tx.commit().map_err(HookError::Commit)
+}
+
+/// Where tmux says the hook's pane is. Asked before the write lock is taken
+/// so the extra process never holds it. Any failure means "unknown" and is not
+/// logged: no tmux server is routine, and the next hook or reconcile retries.
+fn pane_location(ctx: &HookContext<'_>) -> Option<PaneLocation> {
+    let (pane, env) = (ctx.tmux_pane?, ctx.env?);
+    env.tmux.pane_location(pane).ok().flatten()
 }
 
 /// Closes the open respawn request of the pane `session` just started in, when
@@ -397,6 +410,9 @@ fn location_payload(session: &Session) -> Value {
         "repo_root": session.repo_root,
         "branch": session.branch,
         "tmux_pane": session.tmux_pane,
+        "tmux_session": session.tmux_session,
+        "tmux_window_name": session.tmux_window_name,
+        "tmux_window_index": session.tmux_window_index,
     })
 }
 
