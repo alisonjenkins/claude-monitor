@@ -35,7 +35,7 @@ const CA_VALIDITY_DAYS: i64 = 5 * 365 + 1;
 const LEAF_VALIDITY_DAYS: i64 = 90;
 /// A client certificate is imported into a browser by hand, so it lasts a year.
 const CLIENT_VALIDITY_DAYS: i64 = 365;
-const CLIENT_ALIAS: &str = "claude-monitor web client";
+pub const CLIENT_ALIAS: &str = "claude-monitor web client";
 /// A persisted client certificate with less than this left is replaced.
 const CLIENT_RENEW_WITHIN_DAYS: i64 = 30;
 /// A leaf with less than this left is replaced at the next `serve`.

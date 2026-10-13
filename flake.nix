@@ -64,6 +64,8 @@
             cargoBaseArgs
             // rustEnvFor pkgs
             // {
+              # Its test run drives the real certutil and pk12util.
+              nativeCheckInputs = [ pkgs.nss.tools ];
               meta.license = with pkgs.lib.licenses; [
                 mit
                 asl20
@@ -134,8 +136,11 @@
         {
           package = self.packages.${system}.default;
 
+          # The browser-setup tests drive the real certutil and pk12util and
+          # fail, rather than skip, when the NSS tools are missing.
           cargo-test = mkCargoCheck {
             name = "test";
+            extraNativeBuildInputs = [ pkgs.nss.tools ];
             command = "cargo test --offline --locked";
           };
 

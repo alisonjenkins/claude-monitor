@@ -136,6 +136,66 @@ fn find_in_path(tool: &str, path: &OsStr) -> Option<PathBuf> {
         })
 }
 
+/// A scripted runner for tests: every spec is recorded, the handler answers.
+#[cfg(test)]
+pub mod fake {
+    use super::*;
+    use std::cell::RefCell;
+
+    type Handler = Box<dyn Fn(&CommandSpec) -> Result<CommandOutput, RunError>>;
+
+    pub struct FakeRunner {
+        pub calls: RefCell<Vec<CommandSpec>>,
+        handler: Handler,
+    }
+
+    pub fn ok(stdout: &[u8]) -> Result<CommandOutput, RunError> {
+        Ok(CommandOutput {
+            code: Some(0),
+            stdout: stdout.to_vec(),
+            stderr: String::new(),
+        })
+    }
+
+    pub fn failed(code: i32, stderr: &str) -> Result<CommandOutput, RunError> {
+        Ok(CommandOutput {
+            code: Some(code),
+            stdout: Vec::new(),
+            stderr: stderr.to_owned(),
+        })
+    }
+
+    impl FakeRunner {
+        pub fn new(
+            handler: impl Fn(&CommandSpec) -> Result<CommandOutput, RunError> + 'static,
+        ) -> Self {
+            Self {
+                calls: RefCell::new(Vec::new()),
+                handler: Box::new(handler),
+            }
+        }
+
+        pub fn argv(&self) -> Vec<Vec<String>> {
+            self.calls
+                .borrow()
+                .iter()
+                .map(|c| {
+                    std::iter::once(c.program.clone())
+                        .chain(c.args.iter().map(|a| a.to_string_lossy().into_owned()))
+                        .collect()
+                })
+                .collect()
+        }
+    }
+
+    impl CommandRunner for FakeRunner {
+        fn run(&self, spec: &CommandSpec) -> Result<CommandOutput, RunError> {
+            self.calls.borrow_mut().push(spec.clone());
+            (self.handler)(spec)
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     #![allow(clippy::unwrap_used, clippy::expect_used)]
