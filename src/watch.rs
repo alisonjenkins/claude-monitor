@@ -13,6 +13,7 @@ use crate::live::{run_live, LiveSources};
 use crate::model::{Session, State};
 use crate::notify::{self, is_notifiable};
 use crate::refresh::{refresh, RefreshReport};
+use crate::store::sessions::SessionRow;
 use crate::store::Store;
 
 const SHORT_ID_CHARS: usize = 8;
@@ -94,9 +95,16 @@ pub fn watch(
             let _ = writeln!(err, "warning: {warning}");
         }
         last_warning = Some(warning);
-        let Ok(sessions) = store.list_sessions() else {
+        let Ok(rows) = store.list_sessions_lenient() else {
             return;
         };
+        let sessions: Vec<Session> = rows
+            .into_iter()
+            .filter_map(|row| match row {
+                SessionRow::Readable(session) => Some(*session),
+                SessionRow::Corrupt { .. } => None,
+            })
+            .collect();
         for (project, state) in notifications(&previous, &sessions, first) {
             if let Err(error) = env
                 .notifier

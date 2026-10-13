@@ -288,6 +288,30 @@ fn a_dead_process_is_logged_as_interrupted() {
 }
 
 #[test]
+fn a_corrupt_row_does_not_silence_the_watch() {
+    let (dir, fake) = (TempDir::new().unwrap(), live_fake());
+    let store = Store::open_in_dir(dir.path(), &StoreOptions::default()).unwrap();
+    store.upsert_session(&session("bad", State::Idle)).unwrap();
+    let conn = store.connection();
+    conn.execute_batch("PRAGMA ignore_check_constraints = ON")
+        .unwrap();
+    conn.execute("UPDATE sessions SET state = 'bogus' WHERE id = 'bad'", [])
+        .unwrap();
+    conn.execute_batch("PRAGMA ignore_check_constraints = OFF")
+        .unwrap();
+    drop(store);
+    let running = start(&dir, &fake, Vec::new());
+
+    running.wake.wake();
+
+    eventually("the session to appear", || {
+        running.out.text().contains(" idle (new) /w/proj")
+    });
+    running.stop.store(true, Ordering::SeqCst);
+    running.thread.join().unwrap();
+}
+
+#[test]
 fn warnings_go_to_the_error_stream_once() {
     let (dir, fake) = (TempDir::new().unwrap(), FakeEnv::new());
     fake.vars.set("CLAUDE_CONFIG_DIR", "/cfg");
