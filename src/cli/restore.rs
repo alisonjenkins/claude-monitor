@@ -95,6 +95,76 @@ pub(crate) fn preview_session(
     Ok(preview(env, &planned, &[]))
 }
 
+/// Where each live session with a recorded tmux session would be put back if
+/// it had to be restored, by the planner's own target rules. A session whose
+/// window and pane slot another live session shares lists that session under
+/// `collides_with`. Read-only: nothing here can start a session.
+#[cfg(feature = "web")]
+pub(crate) fn live_placements(
+    env: &Env,
+    state_dir: Option<&Path>,
+) -> Result<Vec<serde_json::Value>, Error> {
+    use crate::respawn::{target_tmux_session, window_label};
+
+    let store = open_viewer_store(env, state_dir)?;
+    let rows = store
+        .list_sessions_lenient()
+        .map_err(|e| store_error_message("list sessions", Some(store.path()), &e))?;
+    let mut live: Vec<Session> = rows
+        .into_iter()
+        .filter_map(|row| match row {
+            SessionRow::Readable(s) => Some(*s),
+            _ => None,
+        })
+        .filter(|s| {
+            s.state.is_active()
+                && s.tmux_session
+                    .as_deref()
+                    .is_some_and(|name| !name.is_empty())
+        })
+        .collect();
+    live.sort_by(|a, b| (&a.started_at, &a.id).cmp(&(&b.started_at, &b.id)));
+
+    let slots: Vec<(String, Option<u32>, Option<u32>)> = live
+        .iter()
+        .map(|s| {
+            let index = |value: &Option<String>| value.as_deref().and_then(|v| v.parse().ok());
+            (
+                target_tmux_session(s, env),
+                index(&s.tmux_window_index),
+                index(&s.tmux_pane_index),
+            )
+        })
+        .collect();
+    let items = live
+        .iter()
+        .zip(&slots)
+        .map(|(session, slot)| {
+            let (tmux_session, window_index, pane_index) = slot;
+            let collides_with: Vec<&str> = if window_index.is_some() && pane_index.is_some() {
+                live.iter()
+                    .zip(&slots)
+                    .filter(|(other, other_slot)| other.id != session.id && *other_slot == slot)
+                    .map(|(other, _)| other.id.as_str())
+                    .collect()
+            } else {
+                Vec::new()
+            };
+            let label = window_label(session);
+            json!({
+                "session": session.id,
+                "label": label,
+                "tmux_session": tmux_session,
+                "tmux_target": format!("{tmux_session}:{label}"),
+                "window_index": window_index,
+                "pane_index": pane_index,
+                "collides_with": collides_with,
+            })
+        })
+        .collect();
+    Ok(items)
+}
+
 /// Interrupted sessions the user has not dismissed, plus finished ones when
 /// asked, oldest first.
 pub(crate) fn candidates(store: &Store, include_finished: bool) -> Result<Vec<Session>, Error> {

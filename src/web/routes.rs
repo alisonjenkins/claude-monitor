@@ -1358,7 +1358,16 @@ async fn restore(
                 .await?
             }
         };
-        let preview = output_json(&output, false);
+        let mut preview = output_json(&output, false);
+        if only.is_none() {
+            let (env, dir) = (state.env.clone(), state.state_dir.clone());
+            let live = blocking(move || restore::live_placements(&env, Some(&dir)))
+                .await?
+                .map_err(ApiError::from)?;
+            if let Some(map) = preview.as_object_mut() {
+                map.insert("live".to_owned(), Value::Array(live));
+            }
+        }
         Ok(page_or_json(&state, json, &preview, |ctx| {
             pages::restore(ctx, &preview, include_finished, only.as_deref())
         }))

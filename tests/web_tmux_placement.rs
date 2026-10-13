@@ -93,6 +93,103 @@ fn the_session_json_carries_the_placement_fields() {
     assert_eq!(json["tmux_window_panes"], "1");
 }
 
+fn live_panel(html: &str) -> &str {
+    let start = html
+        .find("id=\"live-restore\"")
+        .unwrap_or_else(|| panic!("no live panel in page:\n{html}"));
+    let rest = &html[start..];
+    &rest[..rest.find("</section>").unwrap_or(rest.len())]
+}
+
+#[test]
+fn the_restore_page_lists_live_sessions_with_the_window_they_would_get() {
+    let web = Plain::new();
+    web.put("s-live", State::Working);
+    web.put("s-bare", State::Working);
+    web.put("s-int", State::Interrupted);
+    place(&web, "s-live", "luks-unlock", "claude", "2", "1");
+    place(&web, "s-int", "other", "gone", "1", "1");
+
+    let html = page(&web.rig, "/restore").body;
+
+    let panel = live_panel(&html);
+    assert!(panel.contains("Live sessions"), "{panel}");
+    assert!(panel.contains("href=\"/sessions/s-live\""), "{panel}");
+    assert!(panel.contains("luks-unlock:claude"), "{panel}");
+    assert!(panel.contains("window 2"), "{panel}");
+    assert!(panel.contains("pane 1"), "{panel}");
+    assert!(
+        !panel.contains("s-bare"),
+        "no placement, not listed: {panel}"
+    );
+    assert!(!panel.contains("s-int"), "not live: {panel}");
+    assert!(!panel.contains("collide"), "{panel}");
+}
+
+#[test]
+fn the_live_panel_offers_no_way_to_start_anything() {
+    let web = Plain::new();
+    web.put("s-live", State::Working);
+    place(&web, "s-live", "luks-unlock", "claude", "2", "1");
+
+    let html = page(&web.rig, "/restore").body;
+
+    let panel = live_panel(&html);
+    assert!(!panel.contains("checkbox"), "{panel}");
+    assert!(!panel.contains("<button"), "{panel}");
+    assert!(!panel.contains("<form"), "{panel}");
+    assert!(!panel.contains("hx-post"), "{panel}");
+    let json = json_page(&web.rig, "/restore").json();
+    assert_eq!(json["would_start"].as_array().unwrap().len(), 0, "{json}");
+}
+
+#[test]
+fn two_live_sessions_in_one_slot_are_flagged() {
+    let web = Plain::new();
+    web.put("s-one", State::Working);
+    web.put("s-two", State::Idle);
+    web.put("s-three", State::Working);
+    place(&web, "s-one", "luks-unlock", "claude", "2", "1");
+    place(&web, "s-two", "luks-unlock", "other-name", "2", "1");
+    place(&web, "s-three", "luks-unlock", "claude", "2", "2");
+
+    let html = page(&web.rig, "/restore").body;
+
+    let panel = live_panel(&html);
+    assert_eq!(panel.matches("class=\"warn\"").count(), 2, "{panel}");
+    assert!(panel.contains("Same tmux slot as s-two"), "{panel}");
+    assert!(panel.contains("Same tmux slot as s-one"), "{panel}");
+}
+
+#[test]
+fn the_live_target_follows_the_explicit_override_like_the_planner() {
+    let web = Plain::new();
+    web.put("s-live", State::Working);
+    place(&web, "s-live", "luks-unlock", "claude", "2", "1");
+    web.fake.vars.set("CLAUDE_MONITOR_TMUX_SESSION", "forced");
+
+    let html = page(&web.rig, "/restore").body;
+
+    let panel = live_panel(&html);
+    assert!(panel.contains("forced:claude"), "{panel}");
+    assert!(!panel.contains("luks-unlock:claude"), "{panel}");
+}
+
+#[test]
+fn a_hostile_window_name_is_escaped_in_the_live_panel() {
+    let web = Plain::new();
+    web.put("s-evil", State::Working);
+    place(&web, "s-evil", "s", "<script>alert(1)</script>", "0", "0");
+
+    let html = page(&web.rig, "/restore").body;
+
+    assert!(!html.contains("<script>alert(1)"), "{html}");
+    assert!(
+        live_panel(&html).contains("&lt;script&gt;alert(1)&lt;/script&gt;"),
+        "{html}"
+    );
+}
+
 #[test]
 fn a_row_carries_a_short_placement_hint_only_when_one_is_recorded() {
     let web = Plain::new();

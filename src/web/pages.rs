@@ -941,6 +941,46 @@ pub fn session(ctx: &Ctx<'_>, detail: &Value) -> String {
     .into_string()
 }
 
+/// Read-only: where the sessions running now would come back if they had to
+/// be restored. Nothing here starts anything.
+fn live_panel(live: &[Value]) -> Markup {
+    html! {
+        @if !live.is_empty() {
+            section.panel id="live-restore" {
+                h2 { "Live sessions — would restore as" }
+                @for item in live {
+                    @let id = str_of(item, "session").unwrap_or_default();
+                    p {
+                        a.task href=(format!("/sessions/{}", seg(id))) { (short(id)) }
+                        " " span.mono { (str_of(item, "tmux_target").unwrap_or_default()) }
+                        " " span.muted {
+                            "("
+                            @if let Some(index) = item.get("window_index").and_then(Value::as_u64) {
+                                "window " (index)
+                                @if item.get("pane_index").is_some_and(|p| !p.is_null()) { ", " }
+                            }
+                            @if let Some(index) = item.get("pane_index").and_then(Value::as_u64) {
+                                "pane " (index)
+                            }
+                            ")"
+                        }
+                    }
+                    @let others: Vec<&str> = list_of(item, "collides_with")
+                        .iter()
+                        .filter_map(Value::as_str)
+                        .collect();
+                    @if !others.is_empty() {
+                        p.warn {
+                            "Same tmux slot as " (others.join(", "))
+                            ": only one of them can be put back there."
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 /// The restore preview; with `only` it is for that one session, which is how
 /// a Respawn button asks first.
 pub fn restore(
@@ -1009,6 +1049,7 @@ pub fn restore(
                 }
             }
         }
+        (live_panel(list_of(preview, "live")))
         @if !refuse.is_empty() {
             section.panel {
                 h2 { "Cannot be restored" }
