@@ -15,9 +15,10 @@ use super::projects::{flat, grouped, Part};
 use super::restore::{PreviewRow, RestoreResult, RestoreView, Step};
 use crate::cli::detail::SessionDetail;
 use crate::export::links::Check;
-use crate::model::State;
+use crate::model::{Session, State};
 use crate::notify::is_notifiable;
 use crate::store::queries::{Flag, Overview, OverviewEntry, OverviewQuery, Section, SectionName};
+use crate::store::sessions::SessionRow;
 use crate::store::Store;
 
 const NO_PANE_STATUS: &str = "no tmux pane recorded for this session";
@@ -55,11 +56,18 @@ impl Snapshot {
             ..OverviewQuery::default()
         };
         let overview = store.overview(&query).map_err(|e| e.to_string())?;
+        // A corrupt row is already a degraded entry in the overview; it has no pane.
         let panes = store
-            .list_sessions()
+            .list_sessions_lenient()
             .map_err(|e| e.to_string())?
             .into_iter()
-            .filter_map(|session| session.tmux_pane.map(|pane| (session.id, pane)))
+            .filter_map(|row| match row {
+                SessionRow::Readable(session) => {
+                    let Session { id, tmux_pane, .. } = *session;
+                    tmux_pane.map(|pane| (id, pane))
+                }
+                SessionRow::Corrupt { .. } => None,
+            })
             .collect();
         let figures = store.progress_figures().map_err(|e| e.to_string())?;
         Ok(Self {
@@ -900,4 +908,33 @@ pub fn update(mut app: App, msg: Msg) -> (App, Vec<Effect>) {
         }
     };
     (app, effects)
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used, clippy::expect_used)]
+    use super::*;
+    use crate::store::StoreOptions;
+
+    #[test]
+    fn a_corrupt_row_does_not_stop_the_snapshot_loading() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open_in_dir(dir.path(), &StoreOptions::viewer()).unwrap();
+        let mut good = Session::new("good", "claude", "a-good", "/w", "2026-10-12T09:00:00Z");
+        good.tmux_pane = Some("%1".to_owned());
+        store.upsert_session(&good).unwrap();
+        let bad = Session::new("bad", "claude", "a-bad", "/w", "2026-10-12T09:00:00Z");
+        store.upsert_session(&bad).unwrap();
+        let conn = store.connection();
+        conn.execute_batch("PRAGMA ignore_check_constraints = ON")
+            .unwrap();
+        conn.execute("UPDATE sessions SET state = 'bogus' WHERE id = 'bad'", [])
+            .unwrap();
+        conn.execute_batch("PRAGMA ignore_check_constraints = OFF")
+            .unwrap();
+
+        let snapshot = Snapshot::load(&store, "2026-10-12T10:00:00Z").unwrap();
+
+        assert_eq!(snapshot.panes.get("good").map(String::as_str), Some("%1"));
+    }
 }
