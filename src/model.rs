@@ -143,15 +143,24 @@ impl Session {
         let session = Some(location.session_name.as_str());
         let window_name = Some(location.window_name.as_str());
         let window_index = Some(location.window_index.as_str());
+        let pane_index = Some(location.pane_index.as_str());
+        let window_panes = Some(location.window_panes.as_str());
+        let window_layout = Some(location.window_layout.as_str());
         if self.tmux_session.as_deref() == session
             && self.tmux_window_name.as_deref() == window_name
             && self.tmux_window_index.as_deref() == window_index
+            && self.tmux_pane_index.as_deref() == pane_index
+            && self.tmux_window_panes.as_deref() == window_panes
+            && self.tmux_window_layout.as_deref() == window_layout
         {
             return false;
         }
         self.tmux_session = Some(location.session_name.clone());
         self.tmux_window_name = Some(location.window_name.clone());
         self.tmux_window_index = Some(location.window_index.clone());
+        self.tmux_pane_index = Some(location.pane_index.clone());
+        self.tmux_window_panes = Some(location.window_panes.clone());
+        self.tmux_window_layout = Some(location.window_layout.clone());
         true
     }
 

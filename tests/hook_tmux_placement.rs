@@ -98,6 +98,44 @@ fn placement(session: &Session) -> (Option<&str>, Option<&str>, Option<&str>) {
     )
 }
 
+fn pane_fields(session: &Session) -> (Option<&str>, Option<&str>, Option<&str>) {
+    (
+        session.tmux_pane_index.as_deref(),
+        session.tmux_window_panes.as_deref(),
+        session.tmux_window_layout.as_deref(),
+    )
+}
+
+const LAYOUT: &str = "b25d,200x50,0,0{100x50,0,0,0,99x50,101,0,1}";
+
+#[test]
+fn a_hook_records_the_pane_index_pane_count_and_layout() {
+    let h = Harness::new();
+    h.fake.tmux.add_pane(
+        PANE,
+        PaneLocation {
+            session_name: "work".to_owned(),
+            window_name: "api".to_owned(),
+            window_index: "1".to_owned(),
+            pane_index: "2".to_owned(),
+            window_panes: "3".to_owned(),
+            window_layout: LAYOUT.to_owned(),
+        },
+    );
+
+    h.feed("SessionStart-startup");
+    let recorded = h.session();
+    h.fake.tmux.fail_pane_location("no server running");
+    h.feed("UserPromptSubmit");
+
+    assert_eq!(pane_fields(&recorded), (Some("2"), Some("3"), Some(LAYOUT)));
+    assert_eq!(
+        pane_fields(&h.session()),
+        (Some("2"), Some("3"), Some(LAYOUT)),
+        "a failing tmux must not clear the pane fields"
+    );
+}
+
 #[test]
 fn a_hook_records_the_panes_tmux_session_and_window() {
     let h = Harness::new();

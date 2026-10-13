@@ -272,6 +272,68 @@ fn placement(session: &Session) -> (Option<&str>, Option<&str>, Option<&str>) {
     )
 }
 
+fn split_location(index: &str, panes: &str, layout: &str) -> PaneLocation {
+    PaneLocation {
+        pane_index: index.to_owned(),
+        window_panes: panes.to_owned(),
+        window_layout: layout.to_owned(),
+        ..location("work", "api", "2")
+    }
+}
+
+fn pane_fields(session: &Session) -> (Option<&str>, Option<&str>, Option<&str>) {
+    (
+        session.tmux_pane_index.as_deref(),
+        session.tmux_window_panes.as_deref(),
+        session.tmux_window_layout.as_deref(),
+    )
+}
+
+const LAYOUT: &str = "b25d,200x50,0,0{100x50,0,0,0,99x50,101,0,1}";
+
+#[test]
+fn a_live_pane_records_its_pane_index_pane_count_and_layout() {
+    let fx = Fx::new();
+    fx.registry(10, "sess-1", "busy", true);
+    fx.fake
+        .tmux
+        .add_pane("%5", split_location("1", "2", LAYOUT));
+
+    fx.run();
+
+    assert_eq!(
+        pane_fields(&fx.session("sess-1").unwrap()),
+        (Some("1"), Some("2"), Some(LAYOUT))
+    );
+}
+
+#[test]
+fn a_changed_pane_count_is_recorded_once_and_never_cleared() {
+    let fx = Fx::new();
+    fx.registry(10, "sess-1", "busy", true);
+    fx.fake
+        .tmux
+        .add_pane("%5", split_location("1", "2", LAYOUT));
+    fx.run();
+    fx.fake
+        .tmux
+        .add_pane("%5", split_location("1", "3", "other,layout"));
+
+    let grown = fx.run();
+    let repeat = fx.run();
+    fx.fake.tmux.remove_pane("%5");
+    fx.run();
+    fx.fake.tmux.set_available(false);
+    fx.run();
+
+    assert_eq!(
+        pane_fields(&fx.session("sess-1").unwrap()),
+        (Some("1"), Some("3"), Some("other,layout"))
+    );
+    assert!(grown.changed(), "{grown:?}");
+    assert!(!repeat.changed(), "{repeat:?}");
+}
+
 #[test]
 fn a_live_pane_records_its_tmux_session_and_window() {
     let fx = Fx::new();
