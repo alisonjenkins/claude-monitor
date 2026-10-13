@@ -132,6 +132,23 @@ fn tmux_placement(session: &Session) -> Option<String> {
     ))
 }
 
+/// `session:window-index` (the name when no index was recorded), the short
+/// form of the placement for a list row; `None` when no tmux session was ever
+/// recorded.
+#[cfg(feature = "web")]
+pub(crate) fn placement_hint(session: &Session) -> Option<String> {
+    let name = session.tmux_session.as_deref().filter(|n| !n.is_empty())?;
+    let window = session
+        .tmux_window_index
+        .as_deref()
+        .or(session.tmux_window_name.as_deref())
+        .filter(|w| !w.is_empty());
+    Some(match window {
+        Some(window) => format!("{name}:{window}"),
+        None => name.to_owned(),
+    })
+}
+
 /// The wording of `show`'s `tmux` line, from the stored parts, so the web
 /// pages say the same thing.
 pub(crate) fn placement_text(

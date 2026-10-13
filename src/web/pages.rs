@@ -300,6 +300,9 @@ fn row(
                     @for flag in &flags {
                         span.flag { (flag) }
                     }
+                    @if let Some(hint) = str_of(entry, "tmux_hint") {
+                        " · " span.muted { "tmux " (hint) }
+                    }
                 }
                 @if let Some(figure) = progress.get(id) {
                     (progress_figure(figure))

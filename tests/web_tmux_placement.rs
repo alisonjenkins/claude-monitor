@@ -92,3 +92,50 @@ fn the_session_json_carries_the_placement_fields() {
     assert_eq!(json["tmux_pane_index"], "2");
     assert_eq!(json["tmux_window_panes"], "1");
 }
+
+#[test]
+fn a_row_carries_a_short_placement_hint_only_when_one_is_recorded() {
+    let web = Plain::new();
+    web.put("s-placed", State::Working);
+    web.put("s-bare", State::Working);
+    place(&web, "s-placed", "luks-unlock", "w", "1", "1");
+
+    let html = page(&web.rig, "/").body;
+
+    let placed = html
+        .split("<li class=\"row\"")
+        .find(|row| row.contains("s-placed"))
+        .unwrap();
+    let bare = html
+        .split("<li class=\"row\"")
+        .find(|row| row.contains("s-bare"))
+        .unwrap();
+    assert!(placed.contains("tmux luks-unlock:1"), "{placed}");
+    assert!(!bare.contains("tmux "), "{bare}");
+}
+
+#[test]
+fn a_hostile_session_name_is_escaped_in_the_row_hint() {
+    let web = Plain::new();
+    web.put("s-evil", State::Working);
+    place(&web, "s-evil", "<script>x</script>", "w", "1", "1");
+
+    let html = page(&web.rig, "/").body;
+
+    assert!(!html.contains("<script>x"), "{html}");
+    assert!(
+        html.contains("tmux &lt;script&gt;x&lt;/script&gt;:1"),
+        "{html}"
+    );
+}
+
+#[test]
+fn the_list_json_keeps_its_exact_shape() {
+    let web = Plain::new();
+    web.put("s-placed", State::Working);
+    place(&web, "s-placed", "luks-unlock", "w", "1", "1");
+
+    let json = json_page(&web.rig, "/sessions").json();
+
+    assert!(json["sessions"][0].get("tmux_hint").is_none(), "{json}");
+}

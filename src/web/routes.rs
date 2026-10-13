@@ -23,13 +23,14 @@ use crate::cli::confirm::{self, Question};
 use crate::cli::migrate::open_viewer_store;
 use crate::cli::respawn::{plan_all, started_json, usage_error};
 use crate::cli::restore::{self, candidates};
-use crate::cli::show::resolve;
+use crate::cli::show::{placement_hint, resolve};
 use crate::cli::{self, Command, Output, ProjectAction};
 use crate::env::Env;
 use crate::error::Error;
 use crate::export::links::link_json;
 use crate::model::{OwnerKind, Project, StepStatus};
 use crate::respawn::{start_batch, Item, PlanFlags, RefusedItem};
+use crate::store::sessions::SessionRow;
 use crate::store::Store;
 
 /// One library command and the web route that offers it. A `{id}` segment is
@@ -536,6 +537,40 @@ fn entries_of(listed: &Value) -> Vec<Value> {
         .unwrap_or_default()
 }
 
+/// Adds `tmux_hint` to each page entry whose session has a recorded tmux
+/// session. Only for pages: the JSON keeps the exact `list --json` shape.
+async fn with_placement_hints(
+    state: &AppState,
+    mut entries: Vec<Value>,
+) -> Result<Vec<Value>, ApiError> {
+    let (env, dir) = (state.env.clone(), state.state_dir.clone());
+    let hints = blocking(move || -> Result<HashMap<String, String>, ApiError> {
+        let store = open_viewer_store(&env, Some(&dir))?;
+        let rows = store
+            .list_sessions_lenient()
+            .map_err(|e| ApiError::internal("list sessions", e))?;
+        Ok(rows
+            .into_iter()
+            .filter_map(|row| match row {
+                SessionRow::Readable(s) => Some((s.id.clone(), placement_hint(&s)?)),
+                _ => None,
+            })
+            .collect())
+    })
+    .await??;
+    for entry in &mut entries {
+        let hint = entry
+            .get("id")
+            .and_then(Value::as_str)
+            .and_then(|id| hints.get(id))
+            .cloned();
+        if let (Some(hint), Some(map)) = (hint, entry.as_object_mut()) {
+            map.insert("tmux_hint".to_owned(), json!(hint));
+        }
+    }
+    Ok(entries)
+}
+
 /// `/sessions`: the flat list, exactly what `list --json` prints.
 async fn sessions(
     State(state): State<AppState>,
@@ -615,6 +650,11 @@ async fn sessions_view(
     let output = run(state, params.command()).await?;
     let mut listed = output_json(&output, false);
     let entries = entries_of(&listed);
+    let entries = if json {
+        entries
+    } else {
+        with_placement_hints(state, entries).await?
+    };
     let grown = if json && !tree {
         Value::Null
     } else {
@@ -1070,6 +1110,11 @@ async fn project_view(
     .await?;
     let entries = entries_of(&output_json(&listed, false));
     let body = json!({ "project": project, "sessions": entries, "notes": notes });
+    let entries = if json {
+        entries
+    } else {
+        with_placement_hints(state, entries).await?
+    };
     let progress = if json {
         HashMap::new()
     } else {
