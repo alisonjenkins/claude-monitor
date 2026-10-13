@@ -1,4 +1,6 @@
 pub mod agents;
+#[cfg(feature = "web")]
+pub mod browser_setup;
 pub mod cli;
 pub mod config;
 pub mod env;
