@@ -569,3 +569,48 @@ fn watching_a_missing_registry_directory_is_an_error_naming_it() {
 
     assert!(err.to_string().contains("nope"), "{err}");
 }
+
+fn user_name_of(value: &Value) -> Option<String> {
+    let rig = rig();
+    add_live(&rig, 7, value);
+    scan_ok(&rig).entries[0].user_name.clone()
+}
+
+#[test]
+fn a_user_set_name_is_read() {
+    let value = with(
+        with(entry(7, "s"), "name", json!("aquero")),
+        "nameSource",
+        json!("user"),
+    );
+    assert_eq!(user_name_of(&value).as_deref(), Some("aquero"));
+}
+
+#[test]
+fn a_name_from_another_source_is_not_a_user_name() {
+    let auto = with(
+        with(entry(7, "s"), "name", json!("proj")),
+        "nameSource",
+        json!("auto"),
+    );
+    assert_eq!(user_name_of(&auto), None);
+    assert_eq!(user_name_of(&entry(7, "s")), None);
+}
+
+#[test]
+fn an_empty_or_blank_user_name_is_ignored() {
+    for name in ["", "  "] {
+        let value = with(
+            with(entry(7, "s"), "name", json!(name)),
+            "nameSource",
+            json!("user"),
+        );
+        assert_eq!(user_name_of(&value), None, "{name:?}");
+    }
+}
+
+#[test]
+fn a_source_without_a_name_is_none() {
+    let value = with(without(entry(7, "s"), "name"), "nameSource", json!("user"));
+    assert_eq!(user_name_of(&value), None);
+}

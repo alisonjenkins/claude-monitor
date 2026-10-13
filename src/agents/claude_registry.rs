@@ -20,6 +20,7 @@ pub const MAX_ENTRY_BYTES: usize = 16 * 1024;
 const SESSIONS_DIR_NAME: &str = "sessions";
 const ENTRY_EXTENSION: &str = ".json";
 const CLI_ENTRYPOINT: &str = "cli";
+const USER_NAME_SOURCE: &str = "user";
 /// Claude Code rewrites these files in place, so a read can catch half a write;
 /// one more read almost always sees the finished file.
 const READ_ATTEMPTS: usize = 2;
@@ -63,6 +64,8 @@ pub struct RegistryEntry {
     /// The pid is running and its start time equals the recorded `procStart`.
     pub live: bool,
     pub version: Option<String>,
+    /// The display name the user set; automatic names are not kept.
+    pub user_name: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -103,6 +106,8 @@ struct RawEntry {
     tmux: Option<String>,
     status: Option<String>,
     waiting_for: Option<String>,
+    name: Option<String>,
+    name_source: Option<String>,
 }
 
 enum Load {
@@ -187,6 +192,7 @@ fn build(env: &Env, pid: u32, raw: RawEntry) -> Option<RegistryEntry> {
         .is_some_and(|recorded| {
             matches!(env.processes.start_time(pid), Ok(Some(actual)) if actual == recorded)
         });
+    let user_name = user_name(raw.name.as_deref(), raw.name_source.as_deref());
     Some(RegistryEntry {
         pid,
         session_id: raw.session_id?,
@@ -203,7 +209,13 @@ fn build(env: &Env, pid: u32, raw: RawEntry) -> Option<RegistryEntry> {
         tmux: raw.tmux.as_deref().and_then(parse_tmux),
         live,
         version: raw.version,
+        user_name,
     })
+}
+
+fn user_name(name: Option<&str>, source: Option<&str>) -> Option<String> {
+    let name = name?.trim();
+    (source == Some(USER_NAME_SOURCE) && !name.is_empty()).then(|| name.to_owned())
 }
 
 fn parse_status(status: &str) -> Option<RegistryStatus> {
