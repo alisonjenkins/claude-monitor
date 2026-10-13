@@ -8,13 +8,17 @@
 # browser is a fresh headless profile. Nothing touches the real ~/.claude,
 # ~/.copilot, tmux server or state dir, and no real agent is started.
 #
+# The server speaks only TLS 1.3 and logs in by a single-use URL; the script
+# reads that URL from serve's stdout and asks for more with `web login`.
+#
 # Usage: scripts/e2e-web.sh [path/to/claude-monitor]   (run `cargo build` first)
+# Needs: tmux jq curl openssl base64
 # Env:   E2E_OUT      evidence directory (screenshots + assertions.log)
 #        E2E_PYTHON   python with the `playwright` package (default python3)
 #        E2E_CHROMIUM chromium executable (default: Playwright's own)
 # Nix, without a global playwright (a dev shell's LD_LIBRARY_PATH breaks the
 # browser, so clear it):
-#   env -u LD_LIBRARY_PATH nix-shell -p 'python3.withPackages (ps: [ps.playwright])' \
+#   env -u LD_LIBRARY_PATH nix-shell -p openssl 'python3.withPackages (ps: [ps.playwright])' \
 #     --run 'E2E_PYTHON=python E2E_CHROMIUM=$(command -v chromium) scripts/e2e-web.sh'
 set -euo pipefail
 [ -z "${E2E_TRACE:-}" ] || set -x
@@ -22,11 +26,13 @@ set -euo pipefail
 REPO=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 BIN=${1:-${CLAUDE_MONITOR_BIN:-${CARGO_TARGET_DIR:-$REPO/target}/debug/claude-monitor}}
 [ -x "$BIN" ] || { echo "e2e-web: $BIN not found; run cargo build or pass the binary" >&2; exit 2; }
-for tool in tmux jq curl; do
+for tool in tmux jq curl openssl base64; do
   command -v "$tool" >/dev/null || { echo "e2e-web: $tool is required" >&2; exit 2; }
 done
 
-TMP=$(mktemp -d)
+# Short on purpose: the control socket lives under it and a unix socket path
+# must stay under about 100 bytes (a long $TMPDIR would disable `web login`).
+TMP=$(mktemp -d /tmp/e2e-web.XXXXXX)
 SOCK=$TMP/sock
 SERVE_PID=""
 cleanup() {
@@ -128,12 +134,24 @@ mon list --include-dismissed --expand-finished >"$E2E_OUT/seed-list.json"
 "$BIN" --json serve --port 0 >"$TMP/serve.out" 2>"$TMP/serve.err" &
 SERVE_PID=$!
 for _ in $(seq 1 50); do
-  grep -q 'token=' "$TMP/serve.out" 2>/dev/null && break
+  grep -q 'login?code=' "$TMP/serve.out" 2>/dev/null && break
   sleep 0.1
 done
-URL=$(grep -o 'http://[^ "]*token=[^ "]*' "$TMP/serve.out" | head -1)
+URL=$(grep -o 'https://[^ "]*login?code=[^ "]*' "$TMP/serve.out" | head -1 || true)
 [ -n "$URL" ] || { echo "e2e-web: serve printed no URL" >&2; cat "$TMP/serve.out" "$TMP/serve.err" >&2; exit 1; }
 export E2E_URL=$URL
+
+# The CA `serve` generated in this run's private state dir. curl trusts it as
+# its only root. Headless Chromium has no per-run trust store to import it
+# into, so it is launched with --ignore-certificate-errors-spki-list pinned to
+# the hash of this run's leaf public key: only that one key is accepted, every
+# other certificate error still fails. The TLS handshake and the page's
+# security headers are what is under test, not Chromium's trust-store UI.
+E2E_CA=$(mon web ca | jq -r .path)
+export E2E_CA
+E2E_SPKI=$(openssl x509 -in "$(dirname "$E2E_CA")/server.pem" -pubkey -noout |
+  openssl pkey -pubin -outform der | openssl dgst -sha256 -binary | base64)
+export E2E_SPKI
 
 PY=${E2E_PYTHON:-python3}
 rc=0

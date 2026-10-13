@@ -1,8 +1,12 @@
 """Browser checks for the claude-monitor web view; driven by e2e-web.sh.
 
 Reads its world from the environment e2e-web.sh sets up (E2E_URL, E2E_BIN,
-E2E_TMP, E2E_SOCK, E2E_OUT). Writes screenshots and assertions.log to E2E_OUT.
-Exit status is 0 only if every assertion passed.
+E2E_TMP, E2E_SOCK, E2E_OUT, E2E_CA, E2E_SPKI). Writes screenshots and
+assertions.log to E2E_OUT. Exit status is 0 only if every assertion passed.
+
+E2E_URL is the single-use login URL serve printed; more come from
+`claude-monitor web login`. Chromium is pinned to this run's leaf key (see
+e2e-web.sh), curl trusts the generated CA.
 """
 
 import json
@@ -19,10 +23,12 @@ TMP = os.environ["E2E_TMP"]
 SOCK = os.environ["E2E_SOCK"]
 OUT = os.environ["E2E_OUT"]
 CHROMIUM = os.environ.get("E2E_CHROMIUM")
+CA = os.environ["E2E_CA"]
+SPKI = os.environ["E2E_SPKI"]
 
 parts = urllib.parse.urlsplit(URL)
 BASE = f"{parts.scheme}://{parts.netloc}"
-TOKEN = urllib.parse.parse_qs(parts.query)["token"][0]
+COOKIE_NAME = "__Host-cc_session"
 SSE_BUDGET_S = 10.0
 
 failures = []
@@ -64,16 +70,28 @@ FINISHED = "[id$='-section-finished']"
 DONE = "[id$='-section-done']"
 
 
+def api_get(path):
+    """JSON from the server as the logged-in browser context sees it. Through
+    curl and the generated CA: Playwright's own request client does not use
+    Chromium's certificate pin."""
+    session = next(c["value"] for c in ctx.cookies() if c["name"] == COOKIE_NAME)
+    out = subprocess.run(
+        ["curl", "-s", "--cacert", CA, "-H", "Accept: application/json",
+         "-H", f"Cookie: {COOKIE_NAME}={session}", f"{BASE}{path}"],
+        capture_output=True, text=True, check=True,
+    )
+    return json.loads(out.stdout)
+
+
 def project_id(name):
-    listed = ctx.request.get(f"{BASE}/projects", headers={"Accept": "application/json"}).json()
-    for project in listed["projects"]:
+    for project in api_get("/projects")["projects"]:
         if project["name"] == name:
             return project["id"]
     raise KeyError(name)
 
 
 def tree_json():
-    return ctx.request.get(f"{BASE}/", headers={"Accept": "application/json"}).json()
+    return api_get("/")
 
 
 def project_of(session_id):
@@ -82,30 +100,56 @@ def project_of(session_id):
 
 def curl(*args):
     out = subprocess.run(
-        ["curl", "-s", "-o", "/dev/null", "-w", "%{http_code}", *args],
+        ["curl", "-s", "--cacert", CA, "-o", "/dev/null", "-w", "%{http_code}", *args],
         capture_output=True, text=True, check=False,
     )
     return out.stdout.strip()
 
 
+def curl_status(*args):
+    """curl's exit status, for connections that must not complete."""
+    return subprocess.run(["curl", "-s", "--max-time", "5", *args],
+                          capture_output=True, check=False).returncode
+
+
+def fresh_login_url():
+    """A new single-use URL from the running server, over the control socket."""
+    return mon("web", "login")["url"]
+
+
+def sign_in(context):
+    """Logs a fresh browser context in the way a person would: opens the URL."""
+    page = context.new_page()
+    page.goto(fresh_login_url(), wait_until="load")
+    return page
+
+
 with sync_playwright() as pw:
-    launch = {"headless": True}
+    launch = {"headless": True, "args": [f"--ignore-certificate-errors-spki-list={SPKI}"]}
     if CHROMIUM:
         launch["executable_path"] = CHROMIUM
     browser = pw.chromium.launch(**launch)
     ctx = browser.new_context(viewport={"width": 1280, "height": 900}, color_scheme="light")
     page = ctx.new_page()
     page.on("pageerror", lambda e: check("no page errors", False, str(e)))
+    csp_violations = []
+    page.on("console", lambda m: csp_violations.append(m.text)
+            if "Content Security Policy" in m.text else None)
 
-    # 1. hand-off, overview, bands
-    note("== 1. load, hand-off, overview")
+    # 1. login, overview, bands
+    note("== 1. load, login, overview")
     resp = page.goto(URL, wait_until="load")
-    check("hand-off lands on a token-free URL", "token" not in page.url, page.url)
+    check("login lands on a code-free URL", "code" not in page.url, page.url)
     check("status 200 after redirect", resp is not None and resp.status == 200)
     cookies = {c["name"]: c for c in ctx.cookies()}
-    cookie = cookies.get("cc_token")
-    check("cc_token cookie set, HttpOnly, SameSite=Strict",
-          bool(cookie) and cookie["httpOnly"] and cookie["sameSite"] == "Strict")
+    cookie = cookies.get(COOKIE_NAME)
+    check("session cookie set, Secure, HttpOnly, SameSite=Strict",
+          bool(cookie) and cookie["httpOnly"] and cookie["secure"] and cookie["sameSite"] == "Strict")
+    SESSION = cookie["value"] if cookie else ""
+    check("cookie value is not the login code", URL.split("code=")[-1] != SESSION)
+    check("page loaded over TLS", page.url.startswith("https://"), page.url)
+    check("response carries a content security policy",
+          "default-src 'self'" in (resp.headers.get("content-security-policy", "") if resp else ""))
     shot(page, "01-overview-light")
     waiting = page.locator("#waiting")
     check("Waiting-on-you band present", waiting.count() == 1)
@@ -232,8 +276,7 @@ with sync_playwright() as pw:
     note("== 5. responsive, keyboard, schemes")
     for scheme in ("light", "dark"):
         c2 = browser.new_context(viewport={"width": 390, "height": 844}, color_scheme=scheme)
-        c2.add_cookies([{"name": "cc_token", "value": TOKEN, "url": BASE}])
-        p2 = c2.new_page()
+        p2 = sign_in(c2)
         p2.goto(f"{BASE}/", wait_until="load")
         dims = p2.evaluate("() => [document.documentElement.scrollWidth, document.documentElement.clientWidth]")
         check(f"390px {scheme}: no horizontal scroll", dims[0] <= dims[1], f"scrollWidth {dims[0]} vs {dims[1]}")
@@ -265,19 +308,37 @@ with sync_playwright() as pw:
             shot(p2, "05-phone-dark-focus")
         c2.close()
 
+    # The security checks below count as failed requests and the throttle
+    # refuses logins for a minute afterwards, so every browser section 7 needs
+    # signs in before them.
+    TREE_VIEWS = (("dark", (1280, 900), "dark"), ("light", (390, 844), "phone-light"),
+                  ("dark", (390, 844), "phone-dark"))
+    signed_in_views = {}
+    for scheme, size, label in TREE_VIEWS:
+        c3 = browser.new_context(viewport={"width": size[0], "height": size[1]}, color_scheme=scheme)
+        signed_in_views[label] = (c3, sign_in(c3))
+
     # 6. security
     note("== 6. security")
-    ck = f"cc_token={TOKEN}"
+    ck = f"Cookie: {COOKIE_NAME}={SESSION}"
     check("foreign Host -> 421", curl("-H", "Host: evil.example", f"{BASE}/") == "421")
-    check("foreign Host with token -> 421", curl("-H", "Host: evil.example", "-H", f"Cookie: {ck}", f"{BASE}/") == "421")
-    check("no token -> 401", curl(f"{BASE}/") == "401")
-    check("wrong token -> 401", curl(f"{BASE}/?token=deadbeef") == "401")
-    code = curl("-X", "POST", "-H", f"Cookie: {ck}", f"{BASE}/sessions/{ID[4]}/done")
+    check("foreign Host with session -> 421", curl("-H", "Host: evil.example", "-H", ck, f"{BASE}/") == "421")
+    check("no session -> 401", curl(f"{BASE}/") == "401")
+    check("wrong login code -> 401", curl(f"{BASE}/login?code=deadbeef") == "401")
+    check("the old token URL is dead -> 401", curl(f"{BASE}/?token={SESSION}") == "401")
+    check("session cookie works from curl", curl("-H", ck, f"{BASE}/healthz") == "200")
+    once = fresh_login_url()
+    check("a login URL works once", curl(once) == "303")
+    check("and not twice", curl(once) == "401")
+    check("TLS 1.2 refused", curl_status("--cacert", CA, "--tlsv1.2", "--tls-max", "1.2", f"{BASE}/healthz") != 0)
+    check("plain HTTP gets no answer",
+          curl_status(f"http://{parts.netloc}/healthz") != 0)
+    code = curl("-X", "POST", "-H", ck, f"{BASE}/sessions/{ID[4]}/done")
     check("POST with cookie but no CSRF header rejected", code in ("401", "403"), code)
     code = curl("-X", "POST", "-H", "X-CC-Token: x", f"{BASE}/sessions/{ID[4]}/done")
     check("POST with header but no cookie rejected", code in ("401", "403"), code)
     for path in ("/transcript", "/transcripts", f"/sessions/{ID[4]}/transcript", "/transcript/x"):
-        check(f"GET {path} -> 404", curl("-H", f"Cookie: {ck}", f"{BASE}{path}") == "404")
+        check(f"GET {path} -> 404", curl("-H", ck, f"{BASE}{path}") == "404")
     check("session 4 not marked done by the rejected POSTs",
           page.goto(f"{BASE}/", wait_until="load") is not None
           and page.locator(f"{FINISHED} #s-{ID[4]}").count() == 1)
@@ -384,11 +445,8 @@ with sync_playwright() as pw:
     node(alpha_id).locator("summary").first.click()
     check("clicking again reopens it", node(alpha_id).get_attribute("open") is not None)
 
-    for scheme, size, label in (("dark", (1280, 900), "dark"), ("light", (390, 844), "phone-light"),
-                                ("dark", (390, 844), "phone-dark")):
-        c3 = browser.new_context(viewport={"width": size[0], "height": size[1]}, color_scheme=scheme)
-        c3.add_cookies([{"name": "cc_token", "value": TOKEN, "url": BASE}])
-        p3 = c3.new_page()
+    for scheme, size, label in TREE_VIEWS:
+        c3, p3 = signed_in_views[label]
         p3.goto(f"{BASE}/", wait_until="load")
         shot(p3, f"06-tree-{label}")
         p3.locator(f"#s-{ID[4]} [data-move-toggle]").click()
@@ -400,6 +458,15 @@ with sync_playwright() as pw:
                   str(box))
         shot(p3, f"06-tree-{label}-move")
         c3.close()
+
+    # 8. the content policy did not break the page, then the throttle (last:
+    # it locks logins out for a minute)
+    note("== 8. content policy, throttle")
+    check("no content-security-policy violations on any page", not csp_violations, "; ".join(csp_violations[:3]))
+    statuses = [curl(f"{BASE}/login?code=bad{i}") for i in range(7)]
+    check("repeated bad logins end in 429", statuses[-1] == "429" and set(statuses) <= {"401", "429"},
+          ",".join(statuses))
+    check("a signed-in browser is still served while throttled", curl("-H", ck, f"{BASE}/healthz") == "200")
 
     browser.close()
 
