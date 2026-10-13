@@ -17,7 +17,9 @@
 //!    and HTTP client crates appear only in `src/summary.rs` (loopback-checked
 //!    endpoint) and `src/web/` (the loopback listener), the only external
 //!    programs the code names are tmux, sysctl and hostname, and the
-//!    dependency lock has no HTTP client or TLS stack. Limit: textual, so a
+//!    dependency lock has no HTTP client or TLS client stack (rustls is there
+//!    only to serve, and `TlsConnector` and `ClientConnection` are banned from
+//!    `src/`, including the web module). Limit: textual, so a
 //!    new dependency spelled differently is caught only by the lock check.
 //! 3. The serve and export tests run the real binary on loopback and check
 //!    that a distinctive piece of session text is written to no file outside
@@ -197,6 +199,7 @@ fn only_the_allowed_files_open_sockets() {
         "isahc",
         "attohttpc",
     ];
+    const TLS_CLIENT_TOKENS: &[&str] = &["TlsConnector", "ClientConnection", "ClientConfig"];
     const ALLOWED_PROGRAMS: &[&str] = &["tmux", "sysctl", "hostname"];
     let mut files = Vec::new();
     rust_files(&root().join("src"), &mut files);
@@ -210,6 +213,9 @@ fn only_the_allowed_files_open_sockets() {
             for token in SOCKET_TOKENS {
                 assert!(!text.contains(token), "{relative} uses {token}");
             }
+        }
+        for token in TLS_CLIENT_TOKENS {
+            assert!(!text.contains(token), "{relative} uses {token}");
         }
         for line in text.lines() {
             let Some((_, rest)) = line.split_once("Command::new(\"") else {
@@ -230,7 +236,9 @@ fn only_the_allowed_files_open_sockets() {
 }
 
 #[test]
-fn the_dependency_lock_has_no_http_client_or_tls_stack() {
+fn the_dependency_lock_has_no_http_client_or_tls_client_stack() {
+    // rustls is allowed: the web view terminates TLS on loopback. What stays
+    // banned is anything that dials out or ships a trust store for doing so.
     const BANNED: &[&str] = &[
         "reqwest",
         "ureq",
@@ -240,7 +248,10 @@ fn the_dependency_lock_has_no_http_client_or_tls_stack() {
         "attohttpc",
         "openssl",
         "native-tls",
-        "rustls",
+        "hyper-rustls",
+        "rustls-native-certs",
+        "rustls-platform-verifier",
+        "webpki-roots",
     ];
     let lock = fs::read_to_string(root().join("Cargo.lock")).unwrap();
     for banned in BANNED {

@@ -8,7 +8,11 @@ license = "MIT OR Apache-2.0"
 [features]
 default = ["tui", "web"]
 tui = ["dep:ratatui", "dep:crossterm"]
-web = ["dep:axum", "dep:tokio", "dep:futures-util", "dep:getrandom", "dep:maud", "dep:form_urlencoded"]
+web = [
+    "dep:axum", "dep:tokio", "dep:futures-util", "dep:getrandom", "dep:maud", "dep:form_urlencoded",
+    "dep:rustls", "dep:tokio-rustls", "dep:rcgen", "dep:hyper", "dep:hyper-util",
+    "dep:p12-keystore", "dep:zeroize", "dep:x509-parser", "dep:time",
+]
 
 [lib]
 name = "claude_monitor"
@@ -37,6 +41,15 @@ maud = { version = "0.27", optional = true }
 tokio = { version = "1", features = ["rt", "net", "sync", "time", "signal", "macros"], optional = true }
 futures-util = { version = "0.3", default-features = false, optional = true }
 getrandom = { version = "0.3", optional = true }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"], optional = true }
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring"], optional = true }
+rcgen = { version = "0.14", default-features = false, features = ["ring", "pem", "x509-parser"], optional = true }
+hyper-util = { version = "0.1.21", features = ["tokio", "server", "http1", "service"], optional = true }
+hyper = { version = "1", features = ["server", "http1"], optional = true }
+p12-keystore = { version = "0.4.1", optional = true }
+zeroize = { version = "1.9.1", optional = true }
+x509-parser = { version = "0.18.1", optional = true }
+time = { version = "0.3.55", default-features = false, optional = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 notify-rust = "4"
@@ -46,6 +59,7 @@ rustix = { version = "1", features = ["event", "process"] }
 mac-notification-sys = "0.6"
 
 [dev-dependencies]
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 tempfile = "3"
 
 [[test]]
