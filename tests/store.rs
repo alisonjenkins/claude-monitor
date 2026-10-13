@@ -201,7 +201,35 @@ fn a_v1_database_gains_empty_tmux_placement_columns() {
     assert_eq!(session.tmux_session, None);
     assert_eq!(session.tmux_window_name, None);
     assert_eq!(session.tmux_window_index, None);
+    assert_eq!(session.tmux_pane_index, None);
+    assert_eq!(session.tmux_window_panes, None);
+    assert_eq!(session.tmux_window_layout, None);
     assert_eq!(user_version(store.connection()), SCHEMA_VERSION);
+}
+
+#[test]
+fn a_v3_database_gains_empty_pane_columns_and_keeps_its_placement() {
+    let dir = TempDir::new().unwrap();
+    let path = db_path(&dir);
+    let mut old = Session::new("s-1", "claude", "conv-1", "/work", "2026-10-12T14:03:22Z");
+    old.tmux_session = Some("work".to_owned());
+    old.tmux_window_name = Some("api".to_owned());
+    old.tmux_window_index = Some("1".to_owned());
+    {
+        let store = open(&path);
+        store.upsert_session(&old).unwrap();
+        let conn = store.connection();
+        for column in ["tmux_pane_index", "tmux_window_panes", "tmux_window_layout"] {
+            conn.execute_batch(&format!("ALTER TABLE sessions DROP COLUMN {column}"))
+                .unwrap();
+        }
+        conn.pragma_update(None, "user_version", 3).unwrap();
+    }
+
+    let store = open(&path);
+
+    assert_eq!(user_version(store.connection()), SCHEMA_VERSION);
+    assert_eq!(store.get_session("s-1").unwrap().unwrap(), old);
 }
 
 #[test]
@@ -212,6 +240,9 @@ fn tmux_placement_round_trips_through_the_store() {
     session.tmux_session = Some("my project".to_owned());
     session.tmux_window_name = Some("api: build".to_owned());
     session.tmux_window_index = Some("3".to_owned());
+    session.tmux_pane_index = Some("2".to_owned());
+    session.tmux_window_panes = Some("3".to_owned());
+    session.tmux_window_layout = Some("b25d,200x50,0,0{100x50,0,0,0,99x50,101,0,1}".to_owned());
 
     store.upsert_session(&session).unwrap();
 
