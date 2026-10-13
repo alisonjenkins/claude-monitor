@@ -36,6 +36,8 @@ const LEAF_VALIDITY_DAYS: i64 = 90;
 /// A client certificate is imported into a browser by hand, so it lasts a year.
 const CLIENT_VALIDITY_DAYS: i64 = 365;
 const CLIENT_ALIAS: &str = "claude-monitor web client";
+/// A persisted client certificate with less than this left is replaced.
+const CLIENT_RENEW_WITHIN_DAYS: i64 = 30;
 /// A leaf with less than this left is replaced at the next `serve`.
 const LEAF_RENEW_WITHIN_DAYS: i64 = 14;
 /// A CA this close to expiry is replaced along with its leaf.
@@ -74,6 +76,8 @@ pub struct TlsPaths {
     pub ca_key: PathBuf,
     pub server_cert: PathBuf,
     pub server_key: PathBuf,
+    pub client_cert: PathBuf,
+    pub client_key: PathBuf,
 }
 
 impl TlsPaths {
@@ -84,9 +88,70 @@ impl TlsPaths {
             ca_key: dir.join("ca.key"),
             server_cert: dir.join("server.pem"),
             server_key: dir.join("server.key"),
+            client_cert: dir.join("client.pem"),
+            client_key: dir.join("client.key"),
             dir,
         }
     }
+}
+
+/// The persisted client identity, created or replaced as needed. Unlike
+/// [`issue_client_identity`] it returns the same certificate on every call
+/// until that one is close to expiry or the CA changes, so importing it into a
+/// browser a second time is a no-op.
+pub fn ensure_client_identity(
+    state_dir: &Path,
+    now: SystemTime,
+) -> Result<ClientIdentity, TlsError> {
+    let paths = ensure(state_dir, now)?;
+    if let Some(identity) = load_client_identity(&paths, to_date(now)?) {
+        return Ok(identity);
+    }
+    let issued = issue(state_dir, now)?;
+    write_private(&paths.client_key, issued.key_pem.as_bytes())?;
+    write_private(&paths.client_cert, issued.cert_pem.as_bytes())?;
+    Ok(issued.identity)
+}
+
+/// The persisted client identity if it is still usable; writes nothing.
+pub fn peek_client_identity(state_dir: &Path, now: SystemTime) -> Option<ClientIdentity> {
+    let paths = TlsPaths::in_state_dir(state_dir);
+    load_client_identity(&paths, to_date(now).ok()?)
+}
+
+/// The CA certificate as DER, if the install has one.
+pub fn read_ca_der(state_dir: &Path) -> Option<Vec<u8>> {
+    read_der(&TlsPaths::in_state_dir(state_dir).ca_cert)
+}
+
+/// Lowercase hex SHA-256 of a DER certificate: the fingerprint browsers show.
+pub fn fingerprint_sha256(der: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    Sha256::digest(der)
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
+}
+
+fn load_client_identity(paths: &TlsPaths, now: OffsetDateTime) -> Option<ClientIdentity> {
+    let cert_der = read_der(&paths.client_cert)?;
+    let key = load_key(&paths.client_key)?;
+    let ca_der = read_der(&paths.ca_cert)?;
+    let (_, cert) = X509Certificate::from_der(&cert_der).ok()?;
+    let (_, ca) = X509Certificate::from_der(&ca_der).ok()?;
+    let days = cert
+        .validity()
+        .not_after
+        .timestamp()
+        .saturating_sub(now.unix_timestamp())
+        / 86_400;
+    let usable = days >= CLIENT_RENEW_WITHIN_DAYS
+        && cert.verify_signature(Some(ca.public_key())).is_ok()
+        && cert.public_key().subject_public_key.data.as_ref() == key.public_key_raw();
+    usable.then(|| ClientIdentity {
+        cert_der,
+        key_der: Zeroizing::new(key.serialize_der()),
+    })
 }
 
 /// Creates whatever is missing or about to expire and returns the paths.
@@ -121,6 +186,16 @@ pub fn issue_client_identity(
     state_dir: &Path,
     now: SystemTime,
 ) -> Result<ClientIdentity, TlsError> {
+    issue(state_dir, now).map(|issued| issued.identity)
+}
+
+struct Issued {
+    identity: ClientIdentity,
+    cert_pem: String,
+    key_pem: Zeroizing<String>,
+}
+
+fn issue(state_dir: &Path, now: SystemTime) -> Result<Issued, TlsError> {
     let paths = TlsPaths::in_state_dir(state_dir);
     let now = to_date(now)?;
     let issuer = load_issuer(&paths)?;
@@ -136,9 +211,13 @@ pub fn issue_client_identity(
     let cert = params
         .signed_by(&key, &issuer)
         .map_err(generate("sign the client certificate"))?;
-    Ok(ClientIdentity {
-        cert_der: cert.der().to_vec(),
-        key_der: Zeroizing::new(key.serialize_der()),
+    Ok(Issued {
+        identity: ClientIdentity {
+            cert_der: cert.der().to_vec(),
+            key_der: Zeroizing::new(key.serialize_der()),
+        },
+        cert_pem: cert.pem(),
+        key_pem: Zeroizing::new(key.serialize_pem()),
     })
 }
 
