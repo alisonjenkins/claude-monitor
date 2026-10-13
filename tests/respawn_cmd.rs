@@ -171,6 +171,25 @@ mod execute_with_a_fake_tmux {
     }
 
     #[test]
+    fn a_worktree_add_for_a_worktree_that_now_exists_is_skipped() {
+        let s = setup();
+        s.fake.fs.add_dir("/w/made-by-the-first-session");
+        let mut plan = plan();
+        plan.setup.push(Launch {
+            program: "git".to_owned(),
+            args: ["worktree", "add", "/w/made-by-the-first-session", "feature"]
+                .map(str::to_owned)
+                .to_vec(),
+            cwd: std::env::temp_dir(),
+            env: Vec::new(),
+        });
+
+        let started = execute(&s.store, &s.fake.env, &plan, NOW).unwrap();
+
+        assert_eq!(started.session_id, "s1");
+    }
+
+    #[test]
     fn a_failing_setup_command_stops_before_any_window_opens() {
         let s = setup();
         let mut plan = plan();

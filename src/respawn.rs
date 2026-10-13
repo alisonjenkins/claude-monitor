@@ -397,6 +397,11 @@ enum Open<'a> {
 fn open(store: &Store, env: &Env, plan: &Plan, now: &str, target: Open<'_>) -> Outcome {
     let tmux_session = plan.tmux_session.as_str();
     for command in &plan.setup {
+        // Another session of the batch may have created the worktree since
+        // planning; a second `git worktree add` would fail with "already exists".
+        if worktree_add_target(command).is_some_and(|target| env.fs.exists(target)) {
+            continue;
+        }
         run_setup(command)?;
     }
     let argv = launch_argv(&plan.launch);
@@ -836,6 +841,18 @@ fn shell_quote(word: &str) -> String {
     }
 }
 
+/// The directory a `git worktree add <dir> <branch>` setup command creates.
+fn worktree_add_target(command: &Launch) -> Option<&Path> {
+    match command.args.as_slice() {
+        [worktree, add, dir, ..]
+            if command.program == "git" && worktree == "worktree" && add == "add" =>
+        {
+            Some(Path::new(dir))
+        }
+        _ => None,
+    }
+}
+
 fn run_setup(command: &Launch) -> Result<(), ExecuteError> {
     let shown = launch_argv(command).join(" ");
     let output = std::process::Command::new(&command.program)
@@ -917,11 +934,20 @@ fn recreate_or_refuse(
     let (Some(repo), true) = (&session.repo_root, options.in_dir.is_none()) else {
         return Err(refuse(RefusalCode::MissingDirectory, missing));
     };
+    let worktree_root = worktree_root_of(&target.cwd);
+    if env.fs.exists(&worktree_root) {
+        return Err(refuse(RefusalCode::MissingDirectory, missing));
+    }
+    let worktree_root = worktree_root.to_string_lossy().into_owned();
     let fresh_in_repo = Alternative {
         description: format!(
             "start a new session in the main checkout {repo}; the previous conversation is not restored"
         ),
-        command: format!("claude-monitor respawn {} --fresh --in {repo}", session.id),
+        command: format!(
+            "claude-monitor respawn {} --fresh --in {}",
+            session.id,
+            shell_quote(repo)
+        ),
     };
     let Some(branch) = &session.branch else {
         return Err(Refusal {
@@ -940,7 +966,7 @@ fn recreate_or_refuse(
     if options.recreate_worktree {
         return Ok(Launch {
             program: "git".to_owned(),
-            args: ["worktree", "add", &target.cwd, branch]
+            args: ["worktree", "add", &worktree_root, branch]
                 .map(str::to_owned)
                 .to_vec(),
             cwd: PathBuf::from(repo),
@@ -953,7 +979,12 @@ fn recreate_or_refuse(
         alternatives: vec![
             Alternative {
                 description: format!("recreate the worktree from branch `{branch}`"),
-                command: format!("git -C {repo} worktree add {} {branch}", target.cwd),
+                command: format!(
+                    "git -C {} worktree add {} {}",
+                    shell_quote(repo),
+                    shell_quote(&worktree_root),
+                    shell_quote(branch)
+                ),
             },
             Alternative {
                 description: "recreate the worktree and respawn".to_owned(),
@@ -962,6 +993,18 @@ fn recreate_or_refuse(
             fresh_in_repo,
         ],
     })
+}
+
+/// The directory `git worktree add` must create for a session recorded in
+/// `cwd`: the Claude worktree root when `cwd` is that or a subdirectory of it,
+/// else `cwd` itself.
+fn worktree_root_of(cwd: &str) -> PathBuf {
+    match Worktree::from_cwd(cwd) {
+        Some(worktree) => PathBuf::from(worktree.repo_root)
+            .join(".claude/worktrees")
+            .join(worktree.name),
+        None => PathBuf::from(cwd),
+    }
 }
 
 /// Whether `branch` is a local branch of the repository at `repo`, read from

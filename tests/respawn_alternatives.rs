@@ -100,6 +100,76 @@ fn recreate_worktree_adds_the_git_command_to_the_plan() {
     assert_eq!(git.cwd, Path::new(REPO));
 }
 
+fn in_subdirectory() -> (FakeEnv, Session) {
+    let fake = worktree_missing();
+    with_branch(&fake);
+    let mut s = session();
+    s.cwd = format!("{REPO}/.claude/worktrees/wt/src");
+    (fake, s)
+}
+
+#[test]
+fn recreating_a_worktree_adds_it_at_its_root_not_at_the_recorded_subdirectory() {
+    let (fake, s) = in_subdirectory();
+    let options = Options {
+        fresh: true,
+        ..recreate()
+    };
+    let plan = plan_respawn(&s, &fake.env, &options).unwrap();
+    assert_eq!(
+        plan.setup[0].args,
+        [
+            "worktree",
+            "add",
+            &format!("{REPO}/.claude/worktrees/wt"),
+            "feature"
+        ]
+    );
+}
+
+#[test]
+fn the_suggested_worktree_add_names_the_worktree_root() {
+    let (fake, s) = in_subdirectory();
+    let r = plan_respawn(&s, &fake.env, &Options::default()).unwrap_err();
+    assert!(
+        r.alternatives.iter().any(|a| a.command
+            == format!("git -C {REPO} worktree add {REPO}/.claude/worktrees/wt feature")),
+        "{:?}",
+        r.alternatives
+    );
+}
+
+#[test]
+fn a_missing_subdirectory_of_an_existing_worktree_cannot_be_recreated() {
+    let (fake, s) = in_subdirectory();
+    fake.fs.add_dir(format!("{REPO}/.claude/worktrees/wt"));
+    let r = plan_respawn(&s, &fake.env, &recreate()).unwrap_err();
+    assert_eq!(r.code, RefusalCode::MissingDirectory);
+}
+
+#[test]
+fn suggested_commands_quote_paths_a_shell_would_split_or_expand() {
+    let fake = FakeEnv::new();
+    fake.vars.set("HOME", "/home/u");
+    let repo = "/repos/my proj$(touch x)";
+    fake.fs.add_dir(format!("{repo}/.git/refs/heads"));
+    fake.fs
+        .add_file(format!("{repo}/.git/refs/heads/feature"), "abc\n");
+    let mut s = session();
+    s.repo_root = Some(repo.to_owned());
+    s.cwd = "/w/my wt".to_owned();
+    let r = plan_respawn(&s, &fake.env, &Options::default()).unwrap_err();
+    let commands: Vec<_> = r.alternatives.iter().map(|a| a.command.as_str()).collect();
+    assert!(
+        commands.contains(&"git -C '/repos/my proj$(touch x)' worktree add '/w/my wt' feature"),
+        "{commands:?}"
+    );
+    assert!(
+        commands.contains(&"claude-monitor respawn s1 --fresh --in '/repos/my proj$(touch x)'"),
+        "{commands:?}"
+    );
+}
+
 #[test]
 fn recreate_worktree_is_a_no_op_when_the_worktree_exists() {
     let fake = worktree_missing();
