@@ -123,22 +123,30 @@ pub fn run(env: &Env, state_dir: Option<&Path>, id: &str) -> Result<Output, Erro
 /// `session:window-name (window N)` as last recorded; `None` when no tmux
 /// session was ever recorded.
 fn tmux_placement(session: &Session) -> Option<String> {
-    let name = session.tmux_session.as_deref()?;
-    let mut text = format!(
-        "{name}:{}",
-        session.tmux_window_name.as_deref().unwrap_or_default()
-    );
-    let pane =
-        session
-            .tmux_pane_index
-            .as_deref()
-            .map(|pane| match session.tmux_window_panes.as_deref() {
-                Some(count) => format!("pane {pane} of {count}"),
-                None => format!("pane {pane}"),
-            });
-    let details: Vec<String> = session
-        .tmux_window_index
-        .as_ref()
+    Some(placement_text(
+        session.tmux_session.as_deref()?,
+        session.tmux_window_name.as_deref(),
+        session.tmux_window_index.as_deref(),
+        session.tmux_pane_index.as_deref(),
+        session.tmux_window_panes.as_deref(),
+    ))
+}
+
+/// The wording of `show`'s `tmux` line, from the stored parts, so the web
+/// pages say the same thing.
+pub(crate) fn placement_text(
+    session: &str,
+    window_name: Option<&str>,
+    window_index: Option<&str>,
+    pane_index: Option<&str>,
+    window_panes: Option<&str>,
+) -> String {
+    let mut text = format!("{session}:{}", window_name.unwrap_or_default());
+    let pane = pane_index.map(|pane| match window_panes {
+        Some(count) => format!("pane {pane} of {count}"),
+        None => format!("pane {pane}"),
+    });
+    let details: Vec<String> = window_index
         .map(|index| format!("window {index}"))
         .into_iter()
         .chain(pane)
@@ -146,7 +154,7 @@ fn tmux_placement(session: &Session) -> Option<String> {
     if !details.is_empty() {
         text.push_str(&format!(" ({})", details.join(", ")));
     }
-    Some(text)
+    text
 }
 
 fn detail_text(
