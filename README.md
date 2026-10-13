@@ -94,7 +94,10 @@ pane of the original window is being restored the recorded layout is applied;
 otherwise (some panes were not Claude sessions, or one was refused) the panes
 are tiled. A layout tmux refuses is reported as a note and never fails the
 restore. With a session override, only panes recorded in the same tmux session
-share a window.
+share a window. The web view shows the same placement before you reboot: on a
+session's page, as a hint on its row, and on `/restore` in a read-only panel
+that lists the live sessions with where each would be restored, warning when
+two would land in the same window and pane.
 
 `claude-monitor --help` and `claude-monitor <command> --help` list every flag.
 Nothing here sends session content off the machine: `summarize` talks only to
