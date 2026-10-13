@@ -56,17 +56,53 @@ pub fn ca_der(ca_pem: &Path) -> CertificateDer<'static> {
     CertificateDer::from(parsed.contents)
 }
 
-/// A TLS 1.3 client that trusts exactly the given CA files.
-pub fn client_config(roots: &[&Path]) -> ClientConfig {
+/// A client certificate and its PKCS#8 key, both DER.
+pub type Identity = (Vec<u8>, Vec<u8>);
+
+static CLIENT_IDENTITY: Mutex<Option<HashMap<u16, Identity>>> = Mutex::new(None);
+
+/// Makes `Request::send` present this client certificate to the server on
+/// `port` (for servers started with mutual TLS).
+pub fn present(port: u16, identity: Identity) {
+    CLIENT_IDENTITY
+        .lock()
+        .unwrap()
+        .get_or_insert_with(HashMap::new)
+        .insert(port, identity);
+}
+
+fn roots_of(roots: &[&Path]) -> RootCertStore {
     let mut store = RootCertStore::empty();
     for root in roots {
         store.add(ca_der(root)).unwrap();
     }
+    store
+}
+
+fn builder(
+    roots: &[&Path],
+) -> rustls::ConfigBuilder<ClientConfig, rustls::client::WantsClientCert> {
     ClientConfig::builder_with_provider(Arc::new(rustls::crypto::ring::default_provider()))
         .with_protocol_versions(&[&rustls::version::TLS13])
         .unwrap()
-        .with_root_certificates(store)
-        .with_no_client_auth()
+        .with_root_certificates(roots_of(roots))
+}
+
+/// A TLS 1.3 client that trusts exactly the given CA files.
+pub fn client_config(roots: &[&Path]) -> ClientConfig {
+    builder(roots).with_no_client_auth()
+}
+
+/// The same, presenting a client certificate.
+pub fn client_config_with(roots: &[&Path], (cert, key): Identity) -> ClientConfig {
+    builder(roots)
+        .with_client_auth_cert(
+            vec![CertificateDer::from(cert)],
+            rustls::pki_types::PrivateKeyDer::Pkcs8(rustls::pki_types::PrivatePkcs8KeyDer::from(
+                key,
+            )),
+        )
+        .unwrap()
 }
 
 /// Opens a TCP connection and wraps it in a client session; the handshake
@@ -247,8 +283,18 @@ impl Rig {
         config.clock = ticks.clone();
         config.max_auth_failures = usize::MAX;
         tweak(&mut config);
+        let mtls = config.mtls;
         let server = web::start(config, feed).unwrap();
         trust(server.addr().port(), &ca);
+        if mtls {
+            let state_dir = ca.parent().unwrap().parent().unwrap();
+            let id = claude_monitor::web::tls::issue_client_identity(
+                state_dir,
+                std::time::SystemTime::now(),
+            )
+            .unwrap();
+            present(server.addr().port(), (id.cert_der, id.key_der.to_vec()));
+        }
         let session = log_in(&server);
         Self {
             dir,
@@ -450,7 +496,16 @@ pub fn connect(addr: SocketAddr) -> TlsStream {
         .as_ref()
         .and_then(|m| m.get(&addr.port()).cloned())
         .unwrap_or_else(|| panic!("no CA registered for port {}", addr.port()));
-    tls_over(addr, client_config(&[&ca]))
+    let identity = CLIENT_IDENTITY
+        .lock()
+        .unwrap()
+        .as_ref()
+        .and_then(|m| m.get(&addr.port()).cloned());
+    let config = match identity {
+        Some(identity) => client_config_with(&[&ca], identity),
+        None => client_config(&[&ca]),
+    };
+    tls_over(addr, config)
 }
 
 fn parse(raw: &str) -> Response {

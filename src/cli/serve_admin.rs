@@ -31,12 +31,17 @@ mod enabled {
     use crate::cli::Output;
     use crate::error::Error;
     use crate::store::{resolve_state_dir, StateDirEnv};
-    use crate::web::{control, tls};
+    use crate::web::{control, secret, tls};
 
     const TRUST_HINT: &str = "Import it once as a certificate authority: Firefox: Settings > \
         Privacy & Security > Certificates > View Certificates > Authorities > Import; \
         Chromium: Settings > Privacy and security > Security > Manage certificates > \
         Authorities > Import. It is limited to localhost, 127.0.0.0/8 and ::1.";
+
+    const CLIENT_HINT: &str = "Import it in the browser, then start the server with --mtls. \
+        Firefox: Settings > Privacy & Security > Certificates > View Certificates > \
+        Your Certificates > Import. Chromium: Settings > Privacy and security > Security > \
+        Manage certificates > Your certificates > Import.";
 
     fn failed(operation: &str, source: impl std::fmt::Display) -> Error {
         Error::Io {
@@ -55,7 +60,61 @@ mod enabled {
         match action {
             WebAction::Ca { print } => ca(&dir, print),
             WebAction::Login => login(&dir),
+            WebAction::ClientCert { out, password_file } => {
+                client_cert(&dir, out, password_file.as_deref())
+            }
         }
+    }
+
+    fn client_cert(
+        dir: &Path,
+        out: Option<PathBuf>,
+        password_file: Option<&Path>,
+    ) -> Result<Output, Error> {
+        let now = SystemTime::now();
+        let paths = tls::ensure(dir, now).map_err(|e| failed("prepare the CA", e))?;
+        let (password, generated) = match password_file {
+            Some(file) => (read_password(file)?, false),
+            None => (
+                secret::random_hex().map_err(|e| failed("make a password", e))?,
+                true,
+            ),
+        };
+        let identity = tls::issue_client_identity(dir, now)
+            .map_err(|e| failed("issue a client certificate", e))?;
+        let bundle = tls::client_pkcs12(&identity, &password)
+            .map_err(|e| failed("build the client bundle", e))?;
+        let out = out.unwrap_or_else(|| paths.dir.join("client.p12"));
+        tls::write_private(&out, &bundle).map_err(|e| failed("write the client bundle", e))?;
+        let path = out.display().to_string();
+        let mut text = format!("{path}\n");
+        if generated {
+            text.push_str(&format!("password: {}\n", password.as_str()));
+        }
+        text.push_str(CLIENT_HINT);
+        let json = if generated {
+            json!({ "path": path, "password": password.as_str() })
+        } else {
+            json!({ "path": path })
+        };
+        Ok(Output::Dual { text, json })
+    }
+
+    fn read_password(file: &Path) -> Result<zeroize::Zeroizing<String>, Error> {
+        let raw =
+            zeroize::Zeroizing::new(std::fs::read_to_string(file).map_err(|source| Error::Io {
+                operation: "read the password file".to_owned(),
+                path: Some(file.to_owned()),
+                source,
+            })?);
+        let password = raw.trim_end_matches(['\n', '\r']);
+        if password.is_empty() {
+            return Err(Error::Usage(format!(
+                "the password file {} is empty",
+                file.display()
+            )));
+        }
+        Ok(zeroize::Zeroizing::new(password.to_owned()))
     }
 
     fn login(dir: &Path) -> Result<Output, Error> {

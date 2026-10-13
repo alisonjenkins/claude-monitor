@@ -27,8 +27,9 @@ pub fn run(
     state_dir: Option<&Path>,
     port: Option<u16>,
     bind: Option<IpAddr>,
+    mtls: bool,
 ) -> Result<Output, Error> {
-    enabled::run(env, state_dir, port, bind)
+    enabled::run(env, state_dir, port, bind, mtls)
 }
 
 #[cfg(not(feature = "web"))]
@@ -37,6 +38,7 @@ pub fn run(
     _state_dir: Option<&Path>,
     _port: Option<u16>,
     _bind: Option<IpAddr>,
+    _mtls: bool,
 ) -> Result<Output, Error> {
     Err(Error::Usage(
         "serve needs the `web` feature; rebuild with `--features web`".to_owned(),
@@ -78,6 +80,7 @@ mod enabled {
         state_dir: Option<&Path>,
         port: Option<u16>,
         bind: Option<IpAddr>,
+        mtls: bool,
     ) -> Result<Output, Error> {
         let store = open_viewer_store(env, state_dir)?;
         let db = store.path().to_owned();
@@ -113,6 +116,7 @@ mod enabled {
         if let Some(bind) = bind {
             config.bind = bind;
         }
+        config.mtls = mtls;
         config.handle_signals = true;
         config.env = env.clone();
         let server = web::start(config, feed).map_err(|e| web_error("start the web server", e))?;

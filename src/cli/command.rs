@@ -18,6 +18,11 @@ pub enum WebAction {
     Ca { print: bool },
     /// Ask the running `serve` for a fresh single-use login URL.
     Login,
+    /// Write a PKCS#12 client certificate for `serve --mtls`.
+    ClientCert {
+        out: Option<PathBuf>,
+        password_file: Option<PathBuf>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -110,8 +115,11 @@ pub enum Command {
         port: Option<u16>,
         /// A loopback address; anything else is refused when parsing.
         bind: Option<IpAddr>,
+        /// Require a client certificate from this install's CA.
+        mtls: bool,
     },
-    /// Helpers for the web view's TLS and login: `web ca`, `web login`.
+    /// Helpers for the web view's TLS and login: `web ca`, `web login`,
+    /// `web client-cert`.
     Web {
         action: WebAction,
     },
@@ -342,6 +350,7 @@ const ALL: &[CommandInfo] = &[
         example: || Command::Serve {
             port: None,
             bind: None,
+            mtls: false,
         },
     },
     CommandInfo {

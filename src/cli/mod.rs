@@ -175,6 +175,9 @@ enum Commands {
         /// Loopback address to listen on (127.0.0.1 or ::1); nothing else is accepted
         #[arg(long, value_name = "ADDR", value_parser = serve::loopback_addr)]
         bind: Option<IpAddr>,
+        /// Also require a client certificate from this install's CA (see `web client-cert`)
+        #[arg(long)]
+        mtls: bool,
     },
     /// Set up and reach the web view's TLS and login
     Web {
@@ -315,6 +318,15 @@ enum WebCommands {
     },
     /// Print a fresh single-use login URL from the running `serve`
     Login,
+    /// Write a PKCS#12 client certificate to import in the browser for `serve --mtls`
+    ClientCert {
+        /// Where to write it (default: <state-dir>/tls/client.p12)
+        #[arg(long, value_name = "FILE")]
+        out: Option<PathBuf>,
+        /// Read the bundle password from this file instead of generating one
+        #[arg(long, value_name = "FILE")]
+        password_file: Option<PathBuf>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -528,14 +540,19 @@ impl Cli {
                 include_text: *include_text,
                 out: out.clone(),
             },
-            Some(Commands::Serve { port, bind }) => Command::Serve {
+            Some(Commands::Serve { port, bind, mtls }) => Command::Serve {
                 port: *port,
                 bind: *bind,
+                mtls: *mtls,
             },
             Some(Commands::Web { action }) => Command::Web {
                 action: match action {
                     WebCommands::Ca { print } => WebAction::Ca { print: *print },
                     WebCommands::Login => WebAction::Login,
+                    WebCommands::ClientCert { out, password_file } => WebAction::ClientCert {
+                        out: out.clone(),
+                        password_file: password_file.clone(),
+                    },
                 },
             },
         }
@@ -692,7 +709,7 @@ pub fn run_with(
             yes: _,
         } => link::run_unlink(env, state_dir, &owner, &cortex),
         Command::LinksCheck => link::run_links_check(env, state_dir),
-        Command::Serve { port, bind } => serve::run(env, state_dir, port, bind),
+        Command::Serve { port, bind, mtls } => serve::run(env, state_dir, port, bind, mtls),
         Command::Web { action } => serve_admin::run(state_dir, action),
         Command::Hook { agent, event } => {
             hook::run(agent.as_deref(), event.as_deref(), state_dir, env);
@@ -869,17 +886,26 @@ mod tests {
             cli.command(),
             Command::Serve {
                 port: None,
-                bind: None
+                bind: None,
+                mtls: false,
             }
         );
-        let cli =
-            Cli::try_parse_from(["claude-monitor", "serve", "--port", "9000", "--bind", "::1"])
-                .unwrap();
+        let cli = Cli::try_parse_from([
+            "claude-monitor",
+            "serve",
+            "--port",
+            "9000",
+            "--bind",
+            "::1",
+            "--mtls",
+        ])
+        .unwrap();
         assert_eq!(
             cli.command(),
             Command::Serve {
                 port: Some(9000),
-                bind: Some("::1".parse().unwrap())
+                bind: Some("::1".parse().unwrap()),
+                mtls: true,
             }
         );
     }

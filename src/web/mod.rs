@@ -78,6 +78,9 @@ pub struct WebConfig {
     /// Failed logins tolerated per window.
     pub max_auth_failures: usize,
     pub failure_window: Duration,
+    /// Require a client certificate from this install's CA in the TLS
+    /// handshake, in addition to logging in.
+    pub mtls: bool,
 }
 
 impl fmt::Debug for WebConfig {
@@ -104,6 +107,7 @@ impl WebConfig {
             clock: Arc::new(clock::MonotonicTicks::new()),
             max_auth_failures: throttle::DEFAULT_MAX_FAILURES,
             failure_window: throttle::DEFAULT_WINDOW,
+            mtls: false,
         }
     }
 }
@@ -212,7 +216,7 @@ pub fn start<S: EventSource + Send + 'static>(
         .map(PathBuf::from)
         .unwrap_or_default();
     let tls_paths = tls::ensure(&tls_dir, SystemTime::now())?;
-    let acceptor = TlsAcceptor::from(tls::server_config(&tls_paths)?);
+    let acceptor = TlsAcceptor::from(tls::server_config(&tls_paths, config.mtls)?);
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
