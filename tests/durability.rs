@@ -456,6 +456,7 @@ fn a_live_pane_keeps_a_session_with_no_pid() {
         "%9",
         claude_monitor::tmux::PaneLocation {
             session_name: "s".into(),
+            window_name: "w".into(),
             window_index: "0".into(),
             pane_index: "0".into(),
         },

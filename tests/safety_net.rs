@@ -154,6 +154,7 @@ fn a_pane_that_vanished_without_a_tmux_hook_is_interrupted_by_the_next_tick() {
         "%7",
         PaneLocation {
             session_name: "main".to_owned(),
+            window_name: "claude".to_owned(),
             window_index: "1".to_owned(),
             pane_index: "0".to_owned(),
         },

@@ -194,6 +194,7 @@ impl Tmux for FakeTmux {
             },
             PaneLocation {
                 session_name: name.to_owned(),
+                window_name: "claude".to_owned(),
                 window_index: "0".to_owned(),
                 pane_index: "0".to_owned(),
             },
@@ -210,6 +211,7 @@ impl Tmux for FakeTmux {
             },
             PaneLocation {
                 session_name: session.to_owned(),
+                window_name: "claude".to_owned(),
                 window_index: "1".to_owned(),
                 pane_index: "0".to_owned(),
             },
@@ -245,6 +247,7 @@ impl Tmux for FakeTmux {
             pane_id,
             PaneLocation {
                 session_name: session.to_owned(),
+                window_name: "claude-monitor-placeholder".to_owned(),
                 window_index: "0".to_owned(),
                 pane_index: "0".to_owned(),
             },
@@ -280,6 +283,7 @@ impl Tmux for FakeTmux {
             pane_id.clone(),
             PaneLocation {
                 session_name: session.to_owned(),
+                window_name: label.to_owned(),
                 window_index: window_index.to_string(),
                 pane_index: "0".to_owned(),
             },
@@ -653,6 +657,7 @@ mod tests {
             "%9",
             PaneLocation {
                 session_name: "s".into(),
+                window_name: "w".into(),
                 window_index: "0".into(),
                 pane_index: "0".into(),
             },

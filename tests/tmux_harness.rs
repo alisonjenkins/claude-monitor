@@ -292,7 +292,16 @@ fn list_panes_format_parses_under_a_c_locale_with_a_spaced_session_name() {
         String::from_utf8_lossy(&out.stdout).into_owned()
     };
     run(&["new-session", "-d", "-s", "my project", "-c", cwd_str]);
-    run(&["new-window", "-d", "-t", "=my project:", "-c", cwd_str]);
+    run(&[
+        "new-window",
+        "-d",
+        "-n",
+        "api: build 2",
+        "-t",
+        "=my project:",
+        "-c",
+        cwd_str,
+    ]);
 
     let listing = run(&["list-panes", "-a", "-F", LIST_PANES_FORMAT]);
     let panes = parse_list_panes(&listing);
@@ -301,4 +310,10 @@ fn list_panes_format_parses_under_a_c_locale_with_a_spaced_session_name() {
     let mut locations: Vec<_> = panes.values().map(PaneLocation::format).collect();
     locations.sort();
     assert_eq!(locations, ["my project:0.0", "my project:1.0"]);
+    assert!(
+        panes
+            .values()
+            .any(|p| p.window_name == "api: build 2" && p.session_name == "my project"),
+        "{listing:?}"
+    );
 }
