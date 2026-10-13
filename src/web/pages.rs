@@ -8,6 +8,7 @@ use maud::{html, Markup, DOCTYPE};
 use serde_json::Value;
 
 use crate::cli::age;
+use crate::cli::show::placement_text;
 
 /// What every page needs besides its content.
 #[derive(Debug, Clone, Copy)]
@@ -60,6 +61,20 @@ fn list_of<'a>(value: &'a Value, key: &str) -> &'a [Value] {
         .get(key)
         .and_then(Value::as_array)
         .map_or(&[], Vec::as_slice)
+}
+
+const NO_PLACEMENT: &str = "no recorded tmux window";
+
+/// `show`'s tmux line for a session JSON object; `None` when no tmux session
+/// was ever recorded.
+fn placement_of(detail: &Value) -> Option<String> {
+    Some(placement_text(
+        str_of(detail, "tmux_session")?,
+        str_of(detail, "tmux_window_name"),
+        str_of(detail, "tmux_window_index"),
+        str_of(detail, "tmux_pane_index"),
+        str_of(detail, "tmux_window_panes"),
+    ))
 }
 
 /// A path segment safe to put in a URL.
@@ -859,6 +874,14 @@ pub fn session(ctx: &Ctx<'_>, detail: &Value) -> String {
             @if let Some(repo) = str_of(detail, "repo") { dt { "Repo" } dd { (repo) } }
             @if let Some(branch) = str_of(detail, "branch") { dt { "Branch" } dd.mono { (branch) } }
             dt { "Directory" } dd.mono { (str_of(detail, "cwd").unwrap_or_default()) }
+            dt { "tmux" }
+            dd.mono {
+                @if let Some(place) = placement_of(detail) {
+                    (place)
+                } @else {
+                    span.muted { (NO_PLACEMENT) }
+                }
+            }
             @if let Some(project) = str_of(detail, "project") {
                 dt { "Project" }
                 dd { a href=(format!("/projects/{}", seg(project))) { (project) } }
