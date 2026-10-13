@@ -202,10 +202,11 @@ in
         description = ''
           Run `claude-monitor serve` as a systemd user service (Linux only):
           the web view of the same sessions, on a loopback address only
-          (127.0.0.1). The address with its access token is printed to the
-          journal each time the service starts; read it with
-          `journalctl --user -u claude-monitor-serve -n 5`. The token changes
-          on every start.
+          (127.0.0.1), over TLS 1.3 with a per-install CA that you trust once
+          (`claude-monitor web ca`). A single-use login URL, valid for five
+          minutes, is printed to the journal each time the service starts;
+          read it with `journalctl --user -u claude-monitor-serve -n 5`, or
+          ask the running service for a new one with `claude-monitor web login`.
         '';
       };
 
