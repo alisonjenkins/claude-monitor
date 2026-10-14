@@ -805,7 +805,10 @@ fn refresh_first(env: &Env, state_dir: Option<&Path>) -> Result<(), Error> {
     let store = migrate::open_viewer_store(env, state_dir)?;
     let report = crate::refresh::refresh(&store, env, &env.clock.now());
     for warning in &report.warnings {
-        eprintln!("claude-monitor: refresh: {warning}");
+        eprintln!(
+            "claude-monitor: refresh: {}",
+            crate::text::single_line(warning)
+        );
     }
     Ok(())
 }

@@ -8,6 +8,7 @@ use crate::error::Error;
 use crate::session;
 use crate::store::legacy::{self, LegacyError, MigrateReport};
 use crate::store::{resolve_state_dir, StateDirEnv, Store, StoreError, StoreOptions};
+use crate::text::single_line;
 
 pub fn store_error(error: &StoreError) -> Error {
     Error::Store {
@@ -45,7 +46,10 @@ pub fn open_viewer_store(env: &Env, state_dir: Option<&Path>) -> Result<Store, E
         resolve_state_dir(state_dir, &StateDirEnv::from_process()).map_err(|e| store_error(&e))?;
     let store = Store::open_in_dir(&dir, &StoreOptions::viewer()).map_err(|e| store_error(&e))?;
     if let Err(error) = store_migrate_if_needed(&store, env) {
-        eprintln!("claude-monitor: legacy import skipped: {error}");
+        eprintln!(
+            "claude-monitor: legacy import skipped: {}",
+            single_line(&error.to_string())
+        );
     }
     Ok(store)
 }
@@ -62,7 +66,12 @@ pub fn run(state_dir: &Path, runtime_dir: &Path, env: &Env) -> Result<Output, Er
             detail: format!(
                 "none of the {} legacy files could be imported: {}",
                 report.candidates(),
-                report.corrupt_files.join(", ")
+                report
+                    .corrupt_files
+                    .iter()
+                    .map(|file| single_line(file))
+                    .collect::<Vec<_>>()
+                    .join(", ")
             ),
         });
     }

@@ -4,6 +4,8 @@
 use std::fmt::Display;
 use std::path::PathBuf;
 
+use crate::text::{single_line, strip_control};
+
 pub const EXIT_OK: u8 = 0;
 pub const EXIT_USAGE: u8 = 1;
 pub const EXIT_REFUSED: u8 = 2;
@@ -67,7 +69,13 @@ impl Error {
             let value = serde_json::json!({ "ok": false, "error": self.to_string() });
             format!("{value}\n")
         } else {
-            format!("claude-monitor: {self}\n")
+            // Paths and details in these two come from untrusted data and
+            // must stay on this one line; the other variants may span lines.
+            let message = match self {
+                Self::Io { .. } | Self::Store { .. } => single_line(&self.to_string()),
+                other => strip_control(&other.to_string()),
+            };
+            format!("claude-monitor: {message}\n")
         }
     }
 }

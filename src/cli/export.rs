@@ -116,7 +116,7 @@ pub fn run(env: &Env, state_dir: Option<&Path>, args: ExportArgs) -> Result<Outp
     let records = jsonl.lines().count();
     let path = out.display().to_string();
     Ok(Output::Dual {
-        text: format!("exported {records} records to {path}"),
+        text: format!("exported {records} records to {}", single_line(&path)),
         json: json!({
             "ok": true,
             "records": records,

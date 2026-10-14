@@ -100,7 +100,10 @@ mod enabled {
 
         let built = build_sources(env);
         for warning in &built.warnings {
-            eprintln!("claude-monitor: serve: {warning}");
+            eprintln!(
+                "claude-monitor: serve: {}",
+                crate::text::single_line(warning)
+            );
         }
         let _live = spawn_live(
             viewer("live refresh")?,

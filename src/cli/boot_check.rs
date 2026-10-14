@@ -14,6 +14,7 @@ use crate::error::Error;
 use crate::model::State;
 use crate::store::sessions::SessionRow;
 use crate::store::{resolve_state_dir, StateDirEnv};
+use crate::text::single_line;
 
 /// Holds the banner line until a tmux client shows it; lives in the state dir.
 const MARKER_FILE: &str = "boot-check-pending";
@@ -31,7 +32,7 @@ pub fn run(env: &Env, state_dir: Option<&Path>, banner: bool) -> Result<Output, 
     let store = open_viewer_store(env, Some(&dir))?;
     let report = crate::refresh::refresh(&store, env, &env.clock.now());
     for warning in &report.warnings {
-        eprintln!("claude-monitor: refresh: {warning}");
+        eprintln!("claude-monitor: refresh: {}", single_line(warning));
     }
     let rows = store
         .list_sessions_lenient()
@@ -60,7 +61,10 @@ pub fn run(env: &Env, state_dir: Option<&Path>, banner: bool) -> Result<Output, 
             let message = banner_message(interrupted);
             write_marker(&marker, &message)?;
             if let Err(error) = env.notifier.send(NOTIFICATION_SUMMARY, &message) {
-                eprintln!("claude-monitor: boot-check: {error}");
+                eprintln!(
+                    "claude-monitor: boot-check: {}",
+                    single_line(&error.to_string())
+                );
             }
         }
         if interrupted_ids != previous {
