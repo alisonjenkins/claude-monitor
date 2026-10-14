@@ -136,7 +136,7 @@ impl Plan {
             .map(|pane| pane.pane_index)
     }
 
-    /// The launch as a line a shell could run: `cd <dir> && <command>`, every
+    /// The launch as a line a shell could run: `cd -- <dir> && <command>`, every
     /// word quoted as needed. For showing the user what will start; tmux is
     /// handed the words themselves, not this line.
     pub fn command_line(&self) -> String {
@@ -146,7 +146,7 @@ impl Plan {
             .collect::<Vec<_>>()
             .join(" ");
         format!(
-            "cd {} && {words}",
+            "cd -- {} && {words}",
             shell_quote(&self.launch.cwd.to_string_lossy())
         )
     }
@@ -962,7 +962,10 @@ fn missing_transcript(session: &Session, precondition: &Precondition) -> Refusal
     );
     refusal.alternatives.push(Alternative {
         description: format!("start a fresh session; {NOT_RESTORED}"),
-        command: format!("claude-monitor respawn {} --fresh", session.id),
+        command: format!(
+            "claude-monitor respawn {} --fresh",
+            shell_quote(&session.id)
+        ),
     });
     refusal
 }

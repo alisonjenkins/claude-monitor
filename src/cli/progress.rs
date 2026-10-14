@@ -14,7 +14,7 @@ use crate::progress::binding::{
     self, display_path, session_root, BindingError, Bound, Candidate, Choice, ProgressView,
 };
 use crate::progress::{Item, Progress, SourceKind};
-use crate::text::single_line;
+use crate::text::{shell_word, single_line};
 
 /// `--source` value that opts a session out of progress.
 const SOURCE_NONE: &str = "none";
@@ -186,7 +186,10 @@ fn text(session: &Session, view: &ProgressView) -> String {
             let root = session_root(session);
             let mut lines = vec![
                 format!("{id}: no progress figure: several plans could be this session's."),
-                format!("Choose one with `claude-monitor progress bind {id} <path>`:"),
+                format!(
+                    "Choose one with `claude-monitor progress bind {} <path>`:",
+                    shell_word(&session.id)
+                ),
             ];
             lines.extend(candidates.iter().map(|c| candidate_line(&root, c)));
             lines.join("\n")

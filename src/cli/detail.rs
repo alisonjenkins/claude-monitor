@@ -15,7 +15,7 @@ use crate::progress::binding::{self, session_root, ProgressView};
 use crate::store::links::Link;
 use crate::store::summaries::{Summary, GENERATED_LABEL};
 use crate::store::Store;
-use crate::text::single_line;
+use crate::text::{shell_word, single_line};
 
 const OWNER_KIND: &str = "session";
 const LABEL_WIDTH: usize = 14;
@@ -127,7 +127,7 @@ impl SessionDetail {
                         "",
                         &format!(
                             "choose one with `claude-monitor progress bind {} <path>`",
-                            single_line(&self.id)
+                            shell_word(&self.id)
                         ),
                     ),
                 ];

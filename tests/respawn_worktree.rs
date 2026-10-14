@@ -182,7 +182,7 @@ fn the_command_line_shows_the_directory_and_the_exact_command() {
     let plan = plan_for(&fake, WORKTREE, &Options::default()).unwrap();
     assert_eq!(
         plan.command_line(),
-        "cd /w/proj && claude --worktree deep-wishing-squirrel --resume agent-1"
+        "cd -- /w/proj && claude --worktree deep-wishing-squirrel --resume agent-1"
     );
 }
 
@@ -193,7 +193,7 @@ fn the_command_line_quotes_what_a_shell_would_split() {
     let plan = plan_for(&fake, &cwd, &Options::default()).unwrap();
     assert_eq!(
         plan.command_line(),
-        "cd /w/proj && claude --worktree 'it'\\''s odd' --resume agent-1"
+        "cd -- /w/proj && claude --worktree 'it'\\''s odd' --resume agent-1"
     );
 }
 

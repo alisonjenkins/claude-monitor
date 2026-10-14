@@ -105,7 +105,7 @@ fn a_name_with_a_space_and_a_quote_is_one_argument_and_one_quoted_word() {
     );
     assert_eq!(
         plan.command_line(),
-        "cd /w/proj && claude --name 'it'\\''s a name' --resume agent-1"
+        "cd -- /w/proj && claude --name 'it'\\''s a name' --resume agent-1"
     );
 }
 
@@ -115,7 +115,7 @@ fn an_unnamed_session_launches_exactly_as_before() {
     assert_eq!(resume.launch.args, ["--resume", "agent-1"]);
     assert_eq!(
         resume.command_line(),
-        "cd /w/proj && claude --resume agent-1"
+        "cd -- /w/proj && claude --resume agent-1"
     );
     let fresh = plan(&named(ROOT, "claude", None), &fresh());
     assert!(fresh.launch.args.is_empty());
