@@ -113,6 +113,39 @@ fn a_newly_interrupted_session_notifies_again() {
 }
 
 #[test]
+fn a_session_interrupted_again_without_a_clear_in_between_notifies_again() {
+    let fx = fixture(&[("a", State::Interrupted, false)]);
+    boot_check(&fx, false);
+    boot_check(&fx, false);
+    assert_eq!(fx.fake.notifier.sent().len(), 1, "same interruption");
+
+    let store = Store::open_in_dir(fx.state.path(), &StoreOptions::viewer()).unwrap();
+    let mut session = store
+        .get_session_by_agent_id("claude", "a")
+        .unwrap()
+        .unwrap();
+    session.state_since = "2026-10-13T08:00:00Z".to_owned();
+    store.upsert_session(&session).unwrap();
+    boot_check(&fx, false);
+
+    assert_eq!(fx.fake.notifier.sent().len(), 2);
+}
+
+#[test]
+fn the_notified_file_is_private_and_an_old_format_file_is_tolerated() {
+    use std::os::unix::fs::PermissionsExt;
+    let fx = fixture(&[("a", State::Interrupted, false)]);
+    let path = fx.state.path().join("boot-check-notified");
+    std::fs::write(&path, "a\n\u{0}garbage\n").unwrap();
+
+    boot_check(&fx, false);
+
+    assert_eq!(fx.fake.notifier.sent().len(), 1);
+    let mode = std::fs::metadata(&path).unwrap().permissions().mode();
+    assert_eq!(mode & 0o777, 0o600);
+}
+
+#[test]
 fn once_everything_is_cleared_a_later_interruption_notifies_again() {
     let fx = fixture(&[("a", State::Interrupted, false)]);
     boot_check(&fx, false);

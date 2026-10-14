@@ -17,7 +17,8 @@ use crate::store::{resolve_state_dir, StateDirEnv};
 
 /// Holds the banner line until a tmux client shows it; lives in the state dir.
 const MARKER_FILE: &str = "boot-check-pending";
-/// Ids of the interrupted sessions already announced, one per line.
+/// Interrupted sessions already announced, one `id<TAB>state_since` per line;
+/// `state_since` changes with every new interruption of the same session.
 const NOTIFIED_FILE: &str = "boot-check-notified";
 const NOTIFICATION_SUMMARY: &str = "AI sessions interrupted";
 
@@ -39,7 +40,7 @@ pub fn run(env: &Env, state_dir: Option<&Path>, banner: bool) -> Result<Output, 
         .iter()
         .filter_map(|row| match row {
             SessionRow::Readable(s) if s.state == State::Interrupted && !s.dismissed => {
-                Some(s.id.clone())
+                Some(format!("{}\t{}", s.id, s.state_since))
             }
             _ => None,
         })
@@ -131,7 +132,7 @@ fn read_notified(path: &Path) -> BTreeSet<String> {
     std::fs::read_to_string(path)
         .map(|text| {
             text.lines()
-                .filter(|line| !line.is_empty())
+                .filter(|line| line.contains('\t'))
                 .map(str::to_owned)
                 .collect()
         })
@@ -139,8 +140,21 @@ fn read_notified(path: &Path) -> BTreeSet<String> {
 }
 
 fn write_notified(path: &Path, ids: &BTreeSet<String>) -> Result<(), Error> {
+    use std::io::Write as _;
+    use std::os::unix::fs::{OpenOptionsExt as _, PermissionsExt as _};
+
     let text: String = ids.iter().map(|id| format!("{id}\n")).collect();
-    std::fs::write(path, text).map_err(|source| Error::Io {
+    let write = || -> std::io::Result<()> {
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .mode(0o600)
+            .open(path)?;
+        file.set_permissions(std::fs::Permissions::from_mode(0o600))?;
+        file.write_all(text.as_bytes())
+    };
+    write().map_err(|source| Error::Io {
         operation: "write boot-check notified set".to_owned(),
         path: Some(path.to_owned()),
         source,
