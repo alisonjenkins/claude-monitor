@@ -20,6 +20,7 @@ pub mod store;
 pub mod summary;
 #[doc(hidden)]
 pub mod testing;
+pub mod text;
 pub mod tmux;
 #[cfg(feature = "tui")]
 pub mod tui;

@@ -6,13 +6,13 @@ use chrono::DateTime;
 use serde_json::json;
 
 use super::migrate::{open_viewer_store, store_error_message};
-use super::output::single_line;
 use super::Output;
 use crate::env::Env;
 use crate::error::Error;
 use crate::model::State;
 use crate::store::queries::{OverviewEntry, OverviewQuery, SectionName};
 use crate::store::sessions::parse_state;
+use crate::text::single_line;
 
 const SHORT_ID_CHARS: usize = 8;
 const TASK_CHARS: usize = 60;

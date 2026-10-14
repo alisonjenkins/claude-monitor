@@ -7,13 +7,13 @@ use serde_json::{json, Value};
 use super::detail::SessionDetail;
 use super::list::age;
 use super::migrate::{open_viewer_store, store_error_message};
-use super::output::{indent_continuations, single_line};
 use super::Output;
 use crate::env::Env;
 use crate::error::Error;
 use crate::model::{Author, Note, OwnerKind, Session};
 use crate::store::queries::OverviewEntry;
 use crate::store::Store;
+use crate::text::{indent_continuations, single_line};
 
 const LABEL_WIDTH: usize = 14;
 

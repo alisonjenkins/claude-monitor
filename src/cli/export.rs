@@ -10,11 +10,11 @@ use std::process::Command;
 use serde_json::json;
 
 use super::migrate::open_viewer_store;
-use super::output::single_line;
 use super::Output;
 use crate::env::Env;
 use crate::error::Error;
 use crate::export::cortexiphan::{export_with_report, Export, ExportError, ExportOptions};
+use crate::text::single_line;
 
 const HOSTNAME_VAR: &str = "HOSTNAME";
 const UNKNOWN_MACHINE: &str = "unknown";
