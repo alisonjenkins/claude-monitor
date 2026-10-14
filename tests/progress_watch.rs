@@ -164,15 +164,25 @@ fn a_binding_made_while_running_is_picked_up() {
         )
         .unwrap();
 
+    // The watcher re-reads the bindings on a timer, and FSEvents can wake it
+    // early by replaying the first plan file's creation, so a wake alone does
+    // not say the new binding is in: wait until it is listed.
     let started = Instant::now();
-    let mut woke = false;
-    while started.elapsed() < PICK_UP_DEADLINE && !woke {
+    while started.elapsed() < PICK_UP_DEADLINE && !source.watched().contains(&later) {
         fs::write(&later, "- [x] two\n").unwrap();
-        woke = source.wait(Duration::from_millis(300));
+        source.wait(Duration::from_millis(300));
     }
+    assert!(
+        source.watched().contains(&later),
+        "the new binding was never watched"
+    );
 
-    assert!(woke, "the new binding was never watched");
-    assert!(source.watched().contains(&later));
+    settle(&mut source);
+    fs::write(&later, "- [ ] two\n").unwrap();
+    assert!(
+        source.wait(REAL_OS_WAKE_TIMEOUT),
+        "an edit to the new file did not wake"
+    );
 }
 
 #[test]
