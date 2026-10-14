@@ -1,5 +1,7 @@
 //! What a command returns on success, rendered for humans or for `--json`.
 
+use crate::text::strip_control;
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Output {
     Text(String),
@@ -35,8 +37,13 @@ impl Output {
                 let value = serde_json::json!({ "ok": true, "output": text });
                 format!("{value}\n")
             }
-            Self::Text(text) if text.ends_with('\n') => text.clone(),
-            Self::Text(text) => format!("{text}\n"),
+            Self::Text(text) => {
+                let mut text = strip_control(text);
+                if !text.ends_with('\n') {
+                    text.push('\n');
+                }
+                text
+            }
             Self::Json(value) if json => format!("{value}\n"),
             Self::Json(value) => {
                 let pretty = serde_json::to_string_pretty(value).unwrap_or_default();
@@ -55,6 +62,24 @@ mod tests {
     fn text_prints_with_one_trailing_newline() {
         assert_eq!(Output::Text("hi".into()).render(false), "hi\n");
         assert_eq!(Output::Text("hi\n".into()).render(false), "hi\n");
+    }
+
+    #[test]
+    fn text_mode_drops_terminal_control_sequences_but_json_keeps_them_escaped() {
+        let hostile = "a\u{1b}[2J\tb\n\u{9b}c\u{7}";
+        for out in [
+            Output::Text(hostile.into()),
+            Output::Dual {
+                text: hostile.into(),
+                json: serde_json::json!({}),
+            },
+        ] {
+            assert_eq!(out.render(false), "a[2J\tb\nc\n");
+        }
+        let wrapped = Output::Text(hostile.into()).render(true);
+        let value: serde_json::Value = serde_json::from_str(&wrapped).unwrap();
+        assert_eq!(value.get("output"), Some(&serde_json::json!(hostile)));
+        assert_eq!(Output::Raw(hostile.into()).render(false), hostile);
     }
 
     #[test]
