@@ -620,7 +620,7 @@ dependencies = [
  "crossterm",
  "form_urlencoded",
  "futures-util",
- "getrandom 0.3.4",
+ "getrandom 0.4.3",
  "hyper",
  "hyper-util",
  "libc",
