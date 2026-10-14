@@ -23,6 +23,8 @@ use tempfile::TempDir;
 const T0: &str = "2026-10-12T10:00:00Z";
 const REAL_OS_WAKE_TIMEOUT: Duration = Duration::from_secs(2);
 const QUIET: Duration = Duration::from_millis(500);
+const SETTLE: Duration = Duration::from_millis(300);
+const MAX_REPLAYED_WAKES: u32 = 5;
 const PICK_UP_DEADLINE: Duration = Duration::from_secs(6);
 
 struct Rig {
@@ -64,12 +66,24 @@ impl Rig {
     }
 }
 
+// FSEvents may replay the creation of a file made just before the watch
+// started. A spurious wake only triggers a re-read, so drain those and assert
+// on what follows. A no-op on inotify.
+fn settle(source: &mut BoundFilesSource) {
+    let mut replayed: u32 = 0;
+    while source.wait(SETTLE) {
+        replayed = replayed.saturating_add(1);
+        assert!(replayed < MAX_REPLAYED_WAKES, "the watch never settled");
+    }
+}
+
 #[test]
 fn nothing_changes_so_nothing_wakes() {
     let rig = rig();
     let plan = rig.file("todo.md", "- [ ] one\n");
     rig.bind("s1", &plan);
     let mut source = rig.source();
+    settle(&mut source);
 
     assert!(!source.wait(QUIET));
 }
@@ -117,6 +131,7 @@ fn a_neighbouring_file_does_not_wake() {
     let plan = rig.file("todo.md", "- [ ] one\n");
     rig.bind("s1", &plan);
     let mut source = rig.source();
+    settle(&mut source);
 
     rig.file("notes.txt", "unrelated\n");
 

@@ -542,6 +542,13 @@ fn the_projects_watch_wakes_on_new_transcripts_and_directories_only() {
     let fx = Fx::new();
     let dir = fx.project_dir(CWD);
     let mut source = ClaudeProjectsSource::watch(&fx.projects()).unwrap();
+    // FSEvents may replay the creation of the project directory made just
+    // before the watch started; a spurious wake only triggers a rescan.
+    let mut replayed = 0;
+    while source.wait(Duration::from_millis(300)) {
+        replayed += 1;
+        assert!(replayed < 5, "the watch never settled");
+    }
 
     std::fs::write(dir.join("notes.txt"), "x").unwrap();
     assert!(!source.wait(Duration::from_millis(300)), "not a transcript");
