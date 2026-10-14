@@ -272,6 +272,13 @@ pub fn parse_proc_stat_start_time(stat: &str) -> Option<u64> {
     after_comm.split_whitespace().nth(19)?.parse().ok()
 }
 
+/// macOS `pbi_start_tvsec`/`pbi_start_tvusec` as microseconds since the epoch;
+/// `None` on overflow.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn bsd_start_micros(tvsec: u64, tvusec: u64) -> Option<u64> {
+    tvsec.checked_mul(1_000_000)?.checked_add(tvusec)
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct SystemProcesses;
 
@@ -295,9 +302,65 @@ impl Processes for SystemProcesses {
         }
     }
 
+    #[cfg(target_os = "macos")]
+    fn is_alive(&self, pid: u32, start_time: u64) -> bool {
+        matches!(self.start_time(pid), Ok(Some(t)) if t == start_time)
+    }
+
+    /// Microseconds since the Unix epoch, not Linux clock ticks; a recorded
+    /// value is only ever compared with one read on the same machine.
+    #[cfg(target_os = "macos")]
+    fn start_time(&self, pid: u32) -> Result<Option<u64>, EnvError> {
+        const OPERATION: &str = "read process start time";
+        // A pid above i32::MAX cannot name a process.
+        let Ok(pid) = i32::try_from(pid) else {
+            return Ok(None);
+        };
+        // SAFETY: proc_bsdinfo is plain integers and char arrays, for which
+        // all-zero bytes are a valid value.
+        let mut info: libc::proc_bsdinfo = unsafe { std::mem::zeroed() };
+        let size =
+            libc::c_int::try_from(std::mem::size_of::<libc::proc_bsdinfo>()).map_err(|e| {
+                EnvError::Failed {
+                    operation: OPERATION,
+                    detail: e.to_string(),
+                }
+            })?;
+        // SAFETY: `info` is writable for `size` bytes, which is the size
+        // passed; the kernel writes at most that many.
+        let written = unsafe {
+            libc::proc_pidinfo(
+                pid,
+                libc::PROC_PIDTBSDINFO,
+                0,
+                (&mut info as *mut libc::proc_bsdinfo).cast(),
+                size,
+            )
+        };
+        if written == size {
+            return bsd_start_micros(info.pbi_start_tvsec, info.pbi_start_tvusec)
+                .map(Some)
+                .ok_or_else(|| EnvError::Failed {
+                    operation: OPERATION,
+                    detail: format!(
+                        "start time {}s {}us overflows u64 microseconds",
+                        info.pbi_start_tvsec, info.pbi_start_tvusec
+                    ),
+                });
+        }
+        let source = std::io::Error::last_os_error();
+        if written <= 0 && source.raw_os_error() == Some(libc::ESRCH) {
+            return Ok(None);
+        }
+        Err(EnvError::Failed {
+            operation: OPERATION,
+            detail: format!("proc_pidinfo({pid}) returned {written}: {source}"),
+        })
+    }
+
     /// Without a start-time source the pid check cannot detect recycling; it
     /// only reports whether the pid exists.
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
     fn is_alive(&self, pid: u32, _start_time: u64) -> bool {
         let Ok(pid) = i32::try_from(pid) else {
             return false;
@@ -307,7 +370,7 @@ impl Processes for SystemProcesses {
         rc == 0 || std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
     }
 
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
     fn start_time(&self, _pid: u32) -> Result<Option<u64>, EnvError> {
         Err(EnvError::Unsupported {
             operation: "read process start time",
@@ -825,6 +888,22 @@ mod tests {
     }
 
     #[test]
+    fn bsd_start_time_is_whole_microseconds_since_the_epoch() {
+        assert_eq!(bsd_start_micros(0, 0), Some(0));
+        assert_eq!(
+            bsd_start_micros(1_760_000_000, 123_456),
+            Some(1_760_000_000_123_456)
+        );
+        assert_ne!(bsd_start_micros(5, 1), bsd_start_micros(5, 2));
+    }
+
+    #[test]
+    fn bsd_start_time_overflow_is_none() {
+        assert_eq!(bsd_start_micros(u64::MAX, 0), None);
+        assert_eq!(bsd_start_micros(u64::MAX / 1_000_000, u64::MAX), None);
+    }
+
+    #[test]
     fn sysctl_string_stops_at_the_trailing_nul() {
         let uuid = "6F1D2C3A-0B4E-4C5D-8E9F-A1B2C3D4E5F6";
         let mut buf = uuid.as_bytes().to_vec();
@@ -863,6 +942,29 @@ mod tests {
     fn linux_missing_pid_has_no_start_time() {
         // pid_max is at most 2^22, so this pid cannot exist.
         assert_eq!(SystemProcesses.start_time(u32::MAX).unwrap(), None);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_boot_id_is_stable_and_nonempty() {
+        let a = SystemBootId.current().unwrap();
+        assert!(!a.is_empty());
+        assert_eq!(a, SystemBootId.current().unwrap());
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_own_process_is_alive_and_recycled_pid_is_not() {
+        let pid = std::process::id();
+        let started = SystemProcesses.start_time(pid).unwrap().unwrap();
+        assert!(SystemProcesses.is_alive(pid, started));
+        assert!(!SystemProcesses.is_alive(pid, started.wrapping_add(1)));
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_missing_pid_has_no_start_time() {
+        assert_eq!(SystemProcesses.start_time(i32::MAX as u32).unwrap(), None);
     }
 
     #[test]
