@@ -66,6 +66,7 @@
             // {
               # Its test run drives the real certutil and pk12util.
               nativeCheckInputs = [ pkgs.nss.tools ];
+              cargoTestFlags = [ "--no-fail-fast" ];
               meta.license = with pkgs.lib.licenses; [
                 mit
                 asl20
@@ -141,7 +142,7 @@
           cargo-test = mkCargoCheck {
             name = "test";
             extraNativeBuildInputs = [ pkgs.nss.tools ];
-            command = "cargo test --offline --locked";
+            command = "cargo test --offline --locked --no-fail-fast";
           };
 
           # Runs the private-tmux-server tests with tmux on PATH; the env var
@@ -149,7 +150,7 @@
           tmux-harness = mkCargoCheck {
             name = "tmux-harness";
             extraNativeBuildInputs = [ pkgs.tmux ];
-            command = "CLAUDE_MONITOR_REQUIRE_TMUX=1 cargo test --offline --locked --test tmux_harness";
+            command = "CLAUDE_MONITOR_REQUIRE_TMUX=1 cargo test --offline --locked --no-fail-fast --test tmux_harness";
           };
 
           clippy = mkCargoCheck {
