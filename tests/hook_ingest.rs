@@ -528,19 +528,35 @@ fn a_locked_database_returns_quickly_and_logs() {
     let id = "sess-a";
     h.feed(None, &payload("SessionStart-startup", id));
 
+    // The lock outlasts the hook by a wide margin, so a hook that waited for
+    // it to be released would take about LOCK_HOLD and miss RETURN_BOUND,
+    // however slow or busy the machine running the test is.
+    const LOCK_HOLD: Duration = Duration::from_secs(5);
+    const RETURN_BOUND: Duration = Duration::from_secs(3);
+
     let other = rusqlite::Connection::open(h.state_dir.join("state.db")).unwrap();
     other.execute_batch("BEGIN IMMEDIATE").unwrap();
+    let (release, released) = std::sync::mpsc::channel::<()>();
+    let holder = std::thread::spawn(move || {
+        let _ = released.recv_timeout(LOCK_HOLD);
+        other.execute_batch("ROLLBACK").unwrap();
+    });
 
     let started = Instant::now();
     h.feed(None, &payload("UserPromptSubmit", id));
     let elapsed = started.elapsed();
-    assert!(elapsed < Duration::from_millis(500), "took {elapsed:?}");
+
+    release.send(()).unwrap();
+    holder.join().unwrap();
+    assert!(
+        elapsed < RETURN_BOUND,
+        "took {elapsed:?} with the lock held for {LOCK_HOLD:?}"
+    );
 
     let log = h.hook_log();
     assert_eq!(log.lines().count(), 1, "{log}");
     assert!(log.contains("event=UserPromptSubmit"), "{log}");
-
-    other.execute_batch("ROLLBACK").unwrap();
+    assert!(log.to_lowercase().contains("locked"), "{log}");
     assert_eq!(h.session(id).state, State::Idle);
 }
 
