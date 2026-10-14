@@ -14,6 +14,7 @@ use crate::progress::binding::{
     self, display_path, session_root, BindingError, Bound, Candidate, Choice, ProgressView,
 };
 use crate::progress::{Item, Progress, SourceKind};
+use crate::text::single_line;
 
 /// `--source` value that opts a session out of progress.
 const SOURCE_NONE: &str = "none";
@@ -98,6 +99,11 @@ pub(crate) fn current_text(item: &Item) -> String {
     }
 }
 
+/// [`current_text`] as one terminal-safe line, for text output.
+pub(crate) fn current_line(item: &Item) -> String {
+    single_line(&current_text(item))
+}
+
 fn opted_out(bound: &Bound) -> bool {
     bound.binding.source.kind == SourceKind::AgentTodo && bound.binding.source.path.is_none()
 }
@@ -166,14 +172,14 @@ pub(crate) fn candidate_line(root: &Path, candidate: &Candidate) -> String {
     };
     format!(
         "  {}  ({kind}, {} of {})",
-        display_path(root, &candidate.path),
+        single_line(&display_path(root, &candidate.path)),
         candidate.done,
         candidate.total
     )
 }
 
 fn text(session: &Session, view: &ProgressView) -> String {
-    let id = &session.id;
+    let id = &single_line(&session.id);
     match view {
         ProgressView::None => format!("{id}: no progress: no plan found for this session"),
         ProgressView::PickOne(candidates) => {
@@ -187,12 +193,16 @@ fn text(session: &Session, view: &ProgressView) -> String {
         }
         ProgressView::Bound(bound) => match &bound.progress {
             Some(progress) => {
-                let mut line = format!("{id}: {}  {}", progress.label(), progress.source_label());
+                let mut line = format!(
+                    "{id}: {}  {}",
+                    single_line(&progress.label()),
+                    single_line(&progress.source_label())
+                );
                 if bound.stale {
                     line.push_str("  (source unreadable: figure may be stale)");
                 }
                 match &progress.current {
-                    Some(current) => format!("{line}\ncurrent: {}", current_text(current)),
+                    Some(current) => format!("{line}\ncurrent: {}", current_line(current)),
                     None => line,
                 }
             }
@@ -201,7 +211,7 @@ fn text(session: &Session, view: &ProgressView) -> String {
             }
             None => format!(
                 "{id}: no progress: {} holds no tasks",
-                bound.binding.source.path.as_deref().unwrap_or("the source")
+                single_line(bound.binding.source.path.as_deref().unwrap_or("the source"))
             ),
         },
     }

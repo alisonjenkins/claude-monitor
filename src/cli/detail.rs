@@ -7,7 +7,7 @@ use std::path::PathBuf;
 
 use serde_json::{json, Map, Value};
 
-use super::progress::{candidate_line, current_text, json_value};
+use super::progress::{candidate_line, current_line, json_value};
 use crate::env::Env;
 use crate::export::links::link_json;
 use crate::model::{OwnerKind, Session};
@@ -15,6 +15,7 @@ use crate::progress::binding::{self, session_root, ProgressView};
 use crate::store::links::Link;
 use crate::store::summaries::{Summary, GENERATED_LABEL};
 use crate::store::Store;
+use crate::text::single_line;
 
 const OWNER_KIND: &str = "session";
 const LABEL_WIDTH: usize = 14;
@@ -37,9 +38,11 @@ fn line(label: &str, value: &str) -> String {
 
 /// `task 42 (doc 7)`, without the doc when none is recorded.
 pub fn link_text(link: &Link) -> String {
+    let kind = single_line(&link.cortex_kind);
+    let node = single_line(&link.cortex_node_id);
     match &link.cortex_doc_id {
-        Some(doc) => format!("{} {} (doc {doc})", link.cortex_kind, link.cortex_node_id),
-        None => format!("{} {}", link.cortex_kind, link.cortex_node_id),
+        Some(doc) => format!("{kind} {node} (doc {})", single_line(doc)),
+        None => format!("{kind} {node}"),
     }
 }
 
@@ -124,7 +127,7 @@ impl SessionDetail {
                         "",
                         &format!(
                             "choose one with `claude-monitor progress bind {} <path>`",
-                            self.id
+                            single_line(&self.id)
                         ),
                     ),
                 ];
@@ -135,19 +138,23 @@ impl SessionDetail {
                 let Some(progress) = &bound.progress else {
                     return Vec::new();
                 };
-                let mut head = format!("{}  {}", progress.label(), progress.source_label());
+                let mut head = format!(
+                    "{}  {}",
+                    single_line(&progress.label()),
+                    single_line(&progress.source_label())
+                );
                 if bound.stale {
                     head.push_str("  (stale: source unreadable, figure may be out of date)");
                 }
                 let mut lines = vec![line("progress", &head)];
                 if let Some(current) = &progress.current {
-                    lines.push(line("current", &current_text(current)));
+                    lines.push(line("current", &current_line(current)));
                 }
                 if !progress.phases.is_empty() {
                     let phases: Vec<String> = progress
                         .phases
                         .iter()
-                        .map(|p| format!("{} {}/{}", p.name, p.done, p.total))
+                        .map(|p| format!("{} {}/{}", single_line(&p.name), p.done, p.total))
                         .collect();
                     lines.push(line("phases", &phases.join(", ")));
                 }
