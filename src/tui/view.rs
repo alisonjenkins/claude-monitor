@@ -13,6 +13,7 @@ use super::restore::{Group, PreviewRow, RestoreResult, RestoreRow, RestoreView, 
 use crate::cli::age;
 use crate::model::State;
 use crate::store::queries::{Flag, OverviewEntry, SectionName};
+use crate::text::{is_terminal_unsafe, single_line};
 
 const MAUVE: Color = Color::Rgb(203, 166, 247);
 const OVERLAY0: Color = Color::Rgb(88, 91, 112);
@@ -78,15 +79,15 @@ pub(super) fn section_title(name: SectionName) -> &'static str {
 
 fn location(entry: &OverviewEntry) -> String {
     match (&entry.repo, &entry.branch) {
-        (Some(repo), Some(branch)) => format!("{repo}/{branch}"),
-        (Some(repo), None) => repo.clone(),
+        (Some(repo), Some(branch)) => single_line(&format!("{repo}/{branch}")),
+        (Some(repo), None) => single_line(repo),
         (None, _) if entry.cwd.is_empty() => "-".to_owned(),
-        (None, _) => entry.cwd.clone(),
+        (None, _) => single_line(&entry.cwd),
     }
 }
 
 fn one_line(text: &str) -> String {
-    text.split_whitespace().collect::<Vec<_>>().join(" ")
+    single_line(text)
 }
 
 fn padded(text: &str, width: usize) -> String {
@@ -422,6 +423,28 @@ pub fn view(app: &App, frame: &mut Frame) {
         ),
         help_area,
     );
+    scrub(frame);
+}
+
+/// ratatui drops control characters but draws line/paragraph separators and
+/// bidi overrides, which session text could use to reorder what is shown. One
+/// pass over the finished frame covers every widget, present and future.
+fn scrub(frame: &mut Frame) {
+    let area = frame.area();
+    let buffer = frame.buffer_mut();
+    for y in area.top()..area.bottom() {
+        for x in area.left()..area.right() {
+            let cell = &mut buffer[(x, y)];
+            if cell.symbol().chars().any(is_terminal_unsafe) {
+                let kept: String = cell
+                    .symbol()
+                    .chars()
+                    .filter(|&c| !is_terminal_unsafe(c))
+                    .collect();
+                cell.set_symbol(if kept.is_empty() { " " } else { &kept });
+            }
+        }
+    }
 }
 
 /// `Sessions`, then the view and filters in force: ` · by project · state idle`.

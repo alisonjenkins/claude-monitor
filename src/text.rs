@@ -8,12 +8,16 @@
 /// reorder what is shown; `\n` and `\t` stay for multi-line fields.
 pub fn strip_control(text: &str) -> String {
     text.chars()
-        .filter(|c| {
-            matches!(c, '\n' | '\t')
-                || !(c.is_control()
-                    || matches!(c, '\u{2028}' | '\u{2029}' | '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}'))
-        })
+        .filter(|&c| matches!(c, '\n' | '\t') || !is_terminal_unsafe(c))
         .collect()
+}
+
+/// True for a character that can drive a terminal or reorder what it shows:
+/// control characters (including `\n` and `\t`), line/paragraph separators and
+/// bidi overrides.
+pub fn is_terminal_unsafe(c: char) -> bool {
+    c.is_control()
+        || matches!(c, '\u{2028}' | '\u{2029}' | '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}')
 }
 
 /// `text` as one line: control characters stripped, every run of whitespace
@@ -31,4 +35,27 @@ pub fn single_line(text: &str) -> String {
 pub fn indent_continuations(text: &str, indent: usize) -> String {
     let pad = format!("\n{}", " ".repeat(indent));
     strip_control(text).replace('\t', " ").replace('\n', &pad)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const HOSTILE: &str = "a\u{1b}[2J\tb\n\u{85}c\u{2028}d\u{202e}e\u{7f}";
+
+    #[test]
+    fn strip_control_keeps_newline_and_tab_only() {
+        assert_eq!(strip_control(HOSTILE), "a[2J\tb\ncde");
+    }
+
+    #[test]
+    fn single_line_collapses_all_whitespace() {
+        assert_eq!(single_line(HOSTILE), "a[2J b cde");
+        assert_eq!(single_line("  x \n\t y  "), "x y");
+    }
+
+    #[test]
+    fn indent_continuations_pads_later_lines_and_turns_tabs_to_spaces() {
+        assert_eq!(indent_continuations(HOSTILE, 2), "a[2J b\n  cde");
+    }
 }
