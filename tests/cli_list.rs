@@ -412,7 +412,7 @@ fn list_text_strips_terminal_escapes_from_the_task() {
 }
 
 #[test]
-fn show_text_strips_terminal_escapes_but_keeps_multiline_layout() {
+fn show_text_strips_terminal_escapes_and_keeps_single_line_fields_on_one_line() {
     let fx = Fixture::new();
     fx.put("evil", State::Idle, "2026-10-11T23:59:30Z", |s| {
         s.task_description = Some(HOSTILE.to_owned());
@@ -420,7 +420,7 @@ fn show_text_strips_terminal_escapes_but_keeps_multiline_layout() {
     });
     let text = fx.run(show("evil")).unwrap().render(false);
     assert_inert(&text);
-    assert!(text.contains("first\n\t"), "{text}");
+    assert!(text.contains("left off      first ok ]52;c;aGk=[2Jdone 31m"), "{text}");
 
     let json = fx.run(show("evil")).unwrap().render(true);
     let value: Value = serde_json::from_str(&json).unwrap();

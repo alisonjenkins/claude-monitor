@@ -7,7 +7,7 @@ use serde_json::{json, Value};
 use super::detail::SessionDetail;
 use super::list::age;
 use super::migrate::{open_viewer_store, store_error_message};
-use super::output::strip_control;
+use super::output::{indent_continuations, single_line};
 use super::Output;
 use crate::env::Env;
 use crate::error::Error;
@@ -113,10 +113,16 @@ pub fn run(env: &Env, state_dir: Option<&Path>, id: &str) -> Result<Output, Erro
             .chain(detail.generated_lines())
         {
             text.push('\n');
-            text.push_str(&strip_control(&extra));
+            text.push_str(&extra_text(&extra));
         }
     }
     Ok(Output::Dual { text, json })
+}
+
+/// A progress, link or summary line: continuation lines are indented under
+/// the label column so they cannot pass for `label  value` lines.
+fn extra_text(extra: &str) -> String {
+    indent_continuations(extra, LABEL_WIDTH)
 }
 
 /// `session:window-name (window N)` as last recorded; `None` when no tmux
@@ -187,7 +193,7 @@ fn detail_text(
     let mut lines = Vec::new();
     let mut put = |label: &str, value: Option<&str>| {
         if let Some(value) = value.filter(|v| !v.is_empty()) {
-            lines.push(format!("{label:<LABEL_WIDTH$}{}", strip_control(value)));
+            lines.push(format!("{label:<LABEL_WIDTH$}{}", single_line(value)));
         }
     };
     let flags: Vec<&str> = entry.flags.iter().map(|f| f.as_str()).collect();
@@ -221,7 +227,98 @@ fn detail_text(
     put("resumed by", Some(&resumed_by.join(", ")));
     put("error", entry.error.as_deref());
     for note in notes {
-        put("note", Some(&note.body));
+        lines.push(format!(
+            "{:<LABEL_WIDTH$}{}",
+            "note",
+            indent_continuations(&note.body, LABEL_WIDTH)
+        ));
     }
     lines.join("\n")
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used, clippy::expect_used)]
+    use super::*;
+    use crate::model::State;
+    use crate::store::queries::SectionName;
+
+    const FORGED: &str = "x\nstate              finished\u{1b}[2J\nflags  none\tz";
+
+    fn entry() -> OverviewEntry {
+        OverviewEntry {
+            id: "abcd1234".to_owned(),
+            agent_kind: "claude".to_owned(),
+            agent_session_id: "s".to_owned(),
+            repo: None,
+            branch: None,
+            cwd: "/work".to_owned(),
+            state: State::Working,
+            running: true,
+            last_activity_at: "2026-01-01T00:00:00Z".to_owned(),
+            task_description: None,
+            left_off: None,
+            project: None,
+            flags: Vec::new(),
+            section: SectionName::Active,
+            error: None,
+        }
+    }
+
+    fn note(body: &str) -> Note {
+        Note {
+            id: "n".to_owned(),
+            owner_kind: OwnerKind::Session,
+            owner_id: "abcd1234".to_owned(),
+            body: body.to_owned(),
+            created_at: "2026-01-01T00:00:00Z".to_owned(),
+            author: Author::User {
+                name: "u".to_owned(),
+            },
+        }
+    }
+
+    fn render(entry: &OverviewEntry, notes: &[Note]) -> String {
+        detail_text(entry, None, None, None, &[], notes, "2026-01-01T00:00:01Z")
+    }
+
+    fn lines_starting_at_column_zero(text: &str, label: &str) -> usize {
+        text.lines().filter(|l| l.starts_with(label)).count()
+    }
+
+    #[test]
+    fn a_hostile_task_cannot_forge_a_label_line() {
+        let mut e = entry();
+        e.task_description = Some(FORGED.to_owned());
+        let text = render(&e, &[]);
+        assert_eq!(lines_starting_at_column_zero(&text, "state"), 1, "{text:?}");
+        assert_eq!(lines_starting_at_column_zero(&text, "flags"), 0, "{text:?}");
+        assert!(!text.contains('\u{1b}'), "{text:?}");
+    }
+
+    #[test]
+    fn a_hostile_left_off_cannot_forge_a_label_line() {
+        let mut e = entry();
+        e.left_off = Some(FORGED.to_owned());
+        let text = render(&e, &[]);
+        assert_eq!(lines_starting_at_column_zero(&text, "state"), 1, "{text:?}");
+    }
+
+    #[test]
+    fn a_hostile_note_keeps_its_lines_but_indents_the_continuations() {
+        let text = render(&entry(), &[note(FORGED)]);
+        assert_eq!(lines_starting_at_column_zero(&text, "state"), 1, "{text:?}");
+        assert!(!text.contains(['\u{1b}', '\t']), "{text:?}");
+        assert!(text.contains("\n              state"), "{text:?}");
+    }
+
+    #[test]
+    fn hostile_summary_and_plan_lines_are_indented_after_the_first() {
+        let text = extra_text(&format!("generated (m, t): {FORGED}"));
+        assert_eq!(text.lines().count(), 3, "{text:?}");
+        for continuation in text.lines().skip(1) {
+            assert!(continuation.starts_with("              "), "{text:?}");
+        }
+        assert!(!text.contains(['\u{1b}', '\t']), "{text:?}");
+    }
 }

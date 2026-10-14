@@ -37,6 +37,14 @@ pub(crate) fn single_line(text: &str) -> String {
         .join(" ")
 }
 
+/// `text` for a multi-line field: control characters stripped, tabs turned to
+/// spaces and every line after the first indented, so a continuation line
+/// cannot pass for a `label  value` line.
+pub(crate) fn indent_continuations(text: &str, indent: usize) -> String {
+    let pad = format!("\n{}", " ".repeat(indent));
+    strip_control(text).replace('\t', " ").replace('\n', &pad)
+}
+
 impl Output {
     /// Nothing to print (for example `hook`, which never writes stdout).
     pub fn empty() -> Self {
