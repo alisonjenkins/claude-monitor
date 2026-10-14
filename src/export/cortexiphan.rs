@@ -401,6 +401,15 @@ fn edge(from: &Record, to: &str, kind: &'static str) -> Record {
 struct Selection {
     projects: Vec<ProjectRow>,
     sessions: Vec<Session>,
+    /// Ids of session rows that could not be read, so are not in the export.
+    skipped: Vec<String>,
+}
+
+/// The export text and the sessions it had to leave out.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Export {
+    pub jsonl: String,
+    pub skipped_sessions: Vec<String>,
 }
 
 fn select(store: &Store, filter: Option<&str>) -> Result<Selection, ExportError> {
@@ -414,26 +423,41 @@ fn select(store: &Store, filter: Option<&str>) -> Result<Selection, ExportError>
         }
     }
     // A row that cannot be read has nothing to export; the rest still do.
-    let mut sessions: Vec<Session> = store
+    let mut sessions = Vec::new();
+    let mut skipped = Vec::new();
+    for row in store
         .list_sessions_lenient()
         .map_err(|source| ExportError::ReadSessions { source })?
-        .into_iter()
-        .filter_map(|row| match row {
-            SessionRow::Readable(session) => Some(*session),
-            SessionRow::Corrupt { .. } => None,
-        })
-        .collect();
+    {
+        match row {
+            SessionRow::Readable(session) => sessions.push(*session),
+            SessionRow::Corrupt { id, .. } => skipped.push(id),
+        }
+    }
     if filter.is_some() {
         let ids: HashSet<&str> = projects.iter().map(|p| p.id.as_str()).collect();
         sessions.retain(|s| s.project_id.as_deref().is_some_and(|id| ids.contains(id)));
     }
-    Ok(Selection { projects, sessions })
+    Ok(Selection {
+        projects,
+        sessions,
+        skipped,
+    })
 }
 
 /// The export as JSON Lines: one record per line, sorted by `(kind, external.id)`,
 /// each key sorted, so two exports of unchanged data are byte-identical.
 pub fn export_jsonl(store: &Store, options: &ExportOptions) -> Result<String, ExportError> {
-    let Selection { projects, sessions } = select(store, options.project.as_deref())?;
+    export_with_report(store, options).map(|export| export.jsonl)
+}
+
+/// [`export_jsonl`] that also reports the corrupt sessions it left out.
+pub fn export_with_report(store: &Store, options: &ExportOptions) -> Result<Export, ExportError> {
+    let Selection {
+        projects,
+        sessions,
+        skipped,
+    } = select(store, options.project.as_deref())?;
     let changes = load_last_changes(store)?;
     let mut records: Vec<Record> = Vec::new();
 
@@ -524,7 +548,10 @@ pub fn export_jsonl(store: &Store, options: &ExportOptions) -> Result<String, Ex
     records.extend(edges);
 
     records.sort_by(|a, b| (a.kind, &a.id).cmp(&(b.kind, &b.id)));
-    Ok(records.iter().map(|r| r.to_line() + "\n").collect())
+    Ok(Export {
+        jsonl: records.iter().map(|r| r.to_line() + "\n").collect(),
+        skipped_sessions: skipped,
+    })
 }
 
 fn task_records(

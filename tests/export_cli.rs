@@ -192,6 +192,54 @@ fn an_empty_store_exports_an_empty_file_and_exits_0() {
     assert_eq!(output.render(false), "");
 }
 
+fn with_a_corrupt_session() -> Fixture {
+    let fix = Fixture::new();
+    fix.project("p1", "alpha", "active", None);
+    fix.session("s1", Some("p1"), |_| {});
+    fix.session("bad", Some("p1"), |_| {});
+    let conn = fix.store.connection();
+    conn.execute_batch("PRAGMA ignore_check_constraints = ON")
+        .unwrap();
+    conn.execute("UPDATE sessions SET state = 'bogus' WHERE id = 'bad'", [])
+        .unwrap();
+    conn.execute_batch("PRAGMA ignore_check_constraints = OFF")
+        .unwrap();
+    sealed(fix)
+}
+
+#[test]
+fn a_corrupt_session_is_named_on_stderr_and_the_export_still_succeeds() {
+    let fix = with_a_corrupt_session();
+    let out = Process::new(env!("CARGO_BIN_EXE_claude-monitor"))
+        .arg("--state-dir")
+        .arg(fix.dir.path())
+        .args(["export", "cortexiphan"])
+        .env("HOSTNAME", "test-box")
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(0));
+    let stderr = String::from_utf8(out.stderr).unwrap();
+    assert!(stderr.contains("skipped 1 corrupt session"), "{stderr}");
+    assert!(stderr.contains("bad"), "{stderr}");
+    let stdout = String::from_utf8(out.stdout).unwrap();
+    assert!(!stdout.contains("\"bad\""), "{stdout}");
+}
+
+#[test]
+fn the_out_summary_lists_the_skipped_sessions() {
+    let fix = with_a_corrupt_session();
+    let target = tempfile::TempDir::new().unwrap();
+    let file = target.path().join("export.jsonl");
+    let output = run_in(
+        export(None, false, Some(file)),
+        &fake().env,
+        Some(fix.dir.path()),
+    )
+    .unwrap();
+    let json: serde_json::Value = serde_json::from_str(&output.render(true)).unwrap();
+    assert_eq!(json["skipped"], serde_json::json!(["bad"]));
+}
+
 #[test]
 fn the_binary_prints_jsonl_with_and_without_json_and_never_refreshes() {
     let fix = sealed(project20());

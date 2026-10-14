@@ -13,7 +13,7 @@ use super::migrate::open_viewer_store;
 use super::Output;
 use crate::env::Env;
 use crate::error::Error;
-use crate::export::cortexiphan::{export_jsonl, ExportError, ExportOptions};
+use crate::export::cortexiphan::{export_with_report, Export, ExportError, ExportOptions};
 
 const HOSTNAME_VAR: &str = "HOSTNAME";
 const UNKNOWN_MACHINE: &str = "unknown";
@@ -80,7 +80,10 @@ pub fn run(env: &Env, state_dir: Option<&Path>, args: ExportArgs) -> Result<Outp
         include_text: args.include_text,
         machine: machine_name(env),
     };
-    let jsonl = export_jsonl(&store, &options).map_err(|error| match error {
+    let Export {
+        jsonl,
+        skipped_sessions,
+    } = export_with_report(&store, &options).map_err(|error| match error {
         ExportError::UnknownProject { .. } => Error::Refused {
             code: "unknown_project",
             message: error.to_string(),
@@ -91,6 +94,13 @@ pub fn run(env: &Env, state_dir: Option<&Path>, args: ExportArgs) -> Result<Outp
             detail: other.to_string(),
         },
     })?;
+    if !skipped_sessions.is_empty() {
+        eprintln!(
+            "claude-monitor: export: skipped {} corrupt session(s), not in the export: {}",
+            skipped_sessions.len(),
+            skipped_sessions.join(", ")
+        );
+    }
     let Some(out) = args.out else {
         return Ok(Output::Raw(jsonl));
     };
@@ -99,7 +109,12 @@ pub fn run(env: &Env, state_dir: Option<&Path>, args: ExportArgs) -> Result<Outp
     let path = out.display().to_string();
     Ok(Output::Dual {
         text: format!("exported {records} records to {path}"),
-        json: json!({ "ok": true, "records": records, "out": path }),
+        json: json!({
+            "ok": true,
+            "records": records,
+            "out": path,
+            "skipped": skipped_sessions,
+        }),
     })
 }
 
