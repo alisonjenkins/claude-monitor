@@ -98,8 +98,8 @@ fn due_takes_the_time_as_an_argument() {
 
 #[test]
 fn a_blocking_wait_fires_when_the_interval_elapses() {
-    let mut net = SafetyNetSource::new(ms(50), SystemMonotonic);
     let started = Instant::now();
+    let mut net = SafetyNetSource::new(ms(50), SystemMonotonic);
 
     assert!(!net.wait(ms(10)), "shorter than the interval times out");
     assert!(net.wait(Duration::from_secs(2)));
