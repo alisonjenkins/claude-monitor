@@ -662,9 +662,21 @@ impl Fs for SystemFs {
             path: path.to_owned(),
             source,
         };
+        use std::os::unix::fs::OpenOptionsExt as _;
+        // O_NONBLOCK so opening a FIFO with no writer returns instead of hanging.
+        let file = std::fs::OpenOptions::new()
+            .read(true)
+            .custom_flags(libc::O_NONBLOCK)
+            .open(path)
+            .map_err(io)?;
+        if !file.metadata().map_err(io)?.is_file() {
+            return Err(EnvError::Failed {
+                operation: "read file",
+                detail: format!("{} is not a regular file", path.display()),
+            });
+        }
         let mut text = String::new();
-        let read = std::fs::File::open(path)
-            .map_err(io)?
+        let read = file
             .take(MAX_READ_BYTES.saturating_add(1))
             .read_to_string(&mut text)
             .map_err(io)?;
@@ -868,5 +880,24 @@ mod tests {
         std::fs::write(&big, vec![b'a'; MAX_READ_BYTES as usize + 1]).unwrap();
         let err = SystemFs.read_to_string(&big).unwrap_err();
         assert!(err.to_string().contains("larger than"), "{err}");
+    }
+
+    #[test]
+    fn system_fs_refuses_a_fifo_instead_of_blocking() {
+        use std::os::unix::ffi::OsStrExt as _;
+        let dir = tempfile::tempdir().unwrap();
+        let fifo = dir.path().join("tasks.md");
+        let c_path = std::ffi::CString::new(fifo.as_os_str().as_bytes()).unwrap();
+        // SAFETY: c_path is a valid NUL-terminated path that outlives the call.
+        assert_eq!(unsafe { libc::mkfifo(c_path.as_ptr(), 0o600) }, 0);
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = tx.send(SystemFs.read_to_string(&fifo));
+        });
+        let result = rx
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .expect("read_to_string blocked on a FIFO");
+        let err = result.unwrap_err();
+        assert!(err.to_string().contains("not a regular file"), "{err}");
     }
 }
