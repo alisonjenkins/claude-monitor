@@ -20,7 +20,7 @@ use crate::error::Error;
 use crate::model::{Session, State};
 use crate::store::sessions::SessionRow;
 use crate::store::Store;
-use crate::text::single_line;
+use crate::text::{inert, single_line};
 
 pub struct RestoreArgs {
     pub all_interrupted: bool,
@@ -206,10 +206,10 @@ fn preview(
                     "would start {} ({}) in {} as tmux {}",
                     single_line(&session.id),
                     plan.mode.as_str(),
-                    single_line(&plan.launch.cwd.display().to_string()),
+                    inert(&plan.launch.cwd.display().to_string()),
                     single_line(&plan.tmux_target())
                 ));
-                lines.push(format!("  run: {}", single_line(&plan.command_line())));
+                lines.push(format!("  run: {}", plan.command_line()));
                 lines.extend(
                     plan.notices
                         .iter()
@@ -224,13 +224,11 @@ fn preview(
                     refusal.code.as_str(),
                     single_line(&refusal.message)
                 ));
-                lines.extend(refusal.alternatives.iter().map(|a| {
-                    format!(
-                        "  instead: {}: {}",
-                        single_line(&a.description),
-                        single_line(&a.command)
-                    )
-                }));
+                lines.extend(
+                    refusal.alternatives.iter().map(|a| {
+                        format!("  instead: {}: {}", single_line(&a.description), a.command)
+                    }),
+                );
                 refuse.push(would_refuse_json(session, refusal));
             }
         }

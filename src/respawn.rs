@@ -14,6 +14,7 @@ use crate::env::{Env, EnvError, SpawnedWindow, Vars};
 use crate::model::{Author, Session};
 use crate::store::events::NewEvent;
 use crate::store::Store;
+use crate::text::shell_word as shell_quote;
 use crate::worktree::Worktree;
 
 /// Why a respawn was refused. Codes are the strings stored in
@@ -887,20 +888,6 @@ fn launch_argv(launch: &Launch) -> Vec<String> {
     argv
 }
 
-/// `word` as one POSIX shell word: unchanged when it holds only characters a
-/// shell never treats specially, else in single quotes.
-fn shell_quote(word: &str) -> String {
-    let plain = !word.is_empty()
-        && word
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || "_@%+=:,./-".contains(c));
-    if plain {
-        word.to_owned()
-    } else {
-        format!("'{}'", word.replace('\'', "'\\''"))
-    }
-}
-
 /// The directory a `git worktree add <dir> <branch>` setup command creates.
 fn worktree_add_target(command: &Launch) -> Option<&Path> {
     match command.args.as_slice() {
@@ -1005,7 +992,7 @@ fn recreate_or_refuse(
         ),
         command: format!(
             "claude-monitor respawn {} --fresh --in {}",
-            session.id,
+            shell_quote(&session.id),
             shell_quote(repo)
         ),
     };
@@ -1048,7 +1035,10 @@ fn recreate_or_refuse(
             },
             Alternative {
                 description: "recreate the worktree and respawn".to_owned(),
-                command: format!("claude-monitor respawn {} --recreate-worktree", session.id),
+                command: format!(
+                    "claude-monitor respawn {} --recreate-worktree",
+                    shell_quote(&session.id)
+                ),
             },
             fresh_in_repo,
         ],

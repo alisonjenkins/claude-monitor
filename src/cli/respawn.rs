@@ -18,7 +18,7 @@ use crate::respawn::{
 };
 pub(super) use crate::respawn::{start_batch, tmux_session_for as tmux_session, PlanFlags};
 use crate::store::Store;
-use crate::text::single_line;
+use crate::text::{inert, single_line};
 
 pub fn run(
     env: &Env,
@@ -130,7 +130,7 @@ fn started_text(items: &[Item], skipped: &[String]) -> String {
                 "started {} ({}) in {} as tmux {} (pane {})",
                 single_line(&item.started.session_id),
                 item.plan.mode.as_str(),
-                single_line(&item.plan.launch.cwd.display().to_string()),
+                inert(&item.plan.launch.cwd.display().to_string()),
                 single_line(&item.plan.tmux_target()),
                 single_line(&item.started.pane_id)
             ));
@@ -157,13 +157,11 @@ fn refusal_text(item: &RefusedItem) -> String {
         item.code,
         single_line(&item.message)
     )];
-    lines.extend(item.alternatives.iter().map(|a| {
-        format!(
-            "  instead: {}: {}",
-            single_line(&a.description),
-            single_line(&a.command)
-        )
-    }));
+    lines.extend(
+        item.alternatives
+            .iter()
+            .map(|a| format!("  instead: {}: {}", single_line(&a.description), a.command)),
+    );
     lines.join("\n")
 }
 

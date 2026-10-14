@@ -48,9 +48,14 @@ impl Rig {
     /// `hostile` appends [`HOSTILE`] to every untrusted field; `ready` makes
     /// the session resumable (its directory and agent state exist).
     fn new(hostile: bool, ready: bool) -> Self {
-        let tail = if hostile { HOSTILE } else { "" };
+        Self::build("/work", if hostile { HOSTILE } else { "" }, ready)
+    }
+
+    /// Like [`Rig::new`] with `tail` appended to every untrusted field and the
+    /// session's directory at `<base>/proj<tail>`.
+    fn build(base: &str, tail: &'static str, ready: bool) -> Self {
         let id = format!("abcd1234{tail}");
-        let cwd = format!("/work/proj{tail}");
+        let cwd = format!("{base}/proj{tail}");
         let fake = FakeEnv::new();
         fake.vars.set("HOME", "/home/u");
         fake.vars.set("USER", "tester");
@@ -73,11 +78,7 @@ impl Rig {
             fake.fs.add_dir(cwd.as_str());
             fake.fs.add_dir("/home/u/.copilot/session-state/agent-1");
         }
-        let note = if hostile {
-            format!("first line{HOSTILE}")
-        } else {
-            "first line".to_owned()
-        };
+        let note = format!("first line{tail}");
         store
             .add_note(
                 claude_monitor::model::OwnerKind::Session,
@@ -501,6 +502,80 @@ fn every_text_mode_command_prints_one_hostile_session_inertly() {
         }
     }
     assert!(failures.is_empty(), "\n{}", failures.join("\n"));
+}
+
+/// Whitespace and control characters that a whitespace collapse would change
+/// inside a quoted path.
+const ODD_TAILS: &[&str] = &["  b", "\tb", "\n\u{1b}[2Jb", "a  \t b\n", "\u{85}b\u{2028}"];
+
+fn restore_lines(rig: &Rig) -> Vec<String> {
+    rig.run(restore(false)).lines().map(str::to_owned).collect()
+}
+
+#[test]
+fn printed_command_lines_stay_one_inert_line_for_odd_paths() {
+    for tail in ODD_TAILS {
+        let benign = restore_lines(&Rig::build("/work", "", true));
+        let odd = restore_lines(&Rig::build("/work", tail, true));
+        let text = odd.join("\n");
+        assert_eq!(odd.len(), benign.len(), "{tail:?} forged a line: {text:?}");
+        assert!(
+            unsafe_char(&text).is_none(),
+            "{tail:?} reached the terminal: {text:?}"
+        );
+        if *tail == "  b" {
+            assert!(odd[0].contains("/work/proj  b "), "collapsed: {:?}", odd[0]);
+        }
+        let run = odd
+            .iter()
+            .find(|line| line.starts_with("  run: "))
+            .unwrap_or_else(|| panic!("{tail:?}: no run line in {text:?}"));
+        assert!(
+            run.chars().all(|c| !c.is_control()
+                && !matches!(c, '\u{2028}' | '\u{2029}' | '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}')),
+            "{tail:?}: run line holds a raw control character: {run:?}"
+        );
+    }
+}
+
+#[test]
+fn the_printed_run_line_cds_into_the_real_directory() {
+    for tail in ODD_TAILS {
+        let base = TempDir::new().unwrap();
+        let base_path = base.path().canonicalize().unwrap();
+        let base_str = base_path.to_str().unwrap();
+        let rig = Rig::build(base_str, tail, true);
+        let real = PathBuf::from(format!("{base_str}/proj{tail}"));
+        std::fs::create_dir_all(&real).unwrap();
+
+        let lines = restore_lines(&rig);
+        let run = lines
+            .iter()
+            .find_map(|line| line.strip_prefix("  run: "))
+            .unwrap_or_else(|| panic!("{tail:?}: no run line in {lines:?}"));
+        let (cd, _) = run
+            .split_once(" && ")
+            .unwrap_or_else(|| panic!("{tail:?}: no `&&` in {run:?}"));
+        assert!(cd.starts_with("cd "), "{tail:?}: {run:?}");
+        let script = format!("{cd} && pwd -P");
+        let out = std::process::Command::new("bash")
+            .arg("-c")
+            .arg(&script)
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "{tail:?}: `{script}` failed: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        let printed = String::from_utf8(out.stdout).unwrap();
+        let printed = printed.strip_suffix('\n').unwrap_or(&printed);
+        assert_eq!(
+            printed,
+            real.to_str().unwrap(),
+            "{tail:?}: `{script}` entered another directory"
+        );
+    }
 }
 
 #[test]
