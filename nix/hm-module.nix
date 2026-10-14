@@ -133,11 +133,20 @@ let
     "chromium"
   ];
   # The command takes one --browser value; `all` is the full default list.
+  # macOS Chrome keeps its keys in the Keychain, not in an NSS database.
   browserSetupTargets =
     let
-      chosen = lib.unique cfg.web.browserSetup.browsers;
+      chosen = lib.unique (
+        lib.filter (b: pkgs.stdenv.hostPlatform.isLinux || b != "chromium") cfg.web.browserSetup.browsers
+      );
     in
-    if lib.sort lib.lessThan chosen == lib.sort lib.lessThan allBrowsers then [ "all" ] else chosen;
+    if
+      pkgs.stdenv.hostPlatform.isLinux
+      && lib.sort lib.lessThan chosen == lib.sort lib.lessThan allBrowsers
+    then
+      [ "all" ]
+    else
+      chosen;
 
   # Activation runs under `set -e`, so the exit status is captured rather than
   # propagated: an in-use profile, a primary password or a missing tool must
@@ -295,10 +304,12 @@ in
         // {
           description = ''
             Run `claude-monitor web setup-browser` on every Home Manager
-            activation (Linux only): it trusts the install's local CA and
-            imports its client certificate into the NSS database of each
-            Firefox and Zen profile and of Chromium, Chrome and Brave
-            (`~/.pki/nssdb`). It is idempotent, backs up `cert9.db` and
+            activation: it trusts the install's local CA and imports its
+            client certificate into the NSS database of each Firefox and Zen
+            profile and, on Linux, of Chromium, Chrome and Brave
+            (`~/.pki/nssdb`). On macOS only Firefox and Zen are set up; Chrome
+            and Safari use the Keychain, so import the certificate from
+            `claude-monitor web client-cert` by hand. It is idempotent, backs up `cert9.db` and
             `key4.db` before the first write to a profile, skips a profile that
             is open or has a primary password, and never fails the activation:
             it prints one line per browser instead. The client key lives in the
@@ -336,7 +347,10 @@ in
           "zen"
           "chromium"
         ];
-        description = "Which browsers' certificate databases to set up.";
+        description = ''
+          Which browsers' certificate databases to set up. "chromium" is
+          ignored on macOS.
+        '';
       };
     };
 
@@ -385,7 +399,7 @@ in
       launchers = cfg.launchers;
     };
 
-    home.activation = lib.mkIf (cfg.web.browserSetup.enable && pkgs.stdenv.hostPlatform.isLinux) {
+    home.activation = lib.mkIf (cfg.web.browserSetup.enable && browserSetupTargets != [ ]) {
       claudeMonitorBrowserSetup = lib.hm.dag.entryAfter [ "writeBoundary" ] browserSetupScript;
     };
 

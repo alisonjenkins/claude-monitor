@@ -594,8 +594,41 @@
                   "zen"
                 ];
               };
+              # On macOS only firefox and zen are set up (Chromium keeps its
+              # keys in the Keychain), whatever the browsers list says.
+              setupDarwin =
+                extra:
+                mkHmConfigWith {
+                  copilot = false;
+                  tmuxHooks = false;
+                  browserSetup = true;
+                  hostSystem = "aarch64-darwin";
+                  inherit extra;
+                };
+              setupDarwinDefault = setupDarwin { };
+              setupDarwinChromiumOnly = setupDarwin {
+                programs.claude-monitor.web.browserSetup.browsers = [ "chromium" ];
+              };
+              darwinSetupProblems =
+                pkgs.lib.optional (
+                  !hasSetup setupDarwinDefault
+                ) "browser setup activation missing on Darwin with browserSetup.enable = true"
+                ++ pkgs.lib.optionals (hasSetup setupDarwinDefault) (
+                  let
+                    text = setupText setupDarwinDefault;
+                    has = pkgs.lib.hasInfix;
+                  in
+                  pkgs.lib.optional (
+                    !(has "claude_monitor_setup_browser firefox" text && has "claude_monitor_setup_browser zen" text)
+                  ) "browser setup on Darwin does not run firefox and zen"
+                  ++ pkgs.lib.optional (
+                    has "chromium" text || has "claude_monitor_setup_browser all" text
+                  ) "browser setup on Darwin mentions chromium"
+                )
+                ++ pkgs.lib.optional (hasSetup setupDarwinChromiumOnly) "browser setup activation generated on Darwin with only chromium chosen";
               browserSetupProblems =
                 pkgs.lib.optional (hasSetup hmConfig) "browser setup activation generated with browserSetup.enable = false"
+                ++ darwinSetupProblems
                 ++ pkgs.lib.optionals pkgs.stdenv.hostPlatform.isLinux (
                   pkgs.lib.optional (
                     !hasSetup setupDefault
