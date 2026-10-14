@@ -193,20 +193,48 @@ impl BootId for SystemBootId {
 
     #[cfg(target_os = "macos")]
     fn current(&self) -> Result<String, EnvError> {
-        let out = Command::new("sysctl")
-            .args(["-n", "kern.bootsessionuuid"])
-            .output()
-            .map_err(|e| EnvError::Failed {
-                operation: "read boot id",
-                detail: e.to_string(),
-            })?;
-        if !out.status.success() {
-            return Err(EnvError::Failed {
-                operation: "read boot id",
-                detail: String::from_utf8_lossy(&out.stderr).trim().to_owned(),
-            });
+        // Read through the syscall: the `sysctl` binary is not on PATH in a
+        // Nix build sandbox.
+        const NAME: &std::ffi::CStr = c"kern.bootsessionuuid";
+        let failed = |what: &str| EnvError::Failed {
+            operation: "read boot id",
+            detail: format!(
+                "sysctlbyname kern.bootsessionuuid ({what}): {}",
+                std::io::Error::last_os_error()
+            ),
+        };
+        let mut len: libc::size_t = 0;
+        // SAFETY: NAME is NUL-terminated and `len` is a valid out-pointer; a
+        // null `oldp` asks only for the required size.
+        let rc = unsafe {
+            libc::sysctlbyname(
+                NAME.as_ptr(),
+                std::ptr::null_mut(),
+                &mut len,
+                std::ptr::null_mut(),
+                0,
+            )
+        };
+        if rc != 0 {
+            return Err(failed("size query"));
         }
-        Ok(String::from_utf8_lossy(&out.stdout).trim().to_owned())
+        let mut buf = vec![0u8; len];
+        // SAFETY: `buf` is writable for `len` bytes and `len` holds its size;
+        // the kernel writes at most that many bytes and updates `len`.
+        let rc = unsafe {
+            libc::sysctlbyname(
+                NAME.as_ptr(),
+                buf.as_mut_ptr().cast(),
+                &mut len,
+                std::ptr::null_mut(),
+                0,
+            )
+        };
+        if rc != 0 {
+            return Err(failed("read"));
+        }
+        buf.truncate(len);
+        sysctl_string("read boot id", &buf)
     }
 
     #[cfg(not(any(target_os = "linux", target_os = "macos")))]
@@ -215,6 +243,24 @@ impl BootId for SystemBootId {
             operation: "read boot id",
         })
     }
+}
+
+/// A string value a `sysctl` call returned: the bytes up to the first NUL.
+/// An empty or non-UTF-8 value is an error, not a boot id.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn sysctl_string(operation: &'static str, buf: &[u8]) -> Result<String, EnvError> {
+    let bytes = buf.split(|b| *b == 0).next().unwrap_or_default();
+    let text = std::str::from_utf8(bytes).map_err(|e| EnvError::Failed {
+        operation,
+        detail: format!("sysctl value is not UTF-8: {e}"),
+    })?;
+    if text.is_empty() {
+        return Err(EnvError::Failed {
+            operation,
+            detail: "sysctl value is empty".to_owned(),
+        });
+    }
+    Ok(text.to_owned())
 }
 
 /// Field 22 (`starttime`, clock ticks after boot) of a `/proc/<pid>/stat` line.
@@ -776,6 +822,23 @@ mod tests {
         let now = SystemClock.now();
         assert!(chrono::DateTime::parse_from_rfc3339(&now).is_ok(), "{now}");
         assert!(now.ends_with('Z'));
+    }
+
+    #[test]
+    fn sysctl_string_stops_at_the_trailing_nul() {
+        let uuid = "6F1D2C3A-0B4E-4C5D-8E9F-A1B2C3D4E5F6";
+        let mut buf = uuid.as_bytes().to_vec();
+        buf.push(0);
+        assert_eq!(sysctl_string("op", &buf).unwrap(), uuid);
+        assert_eq!(sysctl_string("op", uuid.as_bytes()).unwrap(), uuid);
+    }
+
+    #[test]
+    fn sysctl_string_rejects_empty_and_non_utf8_values() {
+        assert!(sysctl_string("op", b"").is_err());
+        assert!(sysctl_string("op", b"\0").is_err());
+        let err = sysctl_string("op", &[0xff, 0xfe, 0]).unwrap_err();
+        assert!(err.to_string().contains("not UTF-8"), "{err}");
     }
 
     #[cfg(target_os = "linux")]
