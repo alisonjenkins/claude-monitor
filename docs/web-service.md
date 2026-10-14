@@ -70,13 +70,19 @@ from that CA, and login still applies on top.
   each activation it runs `claude-monitor web setup-browser`, which trusts the
   CA and imports the client certificate into Firefox, Zen and Chromium
   profiles. Options: `browserSetup.autoSelect`, `browserSetup.browsers`.
-- **macOS.** Not automated: `web setup-browser` is NSS-only and the module
-  runs it on Linux only. By hand, run `claude-monitor web ca` and import the
-  CA certificate it names into your browser or keychain as a trusted
-  authority. With `serve.mtls = true`, run `claude-monitor web client-cert
-  [--out FILE] [--password-file FILE]` to write a PKCS#12 bundle (default
-  `<state-dir>/tls/client.p12`, mode 0600; the generated password is printed
-  once) and import that file, for example into Keychain Access.
+- **macOS, Firefox and Zen.** The same option works: the activation sets up
+  the profiles under `~/Library/Application Support/Firefox` and
+  `~/Library/Application Support/zen` (plus the Linux-style paths, if present).
+  `"chromium"` in `browserSetup.browsers` is ignored, and the activation is
+  skipped when nothing else is listed. Without Home Manager, run
+  `claude-monitor web setup-browser --browser firefox` (or `zen`) with
+  `certutil` and `pk12util` on `PATH`.
+- **macOS, Chrome and Safari.** Not automated: they use the Keychain, not an
+  NSS database. Run `claude-monitor web ca` and import the CA certificate it
+  names into Keychain Access as a trusted authority. With `serve.mtls = true`,
+  run `claude-monitor web client-cert [--out FILE] [--password-file FILE]` to
+  write a PKCS#12 bundle (default `<state-dir>/tls/client.p12`, mode 0600; the
+  generated password is printed once) and import that file into the Keychain.
 
 ## Threat model
 

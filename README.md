@@ -70,7 +70,7 @@ notification fires when a session starts needing you.
 | `summarize <target>` | Ask a model on this machine for a short summary; never automatic |
 | `serve` | Serve the web view over TLS on loopback; prints a single-use login URL |
 | `web ca\|login\|client-cert` | Show the CA to trust, get a fresh login URL from the running server, write a client certificate for `serve --mtls` |
-| `web setup-browser` | Trust the CA and import the client certificate into Firefox, Zen and Chromium profiles for you; idempotent, `--dry-run` first |
+| `web setup-browser` | Trust the CA and import the client certificate into Firefox, Zen and (Linux) Chromium profiles for you; idempotent, `--dry-run` first |
 | `progress [session]` | Show a session's plan progress and the file it comes from |
 | `progress bind <owner> [file]` | Choose the plan a session's progress comes from |
 | `project add\|rename\|set-status` | Create, rename or set the status of a project |
@@ -216,8 +216,11 @@ prints what would change, and writes nothing, not even the CA.
 
 - **What it touches.** Firefox profiles from `profiles.ini` under
   `~/.mozilla/firefox` and `~/.config/mozilla/firefox`, Zen profiles under
-  `~/.zen` and `~/.config/zen`, and the Chromium, Chrome and Brave database
-  `~/.pki/nssdb`; `--profile PATH` adds any other NSS directory. In each it
+  `~/.zen` and `~/.config/zen`, on macOS the profiles under `~/Library/Application
+  Support/Firefox` and `~/Library/Application Support/zen`, and the Chromium,
+  Chrome and Brave database `~/.pki/nssdb` (Linux; macOS Chrome and Safari use
+  the Keychain, so import the `web client-cert` bundle there by hand);
+  `--profile PATH` adds any other NSS directory. In each it
   trusts the CA for web sites (nickname `claude-monitor local CA`) and imports
   the client certificate (nickname `CN=claude-monitor web client`), only when
   the stored copy is missing or its SHA-256 fingerprint differs; a changed
@@ -257,15 +260,15 @@ prints what would change, and writes nothing, not even the CA.
   `/etc/opt/chrome/policies/managed/`, Brave: `/etc/brave/policies/managed/`);
   on NixOS set `programs.chromium.extraOpts.AutoSelectCertificateForUrls`.
 - **Home Manager.** `programs.claude-monitor.web.browserSetup.enable = true;`
-  runs it on every activation (Linux), with `autoSelect` and `browsers`
-  options. It never fails the activation: an open profile or a missing tool
+  runs it on every activation (Linux: Firefox, Zen, Chromium; macOS: Firefox
+  and Zen only), with `autoSelect` and `browsers` options. It never fails the activation: an open profile or a missing tool
   prints one line instead.
 - **Keep it running.** `programs.claude-monitor.serve.enable = true;` runs
   `claude-monitor serve` as a background user service on Linux (systemd) and
   macOS (launchd), with `serve.port` and `serve.mtls = true` for `--mtls`.
   The login URL goes to the journal or to
   `~/Library/Logs/claude-monitor-serve.log`; `claude-monitor web login` prints
-  a fresh one. Browser setup stays Linux-only. See
+  a fresh one. See
   [docs/web-service.md](docs/web-service.md).
 - **The limit.** The client key ends up in the browser profile, readable by
   anything running as your user. This makes the setup painless; it does not
