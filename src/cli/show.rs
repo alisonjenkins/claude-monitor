@@ -113,7 +113,7 @@ pub fn run(env: &Env, state_dir: Option<&Path>, id: &str) -> Result<Output, Erro
             .chain(detail.generated_lines())
         {
             text.push('\n');
-            text.push_str(&extra);
+            text.push_str(&strip_control(&extra));
         }
     }
     Ok(Output::Dual { text, json })

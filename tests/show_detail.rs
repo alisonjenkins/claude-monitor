@@ -294,3 +294,35 @@ fn text_without_a_plan_shows_no_progress_line() {
     rig.session("s2", "main");
     assert!(!rig.show_text("s2").contains("progress"));
 }
+
+#[test]
+fn text_strips_terminal_control_from_plan_items_and_summaries() {
+    let rig = rig();
+    rig.session("s1", "main");
+    let tasks = rig.write(
+        "specs/001-x/tasks.md",
+        "## Phase \u{1b}[2J1\n- [ ] T001 \u{1b}]0;x\u{7}evil \u{202e}item\n",
+    );
+    rig.bind("s1", &tasks);
+    rig.store()
+        .insert_model_summary(
+            "session",
+            "s1",
+            "sum \u{1b}[2J\u{2028}mary",
+            "m\u{1b}[2J",
+            T1,
+        )
+        .unwrap();
+
+    let text = rig.show_text("s1");
+
+    for bad in ['\u{1b}', '\u{7}', '\u{202e}', '\u{2028}'] {
+        assert!(
+            !text.contains(bad),
+            "{bad:?} reached the terminal: {text:?}"
+        );
+    }
+    assert!(text.contains("evil"), "{text}");
+    assert!(text.contains("mary"), "{text}");
+    assert!(rig.show_json("s1").to_string().contains("evil"));
+}

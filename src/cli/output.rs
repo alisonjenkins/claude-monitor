@@ -14,12 +14,17 @@ pub enum Output {
     Raw(String),
 }
 
-/// `text` without control characters (ESC, BEL, C1) so session text cannot
-/// drive the terminal; `\n` and `\t` stay for multi-line fields. Text mode
+/// `text` without control characters (ESC, BEL, C1), line/paragraph
+/// separators and bidi overrides, so session text cannot drive the terminal or
+/// reorder what is shown; `\n` and `\t` stay for multi-line fields. Text mode
 /// only: `--json` escapes them already.
 pub(crate) fn strip_control(text: &str) -> String {
     text.chars()
-        .filter(|c| !c.is_control() || matches!(c, '\n' | '\t'))
+        .filter(|c| {
+            matches!(c, '\n' | '\t')
+                || !(c.is_control()
+                    || matches!(c, '\u{2028}' | '\u{2029}' | '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}'))
+        })
         .collect()
 }
 
