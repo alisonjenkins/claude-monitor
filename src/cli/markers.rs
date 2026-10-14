@@ -15,6 +15,7 @@ use crate::error::Error;
 use crate::model::OwnerKind;
 use crate::store::markers::Marker;
 use crate::store::Store;
+use crate::text::single_line;
 
 /// What a `<session|project>` argument names.
 pub(super) enum Target {
@@ -76,7 +77,7 @@ pub fn run_note(
         .add_note(kind, &owner_id, body, &env.clock.now(), &user_author(env))
         .map_err(|e| store_error_message("add note", Some(store.path()), &e))?;
     Ok(Output::Dual {
-        text: format!("noted on {} {owner_id}", kind.as_str()),
+        text: format!("noted on {} {}", kind.as_str(), single_line(&owner_id)),
         json: json!({ "ok": true, "note": note }),
     })
 }
@@ -91,11 +92,11 @@ pub(super) fn dismiss_question(
     let store = open_viewer_store(env, state_dir)?;
     Ok(match resolve_target(&store, target)? {
         Target::Session(id) => Question {
-            action: format!("Dismiss session {id}"),
+            action: format!("Dismiss session {}", single_line(&id)),
             consequence: "it is hidden from the default views; nothing is deleted".to_owned(),
         },
         Target::Project { name, .. } => Question {
-            action: format!("Dismiss project {name}"),
+            action: format!("Dismiss project {}", single_line(&name)),
             consequence: "it is archived and hidden from the default views; nothing is deleted"
                 .to_owned(),
         },
@@ -129,6 +130,7 @@ pub fn run_marker(
         (Marker::Dismissed, true) => "dismissed",
         (Marker::Dismissed, false) => "undismissed",
     };
+    let shown = single_line(&shown);
     let text = if changed {
         format!("{verb} {kind} {shown}")
     } else {

@@ -11,6 +11,7 @@ use crate::env::Env;
 use crate::error::Error;
 use crate::reconcile::{reconcile, ReconcileReport, Scope};
 use crate::store::{resolve_state_dir, StateDirEnv, Store, StoreOptions};
+use crate::text::single_line;
 
 pub fn run(
     env: &Env,
@@ -59,7 +60,7 @@ fn text(report: &ReconcileReport) -> String {
         report
             .degraded
             .iter()
-            .map(|d| format!("skipped {}: {}", d.id, d.error)),
+            .map(|d| format!("skipped {}: {}", single_line(&d.id), single_line(&d.error))),
     );
     lines.join("\n")
 }

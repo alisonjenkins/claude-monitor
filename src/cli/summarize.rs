@@ -14,9 +14,13 @@ use crate::model::OwnerKind;
 use crate::store::summaries::GENERATED_LABEL;
 use crate::store::Store;
 use crate::summary::{project_session_line, ConfigError, ModelClient, MODEL_VAR, URL_VAR};
+use crate::text::{indent_continuations, single_line};
 
 const OWNER_KIND_SESSION: &str = "session";
 const OWNER_KIND_PROJECT: &str = "project";
+/// The model-written body sits under its heading, so a line in it cannot pass
+/// for a heading of its own.
+const SUMMARY_INDENT: usize = 2;
 
 fn refused(code: &'static str, message: String) -> Error {
     Error::Refused { code, message }
@@ -84,7 +88,10 @@ fn summarize_project(
     if notes.is_empty() && lines.is_empty() {
         return Err(refused(
             "nothing_to_summarize",
-            format!("project {name} has no note and no session with recorded text"),
+            format!(
+                "project {} has no note and no session with recorded text",
+                single_line(name)
+            ),
         ));
     }
     let body = client
@@ -100,10 +107,11 @@ fn summarize_project(
         )
         .map_err(|e| read("store summary", &e))?;
     let text = format!(
-        "Summary of project {name} ({GENERATED_LABEL} by {}, {}):\n{}",
-        client.model(),
+        "Summary of project {} ({GENERATED_LABEL} by {}, {}):\n  {}",
+        single_line(name),
+        single_line(client.model()),
         made.created_at,
-        made.body
+        indent_continuations(&made.body, SUMMARY_INDENT)
     );
     let json = json!({
         "project": name,
@@ -131,7 +139,10 @@ fn summarize_session(
     if session.task_description.is_none() && session.left_off.is_none() {
         return Err(refused(
             "nothing_to_summarize",
-            format!("session {id} has no recorded task or left-off text"),
+            format!(
+                "session {} has no recorded task or left-off text",
+                single_line(&id)
+            ),
         ));
     }
     let body = client
@@ -150,10 +161,11 @@ fn summarize_session(
         )
         .map_err(|e| store_error_message("store summary", Some(store.path()), &e))?;
     let text = format!(
-        "Summary of {id} ({GENERATED_LABEL} by {}, {}):\n{}",
-        client.model(),
+        "Summary of {} ({GENERATED_LABEL} by {}, {}):\n  {}",
+        single_line(&id),
+        single_line(client.model()),
         made.created_at,
-        made.body
+        indent_continuations(&made.body, SUMMARY_INDENT)
     );
     let json = json!({
         "session": id,

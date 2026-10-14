@@ -12,6 +12,7 @@ use super::Output;
 use crate::env::Env;
 use crate::error::Error;
 use crate::store::markers::MarkersError;
+use crate::text::single_line;
 
 pub fn run(
     env: &Env,
@@ -42,7 +43,7 @@ pub fn run(
     let report = result.map_err(|error| match error {
         MarkersError::NotFinished { .. } => Error::Refused {
             code: "not_finished",
-            message: error.to_string(),
+            message: single_line(&error.to_string()),
         },
         MarkersError::UnknownSession { .. } => Error::Refused {
             code: "unknown_session",

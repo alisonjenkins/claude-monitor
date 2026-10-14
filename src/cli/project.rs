@@ -13,6 +13,7 @@ use crate::env::Env;
 use crate::error::Error;
 use crate::model::{Project, ProjectStatus};
 use crate::store::projects::ProjectsError;
+use crate::text::single_line;
 
 /// Names the `group` command reads as "no project".
 pub const NO_PROJECT: &str = "-";
@@ -50,7 +51,7 @@ fn project_output(verb: &str, project: &Project) -> Output {
     Output::Dual {
         text: format!(
             "{verb} project {} ({})",
-            project.name,
+            single_line(&project.name),
             project.status.as_str()
         ),
         json: json!({ "ok": true, "project": project }),
@@ -130,8 +131,9 @@ pub fn run_group(
         .map_err(|e| project_error("group sessions", &e))?;
     let text = match target {
         Some(name) => format!(
-            "{} in project {name} ({} already there)",
+            "{} in project {} ({} already there)",
             report.changed.len(),
+            single_line(name),
             report.unchanged.len()
         ),
         None => format!(

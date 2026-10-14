@@ -17,6 +17,7 @@ use crate::export::links::{
 };
 use crate::model::OwnerKind;
 use crate::store::links::NewLink;
+use crate::text::single_line;
 
 fn require_number(what: &str, value: &str) -> Result<(), Error> {
     if !value.is_empty() && value.bytes().all(|b| b.is_ascii_digit()) {
@@ -62,7 +63,11 @@ pub fn run_link(
             &user_author(env),
         )
         .map_err(|e| store_error_message("add link", Some(store.path()), &e))?;
-    let what = format!("{} {owner_id} to node {node_id}", owner_kind.as_str());
+    let what = format!(
+        "{} {} to node {node_id}",
+        owner_kind.as_str(),
+        single_line(&owner_id)
+    );
     let text = if added.created {
         format!("linked {what}")
     } else {
@@ -83,17 +88,23 @@ fn describe(check: &LinkCheck) -> String {
     let at = format!(
         "{} {} -> node {}",
         link.owner_kind.as_str(),
-        link.owner_id,
-        link.cortex_node_id
+        single_line(&link.owner_id),
+        single_line(&link.cortex_node_id)
     );
     match &check.outcome {
-        Outcome::Agree { status } => format!("agree        {at} ({status})"),
+        Outcome::Agree { status } => format!("agree        {at} ({})", single_line(status)),
         Outcome::Disagree { local, remote } => {
-            format!("DISAGREE     {at}: local {local}, remote {remote}")
+            format!(
+                "DISAGREE     {at}: local {}, remote {}",
+                single_line(local),
+                single_line(remote)
+            )
         }
         Outcome::NoRemoteStatus => format!("no status    {at}: the remote node has no status"),
         Outcome::OwnerMissing => format!("owner gone   {at}: no such {}", link.owner_kind.as_str()),
-        Outcome::Unreachable { reason } => format!("unreachable  {at}: {reason}"),
+        Outcome::Unreachable { reason } => {
+            format!("unreachable  {at}: {}", single_line(reason))
+        }
     }
 }
 
@@ -105,7 +116,7 @@ pub fn run_links_check(env: &Env, state_dir: Option<&Path>) -> Result<Output, Er
         .map_err(|e| store_error_message("check links", Some(store.path()), &e))?;
     let checks = match result {
         Check::Skipped { reason } => {
-            let message = format!("links check skipped: {reason}");
+            let message = format!("links check skipped: {}", single_line(&reason));
             return Ok(Output::Dual {
                 text: message,
                 json: json!({ "ok": true, "checked": false, "skipped": reason, "links": [] }),
@@ -146,8 +157,8 @@ pub(super) fn unlink_question(
     require_number("a node id", node_id)?;
     let store = open_viewer_store(env, state_dir)?;
     let (kind, shown) = match resolve_target(&store, owner)? {
-        Target::Session(id) => ("session", id),
-        Target::Project { name, .. } => ("project", name),
+        Target::Session(id) => ("session", single_line(&id)),
+        Target::Project { name, .. } => ("project", single_line(&name)),
     };
     Ok(Question {
         action: format!("Unlink {kind} {shown} from node {node_id}"),
@@ -173,7 +184,11 @@ pub fn run_unlink(
             &user_author(env),
         )
         .map_err(|e| store_error_message("remove link", Some(store.path()), &e))?;
-    let what = format!("{} {owner_id} and node {node_id}", owner_kind.as_str());
+    let what = format!(
+        "{} {} and node {node_id}",
+        owner_kind.as_str(),
+        single_line(&owner_id)
+    );
     let text = if changed {
         format!("unlinked {what}")
     } else {
