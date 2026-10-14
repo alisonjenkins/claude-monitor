@@ -10,6 +10,7 @@ use std::process::Command;
 use serde_json::json;
 
 use super::migrate::open_viewer_store;
+use super::output::single_line;
 use super::Output;
 use crate::env::Env;
 use crate::error::Error;
@@ -73,6 +74,17 @@ fn write_atomically(path: &Path, text: &str) -> Result<(), Error> {
     })
 }
 
+fn skipped_warning(ids: &[String]) -> String {
+    format!(
+        "claude-monitor: export: skipped {} corrupt session(s), not in the export: {}",
+        ids.len(),
+        ids.iter()
+            .map(|id| single_line(id))
+            .collect::<Vec<_>>()
+            .join(", ")
+    )
+}
+
 pub fn run(env: &Env, state_dir: Option<&Path>, args: ExportArgs) -> Result<Output, Error> {
     let store = open_viewer_store(env, state_dir)?;
     let options = ExportOptions {
@@ -95,11 +107,7 @@ pub fn run(env: &Env, state_dir: Option<&Path>, args: ExportArgs) -> Result<Outp
         },
     })?;
     if !skipped_sessions.is_empty() {
-        eprintln!(
-            "claude-monitor: export: skipped {} corrupt session(s), not in the export: {}",
-            skipped_sessions.len(),
-            skipped_sessions.join(", ")
-        );
+        eprintln!("{}", skipped_warning(&skipped_sessions));
     }
     let Some(out) = args.out else {
         return Ok(Output::Raw(jsonl));
@@ -126,6 +134,15 @@ mod tests {
 
     fn mode_of(path: &Path) -> u32 {
         std::fs::metadata(path).unwrap().permissions().mode() & 0o777
+    }
+
+    #[test]
+    fn a_hostile_session_id_cannot_forge_a_line_or_drive_the_terminal() {
+        let ids = vec!["x\n\u{1b}[2Jclaude-monitor: forged\ty".to_owned(), "ok".to_owned()];
+        let warning = skipped_warning(&ids);
+        assert_eq!(warning.lines().count(), 1, "{warning:?}");
+        assert!(!warning.contains(['\u{1b}', '\t']), "{warning:?}");
+        assert!(warning.ends_with("x [2Jclaude-monitor: forged y, ok"), "{warning:?}");
     }
 
     #[test]

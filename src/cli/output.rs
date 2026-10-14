@@ -28,6 +28,15 @@ pub(crate) fn strip_control(text: &str) -> String {
         .collect()
 }
 
+/// `text` as one line: control characters stripped, every run of whitespace
+/// (newline and tab included) collapsed to a single space.
+pub(crate) fn single_line(text: &str) -> String {
+    strip_control(text)
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 impl Output {
     /// Nothing to print (for example `hook`, which never writes stdout).
     pub fn empty() -> Self {
