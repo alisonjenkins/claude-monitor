@@ -2,6 +2,7 @@
 //! set so a headless watcher and an open dashboard say the same thing.
 
 use crate::model::State;
+use crate::text::single_line;
 
 pub const SUMMARY: &str = "Claude Code";
 
@@ -23,5 +24,5 @@ pub fn state_label(state: State) -> &'static str {
 
 /// The notification body: `<project>: <STATE>`.
 pub fn body(project: &str, state: State) -> String {
-    format!("{project}: {}", state_label(state))
+    format!("{}: {}", single_line(project), state_label(state))
 }

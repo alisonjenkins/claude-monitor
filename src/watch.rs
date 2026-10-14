@@ -15,6 +15,7 @@ use crate::notify::{self, is_notifiable};
 use crate::refresh::{refresh, RefreshReport};
 use crate::store::sessions::SessionRow;
 use crate::store::Store;
+use crate::text::single_line;
 
 const SHORT_ID_CHARS: usize = 8;
 
@@ -34,10 +35,15 @@ pub fn state_changes(
             continue;
         }
         let detail = before.map_or_else(|| "new".to_owned(), |state| format!("was {state}"));
-        let id: String = session.id.chars().take(SHORT_ID_CHARS).collect();
+        let id: String = single_line(&session.id)
+            .chars()
+            .take(SHORT_ID_CHARS)
+            .collect();
         lines.push(format!(
             "{at} {} {id} {} ({detail}) {}",
-            session.agent_kind, session.state, session.cwd
+            single_line(&session.agent_kind),
+            session.state,
+            single_line(&session.cwd)
         ));
     }
     lines
@@ -65,14 +71,15 @@ pub fn notifications(
 
 /// The repository name, else the last part of the working directory.
 fn project_name(session: &Session) -> String {
-    [session.repo_root.as_deref(), Some(session.cwd.as_str())]
+    let name = [session.repo_root.as_deref(), Some(session.cwd.as_str())]
         .into_iter()
         .flatten()
         .find_map(|path| Path::new(path).file_name())
         .map_or_else(
             || session.id.clone(),
             |name| name.to_string_lossy().into_owned(),
-        )
+        );
+    single_line(&name)
 }
 
 /// Refreshes on every wake of `built`'s sources and writes a line per state
@@ -92,7 +99,7 @@ pub fn watch(
     let mut report_pass = |report: &RefreshReport| {
         let warning = report.warnings.join("; ");
         if !warning.is_empty() && last_warning.as_deref() != Some(warning.as_str()) {
-            let _ = writeln!(err, "warning: {warning}");
+            let _ = writeln!(err, "warning: {}", single_line(&warning));
         }
         last_warning = Some(warning);
         let Ok(rows) = store.list_sessions_lenient() else {
@@ -110,7 +117,11 @@ pub fn watch(
                 .notifier
                 .send(notify::SUMMARY, &notify::body(&project, state))
             {
-                let _ = writeln!(err, "warning: notification failed: {error}");
+                let _ = writeln!(
+                    err,
+                    "warning: notification failed: {}",
+                    single_line(&error.to_string())
+                );
             }
         }
         for line in state_changes(&mut previous, &sessions, &env.clock.now(), first) {
@@ -144,4 +155,22 @@ pub fn watch(
             report_pass(&report);
         },
     );
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used, clippy::expect_used, clippy::indexing_slicing)]
+    use super::*;
+
+    #[test]
+    fn a_hostile_cwd_cannot_forge_a_state_change_line() {
+        let cwd = "/x\n2026-01-01T00:00:00Z claude abcd1234 finished (was working) /y\u{1b}[2J";
+        let mut session = Session::new("abcd1234", "claude", "a", cwd, "2026-10-12T00:00:00Z");
+        session.state = State::Working;
+        let mut previous = BTreeMap::new();
+        let lines = state_changes(&mut previous, &[session], "2026-10-12T00:00:01Z", false);
+        assert_eq!(lines.len(), 1);
+        assert_eq!(lines[0].lines().count(), 1, "{:?}", lines[0]);
+        assert!(!lines[0].contains('\u{1b}'), "{:?}", lines[0]);
+    }
 }
