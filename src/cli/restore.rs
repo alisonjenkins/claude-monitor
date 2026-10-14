@@ -20,6 +20,7 @@ use crate::error::Error;
 use crate::model::{Session, State};
 use crate::store::sessions::SessionRow;
 use crate::store::Store;
+use crate::text::single_line;
 
 pub struct RestoreArgs {
     pub all_interrupted: bool,
@@ -203,33 +204,42 @@ fn preview(
             Ok(plan) => {
                 lines.push(format!(
                     "would start {} ({}) in {} as tmux {}",
-                    session.id,
+                    single_line(&session.id),
                     plan.mode.as_str(),
-                    plan.launch.cwd.display(),
-                    plan.tmux_target()
+                    single_line(&plan.launch.cwd.display().to_string()),
+                    single_line(&plan.tmux_target())
                 ));
-                lines.push(format!("  run: {}", plan.command_line()));
-                lines.extend(plan.notices.iter().map(|n| format!("  note: {n}")));
+                lines.push(format!("  run: {}", single_line(&plan.command_line())));
+                lines.extend(
+                    plan.notices
+                        .iter()
+                        .map(|n| format!("  note: {}", single_line(n))),
+                );
                 start.push(would_start_json(session, plan));
             }
             Err(refusal) => {
                 lines.push(format!(
                     "would refuse {}: {}: {}",
-                    session.id,
+                    single_line(&session.id),
                     refusal.code.as_str(),
-                    refusal.message
+                    single_line(&refusal.message)
                 ));
-                lines.extend(
-                    refusal
-                        .alternatives
-                        .iter()
-                        .map(|a| format!("  instead: {}: {}", a.description, a.command)),
-                );
+                lines.extend(refusal.alternatives.iter().map(|a| {
+                    format!(
+                        "  instead: {}: {}",
+                        single_line(&a.description),
+                        single_line(&a.command)
+                    )
+                }));
                 refuse.push(would_refuse_json(session, refusal));
             }
         }
     }
-    lines.extend(skipped.iter().map(|id| format!("skipping {id}")));
+    lines.extend(
+        skipped
+            .iter()
+            .map(|id| format!("skipping {}", single_line(id))),
+    );
     if planned.is_empty() {
         lines.push("nothing to restore".to_owned());
     } else {

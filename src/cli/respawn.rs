@@ -18,6 +18,7 @@ use crate::respawn::{
 };
 pub(super) use crate::respawn::{start_batch, tmux_session_for as tmux_session, PlanFlags};
 use crate::store::Store;
+use crate::text::single_line;
 
 pub fn run(
     env: &Env,
@@ -127,29 +128,42 @@ fn started_text(items: &[Item], skipped: &[String]) -> String {
         if let Item::Started(item) = item {
             lines.push(format!(
                 "started {} ({}) in {} as tmux {} (pane {})",
-                item.started.session_id,
+                single_line(&item.started.session_id),
                 item.plan.mode.as_str(),
-                item.plan.launch.cwd.display(),
-                item.plan.tmux_target(),
-                item.started.pane_id
+                single_line(&item.plan.launch.cwd.display().to_string()),
+                single_line(&item.plan.tmux_target()),
+                single_line(&item.started.pane_id)
             ));
-            lines.extend(item.plan.notices.iter().map(|n| format!("  note: {n}")));
+            lines.extend(
+                item.plan
+                    .notices
+                    .iter()
+                    .map(|n| format!("  note: {}", single_line(n))),
+            );
         }
     }
-    lines.extend(skipped.iter().map(|id| format!("skipped {id}")));
+    lines.extend(
+        skipped
+            .iter()
+            .map(|id| format!("skipped {}", single_line(id))),
+    );
     lines.join("\n")
 }
 
 fn refusal_text(item: &RefusedItem) -> String {
     let mut lines = vec![format!(
         "{}: {}: {}",
-        item.session_id, item.code, item.message
+        single_line(&item.session_id),
+        item.code,
+        single_line(&item.message)
     )];
-    lines.extend(
-        item.alternatives
-            .iter()
-            .map(|a| format!("  instead: {}: {}", a.description, a.command)),
-    );
+    lines.extend(item.alternatives.iter().map(|a| {
+        format!(
+            "  instead: {}: {}",
+            single_line(&a.description),
+            single_line(&a.command)
+        )
+    }));
     lines.join("\n")
 }
 
