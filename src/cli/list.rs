@@ -6,7 +6,7 @@ use chrono::DateTime;
 use serde_json::json;
 
 use super::migrate::{open_viewer_store, store_error_message};
-use super::output::strip_control;
+use super::output::single_line;
 use super::Output;
 use crate::env::Env;
 use crate::error::Error;
@@ -124,11 +124,8 @@ pub(crate) fn age(now: &str, then: &str) -> String {
 }
 
 fn shorten(text: &str) -> String {
-    let single_line = strip_control(text)
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ");
-    let mut chars = single_line.chars();
+    let text = single_line(text);
+    let mut chars = text.chars();
     let head: String = chars.by_ref().take(TASK_CHARS).collect();
     if chars.next().is_some() {
         format!("{head}…")
@@ -139,14 +136,17 @@ fn shorten(text: &str) -> String {
 
 fn location(entry: &OverviewEntry) -> String {
     match (&entry.repo, &entry.branch) {
-        (Some(repo), Some(branch)) => strip_control(&format!("{repo}/{branch}")),
-        (Some(repo), None) => strip_control(repo),
-        (None, _) => strip_control(&entry.cwd),
+        (Some(repo), Some(branch)) => single_line(&format!("{repo}/{branch}")),
+        (Some(repo), None) => single_line(repo),
+        (None, _) => single_line(&entry.cwd),
     }
 }
 
 fn line(entry: &OverviewEntry, now: &str) -> String {
-    let id: String = entry.id.chars().take(SHORT_ID_CHARS).collect();
+    let id: String = single_line(&entry.id)
+        .chars()
+        .take(SHORT_ID_CHARS)
+        .collect();
     let task = entry
         .error
         .as_deref()
@@ -167,4 +167,75 @@ fn line(entry: &OverviewEntry, now: &str) -> String {
     )
     .trim_end()
     .to_owned()
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used, clippy::expect_used)]
+    use super::*;
+
+    fn entry() -> OverviewEntry {
+        OverviewEntry {
+            id: "abcd1234efgh".to_owned(),
+            agent_kind: "claude".to_owned(),
+            agent_session_id: "s".to_owned(),
+            repo: None,
+            branch: None,
+            cwd: "/work".to_owned(),
+            state: State::Working,
+            running: true,
+            last_activity_at: "2026-01-01T00:00:00Z".to_owned(),
+            task_description: None,
+            left_off: None,
+            project: None,
+            flags: Vec::new(),
+            section: SectionName::Active,
+            error: None,
+        }
+    }
+
+    const NOW: &str = "2026-01-01T00:00:01Z";
+
+    fn one_clean_row(rendered: &str) {
+        assert_eq!(rendered.lines().count(), 1, "{rendered:?}");
+        assert!(!rendered.contains(['\t', '\u{1b}']), "{rendered:?}");
+    }
+
+    #[test]
+    fn a_newline_in_the_cwd_cannot_forge_a_row() {
+        let mut e = entry();
+        e.cwd = "a\nabcd1234 running 1s x/y".to_owned();
+        one_clean_row(&line(&e, NOW));
+    }
+
+    #[test]
+    fn a_newline_in_the_branch_cannot_forge_a_row() {
+        let mut e = entry();
+        e.repo = Some("repo".to_owned());
+        e.branch = Some("b\nabcd1234 running 1s x/y".to_owned());
+        one_clean_row(&line(&e, NOW));
+    }
+
+    #[test]
+    fn a_newline_in_the_repo_cannot_forge_a_row() {
+        let mut e = entry();
+        e.repo = Some("r\nabcd1234 running 1s x/y".to_owned());
+        one_clean_row(&line(&e, NOW));
+    }
+
+    #[test]
+    fn a_hostile_id_cannot_forge_a_row() {
+        let mut e = entry();
+        e.id = "a\nb\tc\u{1b}[2Jdef".to_owned();
+        one_clean_row(&line(&e, NOW));
+    }
+
+    #[test]
+    fn hostile_task_and_error_text_stay_on_one_line() {
+        let mut e = entry();
+        e.task_description = Some("t\nx".to_owned());
+        one_clean_row(&line(&e, NOW));
+        e.error = Some("e\n\tx".to_owned());
+        one_clean_row(&line(&e, NOW));
+    }
 }
