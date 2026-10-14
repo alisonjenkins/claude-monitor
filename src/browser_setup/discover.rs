@@ -100,12 +100,18 @@ impl Roots {
     }
 
     fn gecko_roots(&self, browser: Browser) -> Vec<PathBuf> {
+        let app_support = self.home.join("Library").join("Application Support");
         match browser {
             Browser::Firefox => vec![
                 self.home.join(".mozilla").join("firefox"),
                 self.xdg_config.join("mozilla").join("firefox"),
+                app_support.join("Firefox"),
             ],
-            Browser::Zen => vec![self.home.join(".zen"), self.xdg_config.join("zen")],
+            Browser::Zen => vec![
+                self.home.join(".zen"),
+                self.xdg_config.join("zen"),
+                app_support.join("zen"),
+            ],
             Browser::Chromium | Browser::Custom => Vec::new(),
         }
     }
@@ -246,6 +252,34 @@ mod tests {
                 (Browser::Zen, "z"),
                 (Browser::Chromium, "nssdb"),
             ]
+        );
+    }
+
+    #[test]
+    fn macos_application_support_roots_are_found() {
+        let home = TempDir::new().unwrap();
+        let h = home.path();
+        make_profile(
+            &h.join("Library/Application Support/Firefox"),
+            "[Profile0]\nName=default-release\nIsRelative=1\nPath=Profiles/abc.default-release\n",
+            &["Profiles/abc.default-release"],
+        );
+        make_profile(
+            &h.join("Library/Application Support/zen"),
+            "[Profile0]\nName=z\nIsRelative=1\nPath=Profiles/z.Default\n",
+            &["Profiles/z.Default"],
+        );
+        let roots = Roots::new(h, None);
+
+        let targets = discover(&roots, &[Browser::Firefox, Browser::Zen], &[]);
+
+        let summary: Vec<_> = targets
+            .iter()
+            .map(|t| (t.browser, t.name.as_str()))
+            .collect();
+        assert_eq!(
+            summary,
+            vec![(Browser::Firefox, "default-release"), (Browser::Zen, "z")]
         );
     }
 
