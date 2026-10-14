@@ -21,7 +21,12 @@ use claude_monitor::store::{Store, StoreOptions};
 use tempfile::TempDir;
 
 const T0: &str = "2026-10-12T10:00:00Z";
-const REAL_OS_WAKE_TIMEOUT: Duration = Duration::from_secs(2);
+// FSEvents batches events behind a latency window, so macOS gets a longer bound.
+const REAL_OS_WAKE_TIMEOUT: Duration = if cfg!(target_os = "macos") {
+    Duration::from_secs(5)
+} else {
+    Duration::from_secs(2)
+};
 const QUIET: Duration = Duration::from_millis(500);
 const SETTLE: Duration = Duration::from_millis(300);
 const MAX_REPLAYED_WAKES: u32 = 5;
