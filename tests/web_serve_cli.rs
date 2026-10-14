@@ -27,8 +27,9 @@ struct Serving {
 }
 
 fn is_gone(pid: u32) -> bool {
-    let pid = rustix::process::Pid::from_raw(i32::try_from(pid).unwrap()).unwrap();
-    rustix::process::test_kill_process(pid).is_err()
+    let pid = libc::pid_t::try_from(pid).unwrap();
+    // SAFETY: signal 0 only checks that the process exists.
+    unsafe { libc::kill(pid, 0) != 0 }
 }
 
 #[test]
@@ -42,10 +43,12 @@ fn a_dropped_guard_kills_and_reaps_its_child() {
     assert!(is_gone(pid));
 }
 
+#[cfg(target_os = "linux")]
 const HELPER_ENV: &str = "CM_PDEATHSIG_HELPER";
 
 /// Runs only as the child of `a_killed_test_runner_does_not_orphan_its_child`:
 /// spawns a guarded `sleep`, prints its pid, then waits to be SIGKILLed.
+#[cfg(target_os = "linux")]
 #[test]
 fn pdeathsig_helper() {
     if std::env::var_os(HELPER_ENV).is_none() {
@@ -56,6 +59,7 @@ fn pdeathsig_helper() {
     std::thread::sleep(std::time::Duration::from_secs(60));
 }
 
+#[cfg(target_os = "linux")]
 #[test]
 fn a_killed_test_runner_does_not_orphan_its_child() {
     let mut runner = Process::new(std::env::current_exe().unwrap())
@@ -87,10 +91,10 @@ fn a_killed_test_runner_does_not_orphan_its_child() {
     }
     let gone = is_gone(pid);
     if !gone {
-        let _ = rustix::process::kill_process(
-            rustix::process::Pid::from_raw(i32::try_from(pid).unwrap()).unwrap(),
-            rustix::process::Signal::KILL,
-        );
+        // SAFETY: plain kill(2) on a pid this test spawned.
+        unsafe {
+            libc::kill(libc::pid_t::try_from(pid).unwrap(), libc::SIGKILL);
+        }
     }
     assert!(gone, "child {pid} outlived its killed parent");
 }
