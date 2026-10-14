@@ -138,11 +138,17 @@ mod tests {
 
     #[test]
     fn a_hostile_session_id_cannot_forge_a_line_or_drive_the_terminal() {
-        let ids = vec!["x\n\u{1b}[2Jclaude-monitor: forged\ty".to_owned(), "ok".to_owned()];
+        let ids = vec![
+            "x\n\u{1b}[2Jclaude-monitor: forged\ty".to_owned(),
+            "ok".to_owned(),
+        ];
         let warning = skipped_warning(&ids);
         assert_eq!(warning.lines().count(), 1, "{warning:?}");
         assert!(!warning.contains(['\u{1b}', '\t']), "{warning:?}");
-        assert!(warning.ends_with("x [2Jclaude-monitor: forged y, ok"), "{warning:?}");
+        assert!(
+            warning.ends_with("x [2Jclaude-monitor: forged y, ok"),
+            "{warning:?}"
+        );
     }
 
     #[test]

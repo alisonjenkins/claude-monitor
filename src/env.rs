@@ -655,38 +655,44 @@ const MAX_READ_BYTES: u64 = 1024 * 1024;
 #[derive(Debug, Clone, Copy)]
 pub struct SystemFs;
 
+/// Reads a regular file of at most `max_bytes` without ever blocking: a FIFO,
+/// device or socket (including one a hostile repo planted) is refused.
+pub(crate) fn read_regular_file(path: &Path, max_bytes: u64) -> Result<String, EnvError> {
+    let io = |source| EnvError::Io {
+        operation: "read file",
+        path: path.to_owned(),
+        source,
+    };
+    use std::os::unix::fs::OpenOptionsExt as _;
+    // O_NONBLOCK so opening a FIFO with no writer returns instead of hanging.
+    let file = std::fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NONBLOCK)
+        .open(path)
+        .map_err(io)?;
+    if !file.metadata().map_err(io)?.is_file() {
+        return Err(EnvError::Failed {
+            operation: "read file",
+            detail: format!("{} is not a regular file", path.display()),
+        });
+    }
+    let mut text = String::new();
+    let read = file
+        .take(max_bytes.saturating_add(1))
+        .read_to_string(&mut text)
+        .map_err(io)?;
+    if read as u64 > max_bytes {
+        return Err(EnvError::Failed {
+            operation: "read file",
+            detail: format!("{} is larger than {max_bytes} bytes", path.display()),
+        });
+    }
+    Ok(text)
+}
+
 impl Fs for SystemFs {
     fn read_to_string(&self, path: &Path) -> Result<String, EnvError> {
-        let io = |source| EnvError::Io {
-            operation: "read file",
-            path: path.to_owned(),
-            source,
-        };
-        use std::os::unix::fs::OpenOptionsExt as _;
-        // O_NONBLOCK so opening a FIFO with no writer returns instead of hanging.
-        let file = std::fs::OpenOptions::new()
-            .read(true)
-            .custom_flags(libc::O_NONBLOCK)
-            .open(path)
-            .map_err(io)?;
-        if !file.metadata().map_err(io)?.is_file() {
-            return Err(EnvError::Failed {
-                operation: "read file",
-                detail: format!("{} is not a regular file", path.display()),
-            });
-        }
-        let mut text = String::new();
-        let read = file
-            .take(MAX_READ_BYTES.saturating_add(1))
-            .read_to_string(&mut text)
-            .map_err(io)?;
-        if read as u64 > MAX_READ_BYTES {
-            return Err(EnvError::Failed {
-                operation: "read file",
-                detail: format!("{} is larger than {MAX_READ_BYTES} bytes", path.display()),
-            });
-        }
-        Ok(text)
+        read_regular_file(path, MAX_READ_BYTES)
     }
 
     fn exists(&self, path: &Path) -> bool {

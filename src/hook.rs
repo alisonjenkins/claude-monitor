@@ -8,7 +8,7 @@ use serde_json::{json, Value};
 
 use crate::agents::claude_registry::{self, RegistryError};
 use crate::agents::{self, AgentKind, ParseError, ParsedHook};
-use crate::env::{Clock, Env, EnvError};
+use crate::env::{read_regular_file, Clock, Env, EnvError};
 use crate::model::{Author, Event, Session, StartSource};
 use crate::store::events::{EventsError, NewEvent};
 use crate::store::respawn::RespawnError;
@@ -28,6 +28,8 @@ const NO_EVENT: &str = "-";
 const EVENT_NAME_FIELD: &str = "hook_event_name";
 const GIT_DIR_PREFIX: &str = "gitdir:";
 const GIT_BRANCH_PREFIX: &str = "ref: refs/heads/";
+/// `.git` pointer files and `HEAD` are a line or two; a larger one is not git's.
+const MAX_GIT_FILE_BYTES: u64 = 64 * 1024;
 
 /// Git facts about a working directory.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -65,14 +67,14 @@ impl GitProbe for FsGit {
             let git_dir = if meta.is_dir() {
                 dot_git
             } else {
-                let text = fs::read_to_string(&dot_git).ok()?;
+                let text = read_regular_file(&dot_git, MAX_GIT_FILE_BYTES).ok()?;
                 let target = text
                     .lines()
                     .find_map(|line| line.strip_prefix(GIT_DIR_PREFIX))?
                     .trim();
                 dir.join(target)
             };
-            let branch = fs::read_to_string(git_dir.join("HEAD"))
+            let branch = read_regular_file(&git_dir.join("HEAD"), MAX_GIT_FILE_BYTES)
                 .ok()
                 .and_then(|head| {
                     head.trim()
@@ -603,5 +605,55 @@ pub fn run(agent: Option<&str>, event: Option<&str>, state_dir: Option<&Path>, e
     match std::io::stdin().read_to_string(&mut input) {
         Ok(_) => ingest(&ctx, &inject_event(&input, event)),
         Err(e) => log_failure(&ctx, NO_EVENT, &HookError::ReadStdin(e)),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used, clippy::expect_used, clippy::unwrap_in_result)]
+    use super::*;
+
+    fn mkfifo(path: &Path) {
+        use std::os::unix::ffi::OsStrExt as _;
+        let c_path = std::ffi::CString::new(path.as_os_str().as_bytes()).unwrap();
+        // SAFETY: c_path is a valid NUL-terminated path that outlives the call.
+        assert_eq!(unsafe { libc::mkfifo(c_path.as_ptr(), 0o600) }, 0);
+    }
+
+    fn probe_within_timeout(cwd: &Path) -> Option<GitInfo> {
+        let cwd = cwd.to_str().unwrap().to_owned();
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = tx.send(FsGit.probe(&cwd));
+        });
+        rx.recv_timeout(std::time::Duration::from_secs(5))
+            .expect("FsGit::probe blocked on a FIFO")
+    }
+
+    #[test]
+    fn a_fifo_as_git_head_leaves_the_branch_unknown() {
+        let repo = tempfile::tempdir().unwrap();
+        let git = repo.path().join(".git");
+        fs::create_dir(&git).unwrap();
+        mkfifo(&git.join("HEAD"));
+        let info = probe_within_timeout(repo.path()).unwrap();
+        assert_eq!(info.branch, None);
+    }
+
+    #[test]
+    fn a_fifo_as_dot_git_does_not_block() {
+        let repo = tempfile::tempdir().unwrap();
+        mkfifo(&repo.path().join(".git"));
+        assert_eq!(probe_within_timeout(repo.path()), None);
+    }
+
+    #[test]
+    fn a_plain_head_still_yields_the_branch() {
+        let repo = tempfile::tempdir().unwrap();
+        let git = repo.path().join(".git");
+        fs::create_dir(&git).unwrap();
+        fs::write(git.join("HEAD"), "ref: refs/heads/main\n").unwrap();
+        let info = probe_within_timeout(repo.path()).unwrap();
+        assert_eq!(info.branch.as_deref(), Some("main"));
     }
 }
