@@ -334,7 +334,7 @@ fn discovery_goes_through_the_shared_store_report_without_downgrading_hook_state
     stubs.push(known);
     let report = ScanReport { stubs, degraded: 0 };
 
-    let summary = store_report(&fx.fake.env, &fx.store, FAKE_ID, &report).unwrap();
+    let summary = store_report(&fx.fake.env, &fx.store, FAKE_ID, &report, &NoGit).unwrap();
     assert_eq!(summary.created, 1);
     assert_eq!(summary.updated, 0);
 

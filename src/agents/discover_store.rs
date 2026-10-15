@@ -9,6 +9,7 @@ use serde_json::json;
 
 use super::{DiscoverError, ScanReport, SessionStub};
 use crate::env::Env;
+use crate::hook::GitProbe;
 use crate::model::{Author, Session, State};
 use crate::store::events::{EventsError, NewEvent};
 use crate::store::sessions::SessionsError;
@@ -46,6 +47,7 @@ pub fn store_report(
     store: &Store,
     kind: &str,
     report: &ScanReport,
+    _git: &dyn GitProbe,
 ) -> Result<DiscoverSummary, DiscoverStoreError> {
     let author = Author::System {
         component: DISCOVER_COMPONENT.to_owned(),
