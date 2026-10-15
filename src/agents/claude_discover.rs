@@ -20,7 +20,7 @@ use super::discover_store::store_report;
 pub use super::discover_store::{DiscoverStoreError, DiscoverSummary};
 use super::{AgentKind, DiscoverError, ScanReport, SessionStub};
 use crate::env::{Env, FileMeta};
-use crate::hook::{GitProbe, NoGit};
+use crate::hook::{FsGit, GitProbe};
 use crate::model::Author;
 use crate::store::events::NewEvent;
 use crate::store::Store;
@@ -308,7 +308,7 @@ fn read_transcript(env: &Env, path: &Path, meta: FileMeta) -> Outcome {
 /// session whose transcript copied the leading messages of another is recorded
 /// as a fork of it.
 pub fn discover_and_store(env: &Env, store: &Store) -> Result<DiscoverSummary, DiscoverStoreError> {
-    discover_and_store_with(env, store, &NoGit)
+    discover_and_store_with(env, store, &FsGit)
 }
 
 /// [`discover_and_store`] with the git reader injected.

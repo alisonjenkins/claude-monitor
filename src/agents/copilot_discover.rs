@@ -17,7 +17,7 @@ use super::discover_store::store_report;
 pub use super::discover_store::{DiscoverStoreError, DiscoverSummary};
 use super::{DiscoverError, ScanReport, SessionStub};
 use crate::env::Env;
-use crate::hook::NoGit;
+use crate::hook::FsGit;
 use crate::store::Store;
 
 const KIND: &str = "copilot";
@@ -211,7 +211,7 @@ fn read_session(env: &Env, dir: &Path) -> Option<SessionStub> {
 /// `session.discovered` event; a known session only gets missing fields filled.
 pub fn discover_and_store(env: &Env, store: &Store) -> Result<DiscoverSummary, DiscoverStoreError> {
     let report = scan(env)?;
-    store_report(env, store, KIND, &report, &NoGit)
+    store_report(env, store, KIND, &report, &FsGit)
 }
 
 #[cfg(test)]
